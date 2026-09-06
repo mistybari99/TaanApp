@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import app from "./app";
-import { allocatePayment } from "./routes/fund";
+import { allocatePayment, calculateShareTransfer } from "./routes/fund";
 import { pool } from "@workspace/db";
 
 const prefix = `SYN-TAN-${process.pid}-${Date.now()}`;
@@ -23,6 +23,33 @@ test("payment allocation always clears Previous Due before Current Collection", 
   assert.deepEqual(allocatePayment(100, 300), { previousDueApplied: 100, currentPeriodApplied: 0 });
   assert.deepEqual(allocatePayment(700, 300), { previousDueApplied: 300, currentPeriodApplied: 400 });
   assert.deepEqual(allocatePayment(500, 900), { previousDueApplied: 500, currentPeriodApplied: 0 });
+});
+
+test("share transfer math supports partial, full, repeated and multi-receiver transfers", () => {
+  const partial = calculateShareTransfer(5, 3, 2, 800);
+  assert.deepEqual(partial, {
+    sourceSharesAfter: 3,
+    receiverSharesAfter: 5,
+    transferredValue: 320,
+    totalSharesBefore: 8,
+    totalSharesAfter: 8,
+  });
+
+  const full = calculateShareTransfer(2, 5, 2, 320);
+  assert.equal(full.sourceSharesAfter, 0);
+  assert.equal(full.receiverSharesAfter, 7);
+  assert.equal(full.transferredValue, 320);
+  assert.equal(full.totalSharesAfter, full.totalSharesBefore);
+
+  const sourceToNewReceiver = calculateShareTransfer(3, 0, 1, 480);
+  const receiverToSecondReceiver = calculateShareTransfer(5, 1, 1, 320);
+  assert.equal(sourceToNewReceiver.transferredValue, 160);
+  assert.equal(receiverToSecondReceiver.transferredValue, 64);
+  assert.equal(sourceToNewReceiver.totalSharesAfter, 3);
+  assert.equal(receiverToSecondReceiver.totalSharesAfter, 6);
+
+  assert.throws(() => calculateShareTransfer(1, 0, 2, 100), /cannot exceed source shares/);
+  assert.throws(() => calculateShareTransfer(0, 1, 1, 100), /positive shares/);
 });
 
 test("TAN schedule preserves 108-share math and protects legacy financial writes", async () => {

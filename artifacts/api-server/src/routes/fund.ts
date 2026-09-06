@@ -33,6 +33,19 @@ export const allocatePayment = (amount: number, previousDue: number) => {
     currentPeriodApplied: roundMoney(safeAmount - previousDueApplied),
   };
 };
+export const calculateShareTransfer = (sourceShares: number, receiverShares: number, quantity: number, accumulatedValue: number) => {
+  if (!Number.isInteger(sourceShares) || sourceShares < 1) throw new Error("Source member must have positive shares");
+  if (!Number.isInteger(receiverShares) || receiverShares < 0) throw new Error("Receiver shares cannot be negative");
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > sourceShares) throw new Error("Transfer quantity cannot exceed source shares");
+  const safeValue = Math.max(0, roundMoney(accumulatedValue));
+  return {
+    sourceSharesAfter: sourceShares - quantity,
+    receiverSharesAfter: receiverShares + quantity,
+    transferredValue: roundMoney(safeValue * quantity / sourceShares),
+    totalSharesBefore: sourceShares + receiverShares,
+    totalSharesAfter: sourceShares - quantity + receiverShares + quantity,
+  };
+};
 const idempotency = (value: unknown) => {
   const key = String(value ?? "").trim();
   return key || null;
@@ -1272,9 +1285,14 @@ router.post("/share-transfers", requireAuth, ownerOnly, async (req: AuthedReques
       "SELECT EXISTS(SELECT 1 FROM fund_draws WHERE cycle_id=$1 AND winner_member_id=$2 AND status <> 'VOID') AS is_winner",
       [cycleId, fromMemberId],
     );
-    if (winner.rows[0]?.is_winner && !overrideWinner) {
+    const isWinner = Boolean(winner.rows[0]?.is_winner);
+    if (isWinner && !overrideWinner) {
       await client.query("ROLLBACK");
       return res.status(409).json({ error: "This member has already won a draw. Use the explicit Owner override to transfer these shares.", winnerTransferBlocked: true });
+    }
+    if (overrideWinner && !isWinner) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Winner override is only valid when the source member has a recorded draw win" });
     }
     const totals = await client.query(
       `SELECT
@@ -1285,7 +1303,8 @@ router.post("/share-transfers", requireAuth, ownerOnly, async (req: AuthedReques
     );
     const total = totals.rows[0];
     const accumulatedValue = roundMoney(Math.max(0, money(total.own_paid) + money(total.incoming_value) - money(total.outgoing_value)));
-    const transferredValue = roundMoney(accumulatedValue * quantity / sourceShares);
+    const shareChange = calculateShareTransfer(sourceShares, receiverBeforeShares, quantity, accumulatedValue);
+    const transferredValue = shareChange.transferredValue;
     const transferId = `IRF-TR-${todayIso().replaceAll("-", "")}-${randomBytes(4).toString("hex").toUpperCase()}`;
     const transfer = await client.query(
       `INSERT INTO fund_share_transfers(transfer_id,cycle_id,from_member_id,to_member_id,share_quantity,accumulated_value,transfer_date,notes,override_winner,created_by,idempotency_key,tan_period_id)
@@ -1316,6 +1335,16 @@ router.post("/share-transfers", requireAuth, ownerOnly, async (req: AuthedReques
          receiverBeforeShares + quantity, "Share transfer in",
       ],
     );
+    if (tan) {
+      const totalShares = await client.query(
+        "SELECT COALESCE(SUM(shares),0)::int AS total_shares FROM fund_cycle_members WHERE cycle_id=$1",
+        [cycleId],
+      );
+      if (Number(totalShares.rows[0]?.total_shares) !== Number(tan.totalShares)) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "Share transfer would change the locked TAN total shares; no records were changed" });
+      }
+    }
     if (settlementAmount !== null) {
       await client.query(
         `INSERT INTO fund_transfer_settlements(transfer_id,cycle_id,amount,status,approved_by,approved_at,notes,idempotency_key)
