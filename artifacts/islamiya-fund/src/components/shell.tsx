@@ -82,7 +82,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground">
               IS
             </div>
-            <span>ISLAMIYA</span>
+            <span>ISLAMIYA Revolving Fund</span>
           </div>
         </div>
         
@@ -142,7 +142,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xs">
               IS
             </div>
-            <span>ISLAMIYA</span>
+            <span>ISLAMIYA Revolving Fund</span>
           </div>
           <div className="flex items-center gap-3">
             <OfflineBadge />

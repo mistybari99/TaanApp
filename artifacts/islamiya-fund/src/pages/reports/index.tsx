@@ -19,7 +19,7 @@ export default function ReportsPage() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `ISLAMIYA_${type}_Report.csv`
+      a.download = `ISLAMIYA_Revolving_Fund_${type}_Report.csv`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)

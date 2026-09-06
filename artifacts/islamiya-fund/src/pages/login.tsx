@@ -53,8 +53,7 @@ export default function LoginPage() {
           <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center text-primary-foreground shadow-lg">
             <Wallet className="w-8 h-8" />
           </div>
-          <h1 className="text-2xl font-bold text-primary mt-4 tracking-tight">ISLAMIYA</h1>
-          <p className="text-muted-foreground text-sm font-medium tracking-widest uppercase">Revolving Fund</p>
+          <h1 className="text-2xl font-bold text-primary mt-4 tracking-tight">ISLAMIYA Revolving Fund</h1>
         </div>
 
         <Card className="border-t-4 border-t-primary shadow-xl">

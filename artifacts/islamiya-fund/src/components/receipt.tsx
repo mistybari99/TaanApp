@@ -68,8 +68,7 @@ export const ReceiptDialog = forwardRef<ReceiptRef>((props, ref) => {
             <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
                <CheckCircle2 className="w-6 h-6 text-primary" />
             </div>
-            <h2 className="text-2xl font-bold text-primary">ISLAMIYA</h2>
-            <p className="text-sm font-semibold tracking-widest uppercase">Revolving Fund</p>
+            <h2 className="text-2xl font-bold text-primary">ISLAMIYA Revolving Fund</h2>
             <p className="text-xs text-muted-foreground mt-2">পেমেন্ট রসিদ (Payment Receipt)</p>
           </div>
           
