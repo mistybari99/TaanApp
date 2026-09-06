@@ -1,7 +1,7 @@
 import { getGetDashboardQueryKey, useGetDashboard } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatCurrency } from "@/lib/utils"
-import { Users, TrendingUp, AlertCircle, ArrowDownToLine, Wallet } from "lucide-react"
+import { Users, TrendingUp, AlertCircle, ArrowDownToLine, Wallet, Target, ListChecks, UserRoundX } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
 export default function OwnerDashboard() {
@@ -27,6 +27,17 @@ export default function OwnerDashboard() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">আজকের লক্ষ্য</CardTitle>
+            <Target className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(dashboard.todayTarget)}</div>
+            <p className="text-xs text-muted-foreground">Expected Collection</p>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">আজকের সংগ্রহ</CardTitle>
@@ -70,9 +81,56 @@ export default function OwnerDashboard() {
             <p className="text-xs text-muted-foreground">Cash with Staff</p>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">পেমেন্ট সংখ্যা</CardTitle>
+            <ListChecks className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{dashboard.paymentCount}</div>
+            <p className="text-xs text-muted-foreground">Payments Today</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">অমীমাংসিত নগদ</CardTitle>
+            <Wallet className="h-4 w-4 text-destructive" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-destructive">{formatCurrency(dashboard.unsettledCash)}</div>
+            <p className="text-xs text-muted-foreground">Unsettled Cash</p>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <UserRoundX className="w-5 h-5 text-destructive" />
+              আজকের বকেয়া সদস্য
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {dashboard.dueMembers.slice(0, 6).map((member) => (
+                <div key={member.id} className="flex items-center justify-between border-b last:border-0 pb-2 last:pb-0">
+                  <div>
+                    <p className="font-medium">{member.name}</p>
+                    <p className="text-xs text-muted-foreground">{member.memberId}</p>
+                  </div>
+                  <span className="font-semibold text-destructive">{formatCurrency(member.todayDue)}</span>
+                </div>
+              ))}
+              {dashboard.dueMembers.length === 0 && (
+                <p className="text-sm text-muted-foreground">আজ কোনো বকেয়া নেই</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">কর্মী পারফরম্যান্স <span className="text-muted-foreground text-sm font-normal ml-2">Staff Performance</span></CardTitle>

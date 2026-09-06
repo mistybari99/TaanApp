@@ -156,15 +156,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Mobile Bottom Nav */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 h-16 bg-card border-t flex items-center justify-around px-2 z-50 pb-safe">
-        {allowedItems.slice(0, 5).map((item) => {
+      <nav className="md:hidden fixed bottom-0 inset-x-0 h-16 bg-card border-t flex items-center justify-start overflow-x-auto px-2 z-50 pb-safe">
+        {allowedItems.map((item) => {
           const isActive = location === item.href || (location.startsWith(item.href) && item.href !== "/")
           return (
             <Link 
               key={item.href} 
               href={item.href}
               className={cn(
-                "flex flex-col items-center justify-center w-full h-full gap-1",
+                "flex flex-col items-center justify-center min-w-[72px] shrink-0 h-full gap-1",
                 isActive ? "text-primary" : "text-muted-foreground"
               )}
             >

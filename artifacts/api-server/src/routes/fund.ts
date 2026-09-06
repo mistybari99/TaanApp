@@ -273,10 +273,10 @@ router.get("/reports/export", requireAuth, ownerOnly, async (req, res) => {
   }
 
   if (type === "collectors") {
-    const r = await pool.query(`SELECT id,name,username,role,active,created_at
+    const r = await pool.query(`SELECT id,name,username,role,active
       FROM fund_users ORDER BY role,name`);
-    return sendCsv(res, "collectors-backup", ["Collector ID", "Name", "Username", "Role", "Active", "Created At"],
-      r.rows.map((x) => [x.id, x.name, x.username, x.role, x.active, x.created_at]));
+    return sendCsv(res, "collectors-backup", ["Collector ID", "Name", "Username", "Role", "Active"],
+      r.rows.map((x) => [x.id, x.name, x.username, x.role, x.active]));
   }
 
   if (type === "settlements" || type === "settlement") {

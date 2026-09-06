@@ -149,7 +149,7 @@ paths:
     get:
       operationId: exportReport
       parameters:
-        - { name: type, in: query, required: true, schema: { type: string } }
+        - { name: type, in: query, required: true, schema: { type: string, enum: [members, payments, collectors, settlements, audit, daily, weekly, monthly, due, collector] } }
       responses:
         "200": { description: CSV, content: { text/csv: { schema: { type: string } } } }
 components:

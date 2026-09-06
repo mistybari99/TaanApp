@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { toast } from "sonner"
 import { formatCurrency } from "@/lib/utils"
-import { Search, UserCheck, CheckCircle2 } from "lucide-react"
+import { Search, UserCheck, CheckCircle2, Target, AlertCircle } from "lucide-react"
 import { useSync } from "@/contexts/sync-context"
 import { ReceiptDialog, ReceiptRef } from "@/components/receipt"
 
@@ -102,6 +102,12 @@ export default function CollectorHome() {
       
       {/* Collector Stats Snippet */}
       <div className="grid grid-cols-2 gap-3 mb-6">
+        <Card className="bg-muted border-none">
+          <CardContent className="p-4 flex flex-col items-center justify-center text-center">
+            <span className="text-xs text-muted-foreground">আজকের লক্ষ্য</span>
+            <span className="text-xl font-bold mt-1">{formatCurrency(dashboard?.todayTarget || 0)}</span>
+          </CardContent>
+        </Card>
         <Card className="bg-primary text-primary-foreground border-none">
           <CardContent className="p-4 flex flex-col items-center justify-center text-center">
             <span className="text-xs opacity-80">আজকের সংগ্রহ</span>
@@ -116,6 +122,12 @@ export default function CollectorHome() {
             <span className="text-xl font-bold mt-1">
               {formatCurrency(dashboard?.collectorCash || 0)}
             </span>
+          </CardContent>
+        </Card>
+        <Card className="bg-destructive/10 border-destructive/20">
+          <CardContent className="p-4 flex flex-col items-center justify-center text-center">
+            <span className="text-xs text-destructive">বাকি সংগ্রহ</span>
+            <span className="text-xl font-bold mt-1 text-destructive">{formatCurrency(dashboard?.due || 0)}</span>
           </CardContent>
         </Card>
       </div>

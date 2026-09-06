@@ -70,6 +70,7 @@ export default function LoginPage() {
                 <Label htmlFor="username">ইউজারনেম (Username)</Label>
                 <Input 
                   id="username" 
+                  autoComplete="username"
                   value={username} 
                   onChange={(e) => setUsername(e.target.value)} 
                   placeholder="Enter username" 
