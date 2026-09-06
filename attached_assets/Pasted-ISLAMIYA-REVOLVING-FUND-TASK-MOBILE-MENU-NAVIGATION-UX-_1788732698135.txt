@@ -1,0 +1,281 @@
+ISLAMIYA REVOLVING FUND
+TASK — MOBILE MENU & NAVIGATION UX REDESIGN
+
+IMPORTANT:
+This task is ONLY for frontend/mobile navigation and menu organization.
+Do NOT change database schema, financial logic, API behavior, permissions, authentication logic, member data, payment logic, due logic, draw logic, transfer logic, settlement logic, audit logic, or CSV import logic.
+
+Do not create test financial/member data.
+Do not modify or delete any genuine data.
+
+==================================================
+1. MAIN NAVIGATION — PRIORITIZE IMPORTANT TABS
+==================================================
+
+Redesign the mobile navigation so the most frequently used operational features are immediately accessible.
+
+Keep the most important tabs visible in the main bottom navigation.
+
+Recommended primary navigation:
+
+1. Dashboard
+2. Members
+3. Cycle
+4. Collection / Transaction
+5. Friday Draw
+
+These should remain easily accessible without opening another menu.
+
+Use clear icons + short labels.
+
+The active tab must be visually obvious.
+
+Do NOT overcrowd the bottom navigation.
+
+==================================================
+2. RARE / LESS-FREQUENT FEATURES → "MORE"
+==================================================
+
+Move rarely used or administrative features into a dedicated:
+
+"More" / "আরও"
+
+menu.
+
+Examples of features that can move under More:
+
+- Draw History
+- Deposit / Settlement
+- Workers / Collector Management
+- Audit
+- Reports
+- CSV Import
+- Settings
+- Other administrative or rarely used functions
+
+Use judgment based on actual existing application routes.
+
+IMPORTANT:
+Do NOT remove any existing feature.
+Only reorganize where it is accessed from.
+
+Every existing route must remain reachable.
+
+==================================================
+3. MORE MENU DESIGN
+==================================================
+
+Create a clean mobile-friendly More screen.
+
+Organize items into logical groups instead of showing one long random list.
+
+Suggested groups:
+
+OPERATIONS
+- Draw History
+- Deposit / Settlement
+- Reports
+
+MANAGEMENT
+- Workers / Collectors
+- Audit
+- CSV Import
+
+SYSTEM
+- Settings
+- Other administrative options
+
+Use cards/list rows with:
+
+- Icon
+- English label where appropriate
+- Bangla/English friendly wording
+- Short description where useful
+- Clear touch target
+
+Do not make the More screen visually heavy.
+
+==================================================
+4. LOGOUT MUST NOT BE A PRIMARY TAB
+==================================================
+
+IMPORTANT:
+
+Remove Logout from the main bottom navigation.
+
+Logout should NOT appear as a prominent standalone primary navigation item.
+
+Place Logout inside an appropriate secondary area such as:
+
+Profile / Account / Settings
+
+For example:
+
+More
+  → Account / Profile
+      → Logout
+
+OR an appropriate existing account menu.
+
+Keep Logout easy enough to find, but visually separated from daily operational functions.
+
+==================================================
+5. LOGOUT CONFIRMATION
+==================================================
+
+Current behavior:
+A single tap immediately logs the user out.
+
+CHANGE THIS.
+
+When user taps Logout:
+
+Show a confirmation dialog/modal.
+
+Example:
+
+"Logout করবেন?"
+
+"আপনি কি সত্যিই এই account থেকে logout করতে চান?"
+
+Buttons:
+
+Cancel
+Logout
+
+Default/focus should be on Cancel or otherwise avoid accidental confirmation.
+
+Only perform the actual logout after the user explicitly confirms.
+
+A single accidental tap must NEVER log the user out.
+
+After confirmation:
+- Perform the existing logout flow.
+- Do not change authentication/session architecture.
+- Do not modify backend auth logic.
+
+==================================================
+6. RESPONSIVE DESIGN
+==================================================
+
+The redesign must work properly on:
+
+- Android mobile
+- Small mobile screens
+- Larger mobile screens
+- Tablet
+- Desktop
+
+Mobile is the highest priority.
+
+Ensure:
+
+- No horizontal overflow
+- No clipped labels
+- Proper safe-area handling
+- Bottom navigation does not cover content
+- Touch targets are comfortable
+- Menus remain easy to use with one hand
+
+==================================================
+7. VISUAL HIERARCHY
+==================================================
+
+The application should visually communicate:
+
+PRIMARY / DAILY WORK
+→ Bottom navigation
+
+SECONDARY / OCCASIONAL
+→ More
+
+ACCOUNT / SECURITY
+→ Profile / Account / Settings
+
+Avoid making every feature equally prominent.
+
+The daily collection workflow should remain the fastest workflow.
+
+==================================================
+8. PRESERVE CURRENT FUNCTIONALITY
+==================================================
+
+Before changing navigation, inspect the existing routes/components and map every existing menu item.
+
+Create a navigation map so no route is accidentally lost.
+
+Do NOT rename backend routes.
+
+Do NOT change API contracts.
+
+Do NOT change database models.
+
+Do NOT change permissions.
+
+Do NOT change Owner vs Collector visibility rules.
+
+Only change the frontend navigation presentation and routing links as necessary.
+
+==================================================
+9. ACCESSIBILITY & UX
+==================================================
+
+- Clear active-state indication
+- Minimum comfortable touch area
+- Consistent icons
+- Consistent spacing
+- Clear Bangla/English labels
+- Avoid ambiguous icons
+- Confirmation for destructive/security-sensitive actions
+- Back navigation must work correctly
+
+Do NOT auto-translate member names.
+
+Member names must remain exactly as stored in the database.
+
+==================================================
+10. VERIFICATION
+==================================================
+
+After implementation:
+
+1. Run API typecheck.
+2. Run frontend typecheck.
+3. Run API build.
+4. Run frontend production build.
+5. Run existing regression tests.
+6. Verify all existing routes are still reachable.
+7. Verify Owner/Collector permissions remain unchanged.
+8. Verify Logout requires explicit confirmation.
+9. Verify Cancel keeps the user logged in.
+10. Verify confirmed Logout works normally.
+11. Verify no browser console errors.
+12. Run git diff --check.
+
+Do NOT import CSV.
+Do NOT create Cycle #02.
+Do NOT create members.
+Do NOT create payments.
+Do NOT create dues.
+Do NOT create draws.
+Do NOT create transfers.
+Do NOT create settlements.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Report:
+
+- Which tabs remain in primary navigation
+- Which menus were moved to More
+- Where Logout was moved
+- Logout confirmation behavior
+- Routes verified
+- Typecheck result
+- Build result
+- Regression test result
+- Browser verification result
+- Any warnings
+
+STOP AFTER THIS TASK.
