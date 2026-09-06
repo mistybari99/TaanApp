@@ -150,7 +150,7 @@ router.get("/members", requireAuth, async (req: AuthedRequest, res) => {
        LEFT JOIN fund_cycle_members cm ON cm.cycle_id=c.id AND cm.member_id=m.id
        LEFT JOIN fund_payments p ON p.member_id=m.id AND p.cycle_id=c.id
      WHERE (m.name ILIKE $1 OR m.member_id ILIKE $1 OR m.mobile ILIKE $1)${allowed}
-     GROUP BY m.id,cm.id,c.tracking_start_date ORDER BY m.member_id`,
+      GROUP BY m.id,cm.id,c.id,c.tracking_start_date ORDER BY m.member_id`,
     params,
   );
   res.json(rows.rows.map((m) => {
@@ -407,10 +407,15 @@ router.get("/cycles/:id/members", requireAuth, async (req: AuthedRequest, res) =
      CASE WHEN c.status='ACTIVE' AND c.tracking_start_date IS NOT NULL AND CURRENT_DATE >= c.tracking_start_date
       THEN GREATEST(cm.daily_contribution-COALESCE(SUM(p.amount) FILTER(WHERE p.collection_date=CURRENT_DATE AND p.status='POSTED'),0),0)
       ELSE 0 END::float AS "todayDue"
+     ,GREATEST(COALESCE((SELECT SUM(de.amount) FROM fund_due_entries de WHERE de.cycle_id=c.id AND de.member_id=cm.member_id),0)
+       - COALESCE((SELECT SUM(pp.previous_due_applied) FROM fund_payments pp WHERE pp.cycle_id=c.id AND pp.member_id=cm.member_id AND pp.status='POSTED'),0),0)::float AS "previousDue"
     FROM fund_cycle_members cm JOIN fund_members m ON m.id=cm.member_id JOIN fund_cycles c ON c.id=cm.cycle_id
       LEFT JOIN fund_payments p ON p.cycle_id=cm.cycle_id AND p.member_id=cm.member_id
     WHERE cm.cycle_id=$1${access} GROUP BY cm.id,m.id,c.id ORDER BY m.member_id`, params);
-  return res.json(result.rows);
+  return res.json(result.rows.map((member) => ({
+    ...member,
+    totalDue: money(member.todayDue) + money(member.previousDue),
+  })));
 });
 router.post("/cycles/:id/members", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
   const cycleId = Number(req.params.id);
