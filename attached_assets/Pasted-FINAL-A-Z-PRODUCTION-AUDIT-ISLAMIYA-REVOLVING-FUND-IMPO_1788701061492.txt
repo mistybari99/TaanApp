@@ -1,0 +1,854 @@
+FINAL A-Z PRODUCTION AUDIT
+ISLAMIYA REVOLVING FUND
+
+IMPORTANT:
+Perform a complete production-readiness audit of the entire existing application.
+
+This is NOT just a code/build audit.
+
+Audit the system from three perspectives:
+
+1. TECHNICAL LOGIC
+2. FINANCIAL / ACCOUNTING LOGIC
+3. REAL-WORLD BUSINESS / OPERATIONAL LOGIC
+
+The goal is to determine whether this application is safe to use with REAL MEMBER MONEY.
+
+DO NOT import the real CSV during this audit.
+DO NOT create Cycle #02.
+DO NOT start real collection.
+DO NOT modify genuine historical data.
+
+Before changing anything, inspect the current implementation, database schema, API, frontend, workflows and existing tests.
+
+==================================================
+A. DATABASE & DATA INTEGRITY
+==================================================
+
+Audit all relevant tables/entities and relationships.
+
+Verify:
+
+- Primary keys
+- Foreign keys
+- Unique constraints
+- Nullability
+- Required fields
+- Cycle relationships
+- Member relationships
+- Payment relationships
+- Draw relationships
+- Transfer relationships
+- Settlement relationships
+- Audit relationships
+
+Verify there are no orphan records.
+
+Verify financial records cannot accidentally belong to multiple cycles.
+
+Verify completed-cycle records cannot accidentally be overwritten.
+
+Verify database transactions are atomic for sensitive financial operations.
+
+Verify duplicate payment/transfer/draw creation cannot occur because of retries or double submissions.
+
+==================================================
+B. PERMANENT MEMBER MASTER
+==================================================
+
+Verify that Members are permanent master records.
+
+Each member should support:
+
+- Permanent Member ID
+- Name
+- Mobile Number
+- Active/Inactive status
+- Notes
+- Created date
+
+IMPORTANT:
+
+Member ID must be separate from mobile number.
+
+Changing name/mobile must NOT change Member ID.
+
+A member leaving a cycle must NOT delete their permanent member record.
+
+Historical records must remain accessible.
+
+Verify duplicate-member prevention/matching logic.
+
+==================================================
+C. CYCLE ARCHITECTURE
+==================================================
+
+Verify that Cycle and Member Master are separate.
+
+Each cycle must independently store:
+
+- Participants
+- Shares
+- Contribution rules
+- Payments
+- Collections
+- Transfers
+- Settlements
+- Draws
+- Winners
+- Reports
+
+Verify:
+
+Cycle #01 data cannot leak into Cycle #02.
+
+Only ONE cycle can be ACTIVE at a time.
+
+A COMPLETED cycle must remain historically frozen.
+
+A new cycle must start with its own participant/share allocation.
+
+A new cycle must NOT automatically inherit old dues/payments.
+
+There must be no hard-coded assumption that a cycle has 108 shares or 108 members.
+
+==================================================
+D. CURRENT CYCLE #01
+==================================================
+
+Verify:
+
+Name:
+ISLAMIYA Revolving Fund — Current Tan
+
+Cycle:
+#01
+
+Start date:
+28/03/2026
+
+Contribution:
+৳100 per share per day
+
+Draw:
+Weekly Friday
+
+Status:
+ACTIVE
+
+Verify that the tracking/opening date can be set appropriately.
+
+IMPORTANT:
+
+This current cycle is NOT migrating historical payment records.
+
+The system must NOT automatically calculate historical dues from 28/03/2026 until the present.
+
+No old payments should be invented.
+
+==================================================
+E. SHARE LOGIC
+==================================================
+
+Audit the business logic for shares.
+
+Shares are NOT permanent attributes of a member.
+
+Shares are cycle-specific.
+
+A member may have:
+
+Cycle #01 = 6 shares
+Cycle #02 = 3 shares
+Cycle #03 = 8 shares
+
+Verify previous cycles remain unchanged.
+
+Verify an ACTIVE/NEW cycle allows Owner to edit share quantity.
+
+Verify:
+
+Daily contribution = shares × applicable contribution rate.
+
+Verify share changes do not silently rewrite previous collection/payment history.
+
+==================================================
+F. SHARE TRANSFER — HIGH PRIORITY
+==================================================
+
+This is one of the most important business rules.
+
+Audit Share Transfer thoroughly.
+
+The system must support:
+
+- Full transfer
+- Partial transfer
+- Multiple transfers
+- Transfer to existing member
+- Transfer to new member
+- Transfer during an active cycle
+
+There must NOT be a fixed transfer quantity.
+
+Example:
+
+Member has 6 shares.
+
+Allowed:
+
+6 → another member
+5 → another member
+4 → another member
+3 → another member
+2 → another member
+1 → another member
+
+or multiple transfers such as:
+
+6
+↓
+2 transferred
+remaining 4
+↓
+1 transferred
+remaining 3
+↓
+3 transferred
+remaining 0
+
+Verify the system NEVER allows transfer quantity greater than currently available shares.
+
+Verify negative shares are impossible.
+
+==================================================
+G. SHARE TRANSFER FINANCIAL LOGIC
+==================================================
+
+Audit whether accumulated contribution correctly follows the transferred share quantity.
+
+Example:
+
+Member A has 6 shares.
+
+2 shares are transferred during the cycle.
+
+The system must determine the accumulated contribution attributable to those 2 shares up to the transfer point.
+
+The original member's historical collection records must NOT be deleted.
+
+The transfer must create a traceable ownership transition.
+
+The receiving member must receive the appropriate transferred share position and accumulated contribution history.
+
+Verify that the system does NOT accidentally transfer the entire member's accumulated contribution when only part of the shares are transferred.
+
+Verify multiple transfers calculate correctly after previous transfers.
+
+==================================================
+H. TRANSFER SETTLEMENT
+==================================================
+
+Verify that:
+
+SHARE TRANSFER
+
+and
+
+TRANSFER SETTLEMENT
+
+are separate concepts.
+
+Record separately:
+
+- Transfer ID
+- Cycle
+- Date/time
+- From member
+- To member
+- Share quantity
+- Accumulated contribution/value
+- Settlement amount
+- Settlement status
+- Approved by
+- Notes
+
+The Owner must be able to record the actual settlement amount.
+
+Do NOT assume settlement amount is automatically equal to accumulated contribution unless explicitly confirmed.
+
+==================================================
+I. TRANSFER HISTORY
+==================================================
+
+Verify complete transfer history.
+
+For each transfer:
+
+- Who gave shares
+- Who received shares
+- How many shares
+- When
+- Accumulated value
+- Settlement
+- Status
+- Approval/audit trail
+
+Member profile must show:
+
+Outgoing transfers
+Incoming transfers
+
+==================================================
+J. DRAW / FRIDAY TAN LOGIC
+==================================================
+
+Verify weekly Friday Draw functionality.
+
+Verify each draw is linked to exactly one cycle.
+
+Verify winners can only be selected from eligible participants of that cycle.
+
+Verify draw history is permanent.
+
+Verify:
+
+- Draw number
+- Date
+- Cycle
+- Winner
+- Amount
+- Notes
+
+Verify draw history cannot accidentally mix cycles.
+
+==================================================
+K. WINNER RESTRICTION
+==================================================
+
+Business rule:
+
+Normally, once a member has received a Friday Draw/Tan payout, their shares should NOT be transferred through the normal transfer workflow.
+
+Verify the system enforces this.
+
+If Owner override exists:
+
+- It must be clearly labeled
+- Require explicit confirmation
+- Create audit record
+- Never happen automatically
+
+==================================================
+L. COLLECTION & PAYMENT LOGIC
+==================================================
+
+Audit collection/payment calculations.
+
+Contribution rule:
+
+৳100 per share per day.
+
+Verify flexible payment support.
+
+Example:
+
+A member may pay 3 days together:
+
+৳300
+
+The system must correctly record the transaction without forcing three separate payments.
+
+Verify:
+
+- Date
+- Cycle
+- Member
+- Amount
+- Collector
+- Notes
+
+are preserved.
+
+Verify due calculations are correct from the tracking/opening point.
+
+Verify payments cannot be accidentally counted twice.
+
+Verify reversal logic is correct.
+
+==================================================
+M. COLLECTOR ACCOUNTABILITY
+==================================================
+
+This is a real-world operational requirement.
+
+Every collection must be attributable to the staff/collector who collected it.
+
+Verify:
+
+- Collector identity
+- Collection date/time
+- Member
+- Cycle
+- Amount
+
+are preserved.
+
+Verify Owner can identify how much each collector collected.
+
+Verify collector cannot silently alter or delete financial records.
+
+Verify appropriate permissions between Owner and Collector.
+
+==================================================
+N. MEMBER COLLECTION RECEIPT / VERIFICATION
+==================================================
+
+Audit whether the current system supports the intended operational control:
+
+Member pays collector
+↓
+Payment recorded
+↓
+Collector identity recorded
+↓
+Member can have proof/receipt/history
+
+If the planned physical signature/passbook workflow is not represented digitally, do NOT invent a complicated feature.
+
+Instead clearly report whether it is currently supported or remains a physical operational control.
+
+==================================================
+O. FUTURE CYCLE WORKFLOW
+==================================================
+
+Verify the Owner can:
+
+1. Complete Cycle #01
+2. Create Cycle #02
+3. Select existing members
+4. Add new members
+5. Remove members from participation without deleting them permanently
+6. Assign different share quantities
+7. Start the new cycle
+
+Example:
+
+Cycle #01:
+50 members
+108 shares
+
+Cycle #02:
+45 members
+125 shares
+
+Cycle #03:
+65 members
+95 shares
+
+All must be valid.
+
+CSV must NOT be mandatory for every new cycle.
+
+CSV should remain an optional bulk-import mechanism.
+
+==================================================
+P. CSV IMPORT
+==================================================
+
+Audit the CSV import process.
+
+Verify:
+
+- Preview exists
+- No automatic commit
+- Name
+- Shares
+- Daily contribution
+- Total members
+- Total shares
+- Expected daily collection
+
+Verify duplicate-member prevention.
+
+Verify existing members can be matched safely.
+
+Verify CSV import affects only the selected cycle.
+
+Verify CSV import cannot overwrite historical cycle shares.
+
+Verify malformed CSV cannot corrupt the database.
+
+Verify UTF-8/BOM/quoted fields/comma/newline handling if already supported.
+
+==================================================
+Q. MEMBER HISTORY
+==================================================
+
+Verify member profile/history displays:
+
+- Permanent Member ID
+- Name
+- Mobile
+- Status
+- Cycle participation
+- Shares per cycle
+- Collection/payment history
+- Transfer history
+- Draw/winner history
+
+Verify history is chronological and cycle-specific.
+
+==================================================
+R. DASHBOARD & REPORTING
+==================================================
+
+Audit all dashboard calculations.
+
+Verify totals are based on correct cycle.
+
+Verify:
+
+- Total members
+- Total shares
+- Daily collection expectation
+- Collected amount
+- Due amount
+- Transfer totals
+- Draw totals
+
+are mathematically consistent.
+
+Verify no historical amount is accidentally included in the current cycle.
+
+Cross-check dashboard values against raw database calculations.
+
+==================================================
+S. BUSINESS LOGIC / FINANCIAL LOGIC AUDIT
+==================================================
+
+This is a mandatory audit layer.
+
+Do NOT only ask:
+
+"Does the code run?"
+
+Ask:
+
+"Does this system behave correctly for the actual way this Tan operates?"
+
+Test realistic business scenarios.
+
+Scenario 1:
+Member has 6 shares and pays daily.
+
+Scenario 2:
+Member pays multiple days together.
+
+Scenario 3:
+Member partially transfers 2 of 6 shares.
+
+Scenario 4:
+Member transfers remaining 4 shares later.
+
+Scenario 5:
+Member transfers shares to multiple people.
+
+Scenario 6:
+Receiving member already has shares.
+
+Scenario 7:
+Receiving member is a new person.
+
+Scenario 8:
+Member has already won a draw.
+
+Scenario 9:
+Cycle closes and a new cycle starts.
+
+Scenario 10:
+New cycle has completely different total shares.
+
+Scenario 11:
+Member leaves one cycle but returns in another.
+
+Scenario 12:
+A payment is retried/double-submitted.
+
+Scenario 13:
+A payment is reversed.
+
+Scenario 14:
+Two collectors collect from different members.
+
+Scenario 15:
+A collector tries to alter an existing financial record.
+
+For every scenario verify the resulting balances and history.
+
+==================================================
+T. SECURITY & PERMISSIONS
+==================================================
+
+Audit:
+
+- Owner permissions
+- Collector permissions
+- Authentication
+- Authorization
+- API authorization
+- Direct API access
+- Sensitive financial actions
+
+Collector must not have Owner-level abilities.
+
+Verify unauthorized users cannot modify:
+
+- Shares
+- Transfers
+- Settlements
+- Draws
+- Financial history
+- Cycle status
+
+==================================================
+U. OFFLINE / IDEMPOTENCY
+==================================================
+
+Audit existing offline/idempotent behavior.
+
+Verify repeated requests do not create duplicate:
+
+- Payments
+- Collections
+- Transfers
+- Settlements
+
+If offline transfer handling is not implemented, report it clearly as a gap.
+
+Do NOT hide limitations.
+
+==================================================
+V. AUDIT TRAIL
+==================================================
+
+Verify sensitive actions create audit records:
+
+- Cycle creation
+- Cycle completion
+- Share changes
+- Share transfers
+- Transfer settlement
+- Draw creation
+- Payment reversal
+- Sensitive corrections
+
+Verify audit entries identify:
+
+- User
+- Action
+- Date/time
+- Relevant record
+- Before/after values where appropriate
+
+==================================================
+W. BANGLA + ENGLISH UI
+==================================================
+
+Audit the UI language.
+
+The application must support Bangla + English / hybrid terminology.
+
+Examples:
+
+সদস্য / Members
+শেয়ার / Shares
+দৈনিক কালেকশন / Daily Collection
+বকেয়া / Due
+জমা / Payment
+কালেক্টর / Collector
+শেয়ার Transfer / Share Transfer
+শুক্রবারের টান / Friday Draw
+বিজয়ী / Winner
+টান / Cycle
+চলমান / Active
+সম্পন্ন / Completed
+হিস্টোরি / History
+
+Verify that important financial warnings and staff-facing instructions are understandable in Bangla.
+
+If a language toggle exists, verify it works.
+
+Do not translate internal database/API identifiers unnecessarily.
+
+==================================================
+X. DEMO / TEST DATA CLEANUP — CRITICAL
+==================================================
+
+During this audit, testing may require temporary test data.
+
+IMPORTANT:
+
+Do NOT leave any demo/test financial data in the production database.
+
+At the end of the audit:
+
+1. Identify ALL demo/test members.
+2. Identify ALL test payments.
+3. Identify ALL test collections/settlements.
+4. Identify ALL test transfers.
+5. Identify ALL test draw/winner records.
+6. Identify ALL dependent audit records created only for those tests.
+
+Remove ONLY clearly identified test/demo records.
+
+Do NOT delete genuine records.
+
+Then verify the final database state.
+
+Expected clean-state invariant BEFORE real CSV import:
+
+Cycle #01:
+ACTIVE
+
+Cycle #02:
+does not exist
+
+Real participants:
+0
+
+Real payments:
+0
+
+Real transfers:
+0
+
+Real draws:
+0
+
+Real collections/settlements:
+0
+
+Tracking date:
+unset until explicitly configured
+
+No demo/test financial transactions remain.
+
+If the audit creates test users for technical testing, clearly identify whether they are safe to keep or should be removed. Do not delete the real Owner/Collector accounts.
+
+==================================================
+Y. API / FRONTEND / DATABASE CONSISTENCY
+==================================================
+
+Verify that:
+
+Frontend calculations
+=
+API calculations
+=
+Database values
+
+No duplicated business logic should produce conflicting totals.
+
+Verify API validation independently of frontend validation.
+
+A malicious/manual API request must not bypass important financial rules.
+
+==================================================
+Z. TESTING & FINAL VERIFICATION
+==================================================
+
+Run:
+
+- Frontend typecheck
+- API typecheck
+- Build
+- Database/schema validation
+- API tests
+- Business-logic tests
+- Relevant integration tests
+- Browser verification
+- Authentication/permission checks
+
+Where practical, test realistic financial scenarios using isolated temporary test data.
+
+Clean all temporary test data afterward.
+
+==================================================
+FINAL AUDIT REPORT
+==================================================
+
+DO NOT simply say:
+
+"Audit passed."
+
+Provide a structured report:
+
+1. OVERALL STATUS
+   - PASS
+   - PASS WITH WARNINGS
+   - FAIL
+
+2. CRITICAL ISSUES
+   - Anything that could cause money/accounting errors
+
+3. HIGH PRIORITY ISSUES
+
+4. MEDIUM PRIORITY ISSUES
+
+5. LOW PRIORITY ISSUES
+
+6. BUSINESS LOGIC FINDINGS
+
+7. FINANCIAL CALCULATION FINDINGS
+
+8. SHARE TRANSFER FINDINGS
+
+9. CYCLE ISOLATION FINDINGS
+
+10. COLLECTION/COLLECTOR FINDINGS
+
+11. DRAW/WINNER FINDINGS
+
+12. MEMBER/MOBILE/ID FINDINGS
+
+13. CSV IMPORT FINDINGS
+
+14. SECURITY/PERMISSION FINDINGS
+
+15. BANGLA/ENGLISH UI FINDINGS
+
+16. OFFLINE/IDEMPOTENCY FINDINGS
+
+17. TEST COVERAGE
+
+18. EXACT CHANGES MADE
+
+19. EXACT DATA REMOVED DURING TEST CLEANUP
+
+20. FINAL DATABASE INVARIANTS
+
+==================================================
+MOST IMPORTANT FINAL RULE
+==================================================
+
+DO NOT declare the application production-ready merely because:
+
+- build passes
+- typecheck passes
+- API responds
+- browser loads
+
+Production-ready means:
+
+The software's technical behavior AND financial/business logic correctly match the real-world operation of ISLAMIYA Revolving Fund.
+
+If any rule is ambiguous or potentially dangerous for real money, STOP and report it instead of guessing.
+
+Do not import the real 31-member CSV.
+
+Do not create Cycle #02.
+
+After the audit and cleanup, leave the database in a clean, verified state ready for the real CSV import.
+
+Only after the final report confirms the system is safe should we proceed to the real 31-member CSV preview.
