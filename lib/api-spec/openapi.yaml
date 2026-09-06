@@ -659,6 +659,15 @@ components:
         actor: { type: string }
         action: { type: string }
         detail: { type: string }
+        entityType: { type: string, nullable: true }
+        entityId: { type: string, nullable: true }
+        memberId: { type: integer, nullable: true }
+        cycleId: { type: integer, nullable: true }
+        relatedTransactionId: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+        effectiveDate: { type: string, nullable: true }
+        beforeValue: { type: object, nullable: true, additionalProperties: true }
+        afterValue: { type: object, nullable: true, additionalProperties: true }
         createdAt: { type: string }
     CollectorPerformance:
       type: object

@@ -30,10 +30,45 @@ const idempotency = (value: unknown) => {
 };
 const sameMoney = (left: unknown, right: unknown) => Math.abs(money(left) - money(right)) < 0.005;
 type Queryable = { query: (text: string, values?: readonly unknown[]) => Promise<{ rows: any[]; rowCount?: number | null }> };
-const auditOn = async (queryable: Queryable, actorId: number, action: string, detail: string, entityType?: string, entityId?: string) =>
-  queryable.query("INSERT INTO fund_audit(actor_id,action,detail,entity_type,entity_id) VALUES($1,$2,$3,$4,$5)", [actorId, action, detail, entityType ?? null, entityId ?? null]);
-const audit = async (actorId: number, action: string, detail: string, entityType?: string, entityId?: string) =>
-  auditOn(pool, actorId, action, detail, entityType, entityId);
+type AuditFields = {
+  memberId?: number | null;
+  cycleId?: number | null;
+  relatedTransactionId?: number | string | null;
+  reason?: string | null;
+  effectiveDate?: string | null;
+  beforeValue?: unknown;
+  afterValue?: unknown;
+};
+const auditJson = (value: unknown) => value === undefined ? null : JSON.stringify(value);
+const auditOn = async (
+  queryable: Queryable,
+  actorId: number,
+  action: string,
+  detail: string,
+  entityType?: string,
+  entityId?: string,
+  fields: AuditFields = {},
+) =>
+  queryable.query(
+    `INSERT INTO fund_audit(actor_id,action,detail,entity_type,entity_id,member_id,cycle_id,related_transaction_id,reason,effective_date,before_value,after_value)
+     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb)`,
+    [
+      actorId,
+      action,
+      detail,
+      entityType ?? null,
+      entityId ?? null,
+      fields.memberId ?? null,
+      fields.cycleId ?? null,
+      fields.relatedTransactionId == null ? null : String(fields.relatedTransactionId),
+      fields.reason ?? null,
+      fields.effectiveDate ?? null,
+      auditJson(fields.beforeValue),
+      auditJson(fields.afterValue),
+    ],
+  );
+const audit = async (actorId: number, action: string, detail: string, entityType?: string, entityId?: string, fields?: AuditFields) =>
+  auditOn(pool, actorId, action, detail, entityType, entityId, fields);
 const transactionLock = async (client: Queryable, scope: string) => {
   await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scope]);
 };
@@ -305,16 +340,47 @@ router.post("/members/import", requireAuth, ownerOnly, async (req: AuthedRequest
 router.patch("/members/:id", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const b = req.body;
-  const result = await pool.query(
-    `UPDATE fund_members SET name=COALESCE($2,name),mobile=COALESCE($3,mobile),address=COALESCE($4,address),nid=COALESCE($5,nid),
-      status=COALESCE($6,status),notes=COALESCE($7,notes) WHERE id=$1
-      RETURNING id,member_id AS "memberId",name,mobile,address,nid,shares,daily_amount::float AS "dailyAmount",
-      joining_date::text AS "joiningDate",created_at AS "createdAt",notes,status`,
-    [id,b.name ?? null,b.mobile ?? null,b.address ?? null,b.nid ?? null,b.status ?? null,b.notes ?? null],
-  );
-  if (!result.rows[0]) return res.status(404).json({ error: "Member not found" });
-  await audit(req.user!.id, "MEMBER_UPDATED", `Updated ${result.rows[0].memberId}`, "member", String(id));
-  return res.json(result.rows[0]);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const current = await client.query("SELECT id,member_id AS \"memberId\",status FROM fund_members WHERE id=$1 FOR UPDATE", [id]);
+    if (!current.rows[0]) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Member not found" });
+    }
+    const result = await client.query(
+      `UPDATE fund_members SET name=COALESCE($2,name),mobile=COALESCE($3,mobile),address=COALESCE($4,address),nid=COALESCE($5,nid),
+        status=COALESCE($6,status),notes=COALESCE($7,notes) WHERE id=$1
+        RETURNING id,member_id AS "memberId",name,mobile,address,nid,shares,daily_amount::float AS "dailyAmount",
+        joining_date::text AS "joiningDate",created_at AS "createdAt",notes,status`,
+      [id,b.name ?? null,b.mobile ?? null,b.address ?? null,b.nid ?? null,b.status ?? null,b.notes ?? null],
+    );
+    const statusChanged = String(current.rows[0].status) !== String(result.rows[0].status);
+    await auditOn(
+      client,
+      req.user!.id,
+      statusChanged ? "MEMBER_STATUS_CHANGED" : "MEMBER_UPDATED",
+      `Updated ${result.rows[0].memberId}`,
+      "member",
+      String(id),
+      statusChanged
+        ? {
+            memberId: id,
+            reason: String(b.reason ?? "Member status update").trim(),
+            beforeValue: { status: current.rows[0].status },
+            afterValue: { status: result.rows[0].status },
+          }
+        : { memberId: id },
+    );
+    await client.query("COMMIT");
+    return res.json(result.rows[0]);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    req.log.error({ error }, "Member update failed");
+    return res.status(409).json({ error: "Member could not be updated" });
+  } finally {
+    client.release();
+  }
 });
 router.get("/members/:id/history", requireAuth, async (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
@@ -380,22 +446,72 @@ router.post("/cycles", requireAuth, ownerOnly, async (req: AuthedRequest, res) =
 router.patch("/cycles/:id", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const b = req.body;
-  const current = await pool.query("SELECT id,status,tracking_start_date::text AS tracking_start_date,(SELECT COUNT(*) FROM fund_payments WHERE cycle_id=fund_cycles.id AND status='POSTED')::int AS posted_payments FROM fund_cycles WHERE id=$1", [id]);
-  if (!current.rows[0]) return res.status(404).json({ error: "Cycle not found" });
-  if (current.rows[0].status === "COMPLETED") return res.status(409).json({ error: "Completed cycles are locked and cannot be edited" });
-  const requestedStatus = b.status ?? current.rows[0].status;
-  if (!["ACTIVE", "COMPLETED"].includes(requestedStatus)) return res.status(400).json({ error: "Invalid cycle status" });
-  if (b.trackingStartDate !== undefined && !isIsoDate(b.trackingStartDate)) return res.status(400).json({ error: "Tracking start date must be YYYY-MM-DD" });
-  if (current.rows[0].posted_payments > 0 && b.trackingStartDate && b.trackingStartDate !== current.rows[0].tracking_start_date) {
-    return res.status(409).json({ error: "Tracking start date cannot change after payments are posted" });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const current = await client.query(`SELECT id,name,end_date::text AS end_date,tracking_start_date::text AS tracking_start_date,
+        daily_per_share::float AS daily_per_share,draw_frequency,draw_day,status,notes,
+        (SELECT COUNT(*) FROM fund_payments WHERE cycle_id=fund_cycles.id AND status='POSTED')::int AS posted_payments
+        FROM fund_cycles WHERE id=$1 FOR UPDATE`, [id]);
+    if (!current.rows[0]) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Cycle not found" });
+    }
+    if (current.rows[0].status === "COMPLETED") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Completed cycles are locked and cannot be edited" });
+    }
+    const requestedStatus = b.status ?? current.rows[0].status;
+    if (!["ACTIVE", "COMPLETED"].includes(requestedStatus)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Invalid cycle status" });
+    }
+    if (b.trackingStartDate !== undefined && !isIsoDate(b.trackingStartDate)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Tracking start date must be YYYY-MM-DD" });
+    }
+    if (current.rows[0].posted_payments > 0 && b.trackingStartDate && b.trackingStartDate !== current.rows[0].tracking_start_date) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Tracking start date cannot change after payments are posted" });
+    }
+    const result = await client.query(`UPDATE fund_cycles SET name=COALESCE($2,name),end_date=COALESCE($3,end_date),
+      tracking_start_date=COALESCE($4,tracking_start_date),daily_per_share=COALESCE($5,daily_per_share),status=$6,notes=COALESCE($7,notes)
+      WHERE id=$1 RETURNING id,cycle_number AS "cycleNumber",name,start_date::text AS "startDate",end_date::text AS "endDate",
+      tracking_start_date::text AS "trackingStartDate",daily_per_share::float AS "dailyPerShare",draw_frequency AS "drawFrequency",draw_day AS "drawDay",status,notes,created_at AS "createdAt"`,
+      [id,b.name ?? null,b.endDate ?? null,b.trackingStartDate ?? null,b.dailyPerShare ? Number(b.dailyPerShare) : null,requestedStatus,b.notes ?? null]);
+    await auditOn(client, req.user!.id, "CYCLE_UPDATED", `Updated ${result.rows[0].name}`, "cycle", String(id), {
+      cycleId: id,
+      reason: b.reason ?? b.notes ?? "Cycle configuration update",
+      beforeValue: {
+        name: current.rows[0].name,
+        endDate: current.rows[0].end_date,
+        trackingStartDate: current.rows[0].tracking_start_date,
+        dailyPerShare: current.rows[0].daily_per_share,
+        drawFrequency: current.rows[0].draw_frequency,
+        drawDay: current.rows[0].draw_day,
+        status: current.rows[0].status,
+        notes: current.rows[0].notes,
+      },
+      afterValue: {
+        name: result.rows[0].name,
+        endDate: result.rows[0].endDate,
+        trackingStartDate: result.rows[0].trackingStartDate,
+        dailyPerShare: result.rows[0].dailyPerShare,
+        drawFrequency: result.rows[0].drawFrequency,
+        drawDay: result.rows[0].drawDay,
+        status: result.rows[0].status,
+        notes: result.rows[0].notes,
+      },
+    });
+    await client.query("COMMIT");
+    return res.json(result.rows[0]);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    req.log.error({ error }, "Cycle update failed");
+    return res.status(409).json({ error: "Cycle could not be updated" });
+  } finally {
+    client.release();
   }
-  const result = await pool.query(`UPDATE fund_cycles SET name=COALESCE($2,name),end_date=COALESCE($3,end_date),
-    tracking_start_date=COALESCE($4,tracking_start_date),daily_per_share=COALESCE($5,daily_per_share),status=$6,notes=COALESCE($7,notes)
-    WHERE id=$1 RETURNING id,cycle_number AS "cycleNumber",name,start_date::text AS "startDate",end_date::text AS "endDate",
-    tracking_start_date::text AS "trackingStartDate",daily_per_share::float AS "dailyPerShare",draw_frequency AS "drawFrequency",draw_day AS "drawDay",status,notes,created_at AS "createdAt"`,
-    [id,b.name ?? null,b.endDate ?? null,b.trackingStartDate ?? null,b.dailyPerShare ? Number(b.dailyPerShare) : null,requestedStatus,b.notes ?? null]);
-  await audit(req.user!.id, "CYCLE_UPDATED", `Updated ${result.rows[0].name}`, "cycle", String(id));
-  return res.json(result.rows[0]);
 });
 router.get("/cycles/:id/members", requireAuth, async (req: AuthedRequest, res) => {
   const params: unknown[] = [Number(req.params.id)];
@@ -446,12 +562,20 @@ router.post("/cycles/:id/members", requireAuth, ownerOnly, async (req: AuthedReq
       RETURNING id,cycle_id AS "cycleId",member_id AS "memberId",shares,daily_contribution::float AS "dailyContribution"`,
       [cycleId,memberId,shares,shares * money(cycle.rows[0].per_share)]);
     if (previousShares !== shares) {
-      await client.query(
+      const shareHistory = await client.query(
         `INSERT INTO fund_cycle_member_share_history(cycle_id,member_id,previous_shares,new_shares,effective_date,reason,changed_by)
-         VALUES($1,$2,$3,$4,$5,$6,$7)`,
+         VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
         [cycleId, memberId, previousShares, shares, effectiveDate, reason, req.user!.id],
       );
-      await auditOn(client, req.user!.id, "CYCLE_MEMBER_UPDATED", `${memberId}: ${previousShares} → ${shares} shares; ${reason}`, "cycle_member", String(result.rows[0].id));
+       await auditOn(client, req.user!.id, "CYCLE_MEMBER_UPDATED", `${memberId}: ${previousShares} → ${shares} shares; ${reason}`, "cycle_member", String(result.rows[0].id), {
+         memberId,
+         cycleId,
+         relatedTransactionId: shareHistory.rows[0].id,
+         reason,
+         effectiveDate,
+         beforeValue: { shares: previousShares },
+         afterValue: { shares },
+       });
     }
     await client.query("COMMIT");
     return res.status(201).json(result.rows[0]);
@@ -494,11 +618,24 @@ router.post("/due-entries", requireAuth, ownerOnly, async (req: AuthedRequest, r
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "Member is not enrolled in an active cycle" });
     }
+    const dueBefore = await client.query(
+      `SELECT GREATEST(COALESCE((SELECT SUM(de.amount) FROM fund_due_entries de WHERE de.cycle_id=$1 AND de.member_id=$2),0)
+        - COALESCE((SELECT SUM(pp.previous_due_applied) FROM fund_payments pp WHERE pp.cycle_id=$1 AND pp.member_id=$2 AND pp.status='POSTED'),0),0)::float AS "previousDue"`,
+      [cycleId, memberId],
+    );
+    const previousDueBefore = money(dueBefore.rows[0]?.previousDue);
     const entry = await client.query(`INSERT INTO fund_due_entries(cycle_id,member_id,amount,due_date,reason,idempotency_key,created_by)
       VALUES($1,$2,$3,$4,$5,$6,$7)
       RETURNING id,cycle_id AS "cycleId",member_id AS "memberId",amount::float,due_date::text AS "dueDate",reason,created_at AS "createdAt"`,
       [cycleId, memberId, amount, dueDate, reason, idempotencyKey, req.user!.id]);
-    await auditOn(client, req.user!.id, "DUE_ENTRY_CREATED", `Member ${memberId}: BDT ${amount}; ${reason}`, "due_entry", String(entry.rows[0].id));
+    await auditOn(client, req.user!.id, "DUE_ENTRY_CREATED", `Member ${memberId}: BDT ${amount}; ${reason}`, "due_entry", String(entry.rows[0].id), {
+      memberId,
+      cycleId,
+      reason,
+      effectiveDate: dueDate,
+      beforeValue: { previousDue: previousDueBefore },
+      afterValue: { previousDue: roundMoney(previousDueBefore + amount), amount, dueDate },
+    });
     await client.query("COMMIT");
     return res.status(201).json(entry.rows[0]);
   } catch (error) {
@@ -678,6 +815,7 @@ router.post("/share-transfers", requireAuth, ownerOnly, async (req: AuthedReques
       );
     }
     const sourceShares = Number(sourceMembership.shares);
+    const receiverBeforeShares = Number(memberships.rows.find((membership) => Number(membership.member_id) === toMemberId)?.shares ?? 0);
     if (quantity > sourceShares) {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "Transfer quantity cannot exceed the source member's available shares", currentShares: sourceShares });
@@ -726,8 +864,8 @@ router.post("/share-transfers", requireAuth, ownerOnly, async (req: AuthedReques
        VALUES($1,$2,$3,$4,$5,$6,$7,$8),($1,$9,$10,$11,$5,$12,$7,$8)`,
       [
         cycleId, fromMemberId, sourceShares, sourceShares - quantity, transferDate, "Share transfer out", transfer.rows[0].id, req.user!.id,
-        toMemberId, Number(memberships.rows.find((membership) => Number(membership.member_id) === toMemberId)?.shares ?? 0),
-        Number(memberships.rows.find((membership) => Number(membership.member_id) === toMemberId)?.shares ?? 0) + quantity, "Share transfer in",
+         toMemberId, receiverBeforeShares,
+         receiverBeforeShares + quantity, "Share transfer in",
       ],
     );
     if (settlementAmount !== null) {
@@ -737,11 +875,37 @@ router.post("/share-transfers", requireAuth, ownerOnly, async (req: AuthedReques
         [transfer.rows[0].id,cycleId,settlementAmount,req.user!.id,String(b.settlementNotes ?? b.settlementNote ?? ""),idempotencyKey ? `${idempotencyKey}:settlement` : null],
       );
     }
-    await client.query(
-      "INSERT INTO fund_audit(actor_id,action,detail,entity_type,entity_id) VALUES($1,$2,$3,'share_transfer',$4)",
-      [req.user!.id,overrideWinner ? "SHARE_TRANSFER_OVERRIDE" : "SHARE_TRANSFER_CREATED",
-        `${transferId}: ${quantity} shares from member ${fromMemberId} to ${toMemberId}; accumulated value BDT ${transferredValue}`,
-        String(transfer.rows[0].id)],
+    const transferKind = quantity === sourceShares ? "FULL" : "PARTIAL";
+    await auditOn(
+      client,
+      req.user!.id,
+      overrideWinner ? "SHARE_TRANSFER_OVERRIDE" : "SHARE_TRANSFER_CREATED",
+      `${transferId}: ${quantity} shares from member ${fromMemberId} to ${toMemberId}; accumulated value BDT ${transferredValue}`,
+      "share_transfer",
+      String(transfer.rows[0].id),
+      {
+        memberId: fromMemberId,
+        cycleId,
+        relatedTransactionId: transferId,
+        reason: String(b.notes ?? `Share transfer ${transferKind.toLowerCase()}`).trim(),
+        effectiveDate: transferDate,
+        beforeValue: {
+          transferKind,
+          fromMemberId,
+          fromShares: sourceShares,
+          toMemberId,
+          toShares: receiverBeforeShares,
+        },
+        afterValue: {
+          transferKind,
+          fromMemberId,
+          fromShares: sourceShares - quantity,
+          toMemberId,
+          toShares: receiverBeforeShares + quantity,
+          sharesTransferred: quantity,
+          accumulatedValue: transferredValue,
+        },
+      },
     );
     await client.query("COMMIT");
     const result = await pool.query(`${transferSelect} WHERE t.id=$1`, [transfer.rows[0].id]);
@@ -777,7 +941,7 @@ router.post("/share-transfers/:id/settlement", requireAuth, ownerOnly, async (re
       }
     }
     const transfer = await client.query(
-      `SELECT t.id,t.cycle_id,c.status,c.tracking_start_date::text AS tracking_start_date
+      `SELECT t.id,t.transfer_id,t.cycle_id,t.from_member_id,t.to_member_id,c.status,c.tracking_start_date::text AS tracking_start_date
          FROM fund_share_transfers t JOIN fund_cycles c ON c.id=t.cycle_id
         WHERE t.id=$1 FOR UPDATE`,
       [transferId],
@@ -804,7 +968,21 @@ router.post("/share-transfers/:id/settlement", requireAuth, ownerOnly, async (re
        VALUES($1,$2,$3,'APPROVED',$4,now(),$5,$6) RETURNING id`,
       [transferId,transfer.rows[0].cycle_id,amount,req.user!.id,String(req.body.notes ?? ""),idempotencyKey],
     );
-    await auditOn(client, req.user!.id, "TRANSFER_SETTLEMENT_APPROVED", `Transfer ${transferId}: BDT ${amount}`, "transfer_settlement", String(settlement.rows[0].id));
+    await auditOn(client, req.user!.id, "TRANSFER_SETTLEMENT_APPROVED", `Transfer ${transferId}: BDT ${amount}`, "transfer_settlement", String(settlement.rows[0].id), {
+      memberId: transfer.rows[0].from_member_id,
+      cycleId: transfer.rows[0].cycle_id,
+      relatedTransactionId: transfer.rows[0].transfer_id,
+      reason: String(req.body.notes ?? "Transfer settlement approved").trim(),
+      beforeValue: { settlement: null, transferId: transfer.rows[0].transfer_id },
+      afterValue: {
+        settlementId: settlement.rows[0].id,
+        transferId: transfer.rows[0].transfer_id,
+        amount,
+        status: "APPROVED",
+        fromMemberId: transfer.rows[0].from_member_id,
+        toMemberId: transfer.rows[0].to_member_id,
+      },
+    });
     await client.query("COMMIT");
     const result = await pool.query(`${transferSelect} WHERE t.id=$1`, [transferId]);
     return res.status(201).json(result.rows[0]);
@@ -1027,7 +1205,30 @@ router.post("/payments/:id/reverse", requireAuth, ownerOnly, async (req: AuthedR
         VALUES($1,$2,$3,$4,$5,$6,$7,'OWNER REVERSAL','REVERSAL',$8,$9,$10,$11)
         RETURNING id,receipt_id AS "receiptId",member_id AS "memberId",cycle_id AS "cycleId",amount::float,verification_status AS "verificationStatus",created_at AS "createdAt",status`,
       [`REV-${o.receipt_id}`,o.member_id,o.cycle_id,o.collection_date,o.shares,o.amount,o.collector_id,o.id,reason,o.previous_due_applied ?? 0,o.current_period_applied ?? 0]);
-    await auditOn(client, req.user!.id, "PAYMENT_REVERSED", `${o.receipt_id}: ${reason}`, "payment", String(o.id));
+    await auditOn(client, req.user!.id, "PAYMENT_REVERSED", `${o.receipt_id}: ${reason}`, "payment", String(o.id), {
+      memberId: o.member_id,
+      cycleId: o.cycle_id,
+      relatedTransactionId: o.receipt_id,
+      reason,
+      effectiveDate: String(o.collection_date),
+      beforeValue: {
+        paymentId: o.id,
+        receiptId: o.receipt_id,
+        status: o.status,
+        amount: money(o.amount),
+        previousDueApplied: money(o.previous_due_applied),
+        currentPeriodApplied: money(o.current_period_applied),
+      },
+      afterValue: {
+        reversalPaymentId: r.rows[0].id,
+        receiptId: r.rows[0].receiptId,
+        originalStatus: "REVERSED",
+        reversalStatus: r.rows[0].status,
+        amount: money(r.rows[0].amount),
+        previousDueApplied: money(o.previous_due_applied),
+        currentPeriodApplied: money(o.current_period_applied),
+      },
+    });
     const names = await client.query("SELECT m.name AS member,u.name AS collector FROM fund_members m,fund_users u WHERE m.id=$1 AND u.id=$2", [o.member_id,o.collector_id]);
     await client.query("COMMIT");
     return res.json({ ...r.rows[0], memberName: names.rows[0].member, collectorName: names.rows[0].collector });
@@ -1077,7 +1278,17 @@ router.post("/settlements", requireAuth, async (req: AuthedRequest,res)=>{
       return res.status(409).json({error:"Owner must set the digital tracking start date before recording settlements"});
     }
      const r=await client.query(`INSERT INTO fund_settlements(collector_id,cycle_id,amount,reference,note,idempotency_key) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,cycle_id AS "cycleId",amount::float,reference,created_at AS "createdAt"`,[req.user!.id,activeCycle.rows[0].id,settlementAmount,reference,b.note??"",idempotencyKey]);
-     await auditOn(client, req.user!.id,"SETTLEMENT_CREATED",`${reference}: BDT ${settlementAmount}`,"settlement",String(r.rows[0].id));
+      await auditOn(client, req.user!.id,"SETTLEMENT_CREATED",`${reference}: BDT ${settlementAmount}`,"settlement",String(r.rows[0].id), {
+        cycleId: activeCycle.rows[0].id,
+        relatedTransactionId: reference,
+        reason: String(b.note ?? "Collector settlement created").trim(),
+        afterValue: {
+          settlementId: r.rows[0].id,
+          amount: settlementAmount,
+          reference,
+          status: "RECORDED",
+        },
+      });
     await client.query("COMMIT");
     return res.status(201).json({...r.rows[0],collectorName:req.user!.name});
   } catch (error) {
@@ -1107,7 +1318,10 @@ router.patch("/collectors/:id",requireAuth,ownerOnly,async(req:AuthedRequest,res
   await audit(req.user!.id,"COLLECTOR_UPDATED",`Updated collector ${current.rows[0].username}`,"user",String(id));
   return res.json(r.rows[0]);
 });
-router.get("/audit",requireAuth,ownerOnly,async(_req,res)=>{const r=await pool.query(`SELECT a.id,COALESCE(u.name,'System') actor,a.action,a.detail,a.created_at AS "createdAt" FROM fund_audit a LEFT JOIN fund_users u ON u.id=a.actor_id ORDER BY a.created_at DESC LIMIT 300`);res.json(r.rows);});
+router.get("/audit",requireAuth,ownerOnly,async(_req,res)=>{const r=await pool.query(`SELECT a.id,COALESCE(u.name,'System') actor,a.action,a.detail,a.entity_type AS "entityType",a.entity_id AS "entityId",
+  a.member_id AS "memberId",a.cycle_id AS "cycleId",a.related_transaction_id AS "relatedTransactionId",a.reason,a.effective_date::text AS "effectiveDate",
+  a.before_value AS "beforeValue",a.after_value AS "afterValue",a.created_at AS "createdAt"
+  FROM fund_audit a LEFT JOIN fund_users u ON u.id=a.actor_id ORDER BY a.created_at DESC LIMIT 300`);res.json(r.rows);});
 router.get("/settings",requireAuth,async(_req,res)=>{const r=await pool.query(`SELECT organization_name AS "organizationName",expected_members AS "expectedMembers",default_daily_per_share::float AS "defaultDailyPerShare",demo_mode AS "demoMode",biometric_optional AS "biometricOptional" FROM fund_settings WHERE id=1`);res.json(r.rows[0]);});
 router.patch("/settings",requireAuth,ownerOnly,async(req:AuthedRequest,res)=>{const b=req.body;const r=await pool.query(`UPDATE fund_settings SET organization_name=COALESCE($1,organization_name),expected_members=COALESCE($2,expected_members),default_daily_per_share=COALESCE($3,default_daily_per_share) WHERE id=1 RETURNING organization_name AS "organizationName",expected_members AS "expectedMembers",default_daily_per_share::float AS "defaultDailyPerShare",demo_mode AS "demoMode",biometric_optional AS "biometricOptional"`,[b.organizationName??null,b.expectedMembers??null,b.defaultDailyPerShare??null]);await audit(req.user!.id,"SETTINGS_UPDATED","Business settings updated");res.json(r.rows[0]);});
 
@@ -1159,7 +1373,10 @@ router.get("/dashboard",requireAuth,async(req:AuthedRequest,res)=>{
         WHERE ${readySql} AND m.status='active' GROUP BY m.id,cm.id
         HAVING COALESCE(SUM(p.amount),0)<cm.daily_contribution ORDER BY m.member_id LIMIT 20`),
       pool.query(`SELECT p.id,p.receipt_id AS "receiptId",p.member_id AS "memberId",m.name AS "memberName",p.amount::float,u.name AS "collectorName",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id WHERE p.cycle_id=${activeCycleId} ORDER BY p.created_at DESC LIMIT 8`),
-      pool.query(`SELECT a.id,COALESCE(u.name,'System') actor,a.action,a.detail,a.created_at AS "createdAt" FROM fund_audit a LEFT JOIN fund_users u ON u.id=a.actor_id ORDER BY a.created_at DESC LIMIT 8`),
+       pool.query(`SELECT a.id,COALESCE(u.name,'System') actor,a.action,a.detail,a.entity_type AS "entityType",a.entity_id AS "entityId",
+         a.member_id AS "memberId",a.cycle_id AS "cycleId",a.related_transaction_id AS "relatedTransactionId",a.reason,a.effective_date::text AS "effectiveDate",
+         a.before_value AS "beforeValue",a.after_value AS "afterValue",a.created_at AS "createdAt"
+         FROM fund_audit a LEFT JOIN fund_users u ON u.id=a.actor_id ORDER BY a.created_at DESC LIMIT 8`),
       pool.query(`SELECT
         COALESCE(SUM(GREATEST(COALESCE((SELECT SUM(de.amount) FROM fund_due_entries de WHERE de.cycle_id=cm.cycle_id AND de.member_id=cm.member_id),0)
           - COALESCE((SELECT SUM(pp.previous_due_applied) FROM fund_payments pp WHERE pp.cycle_id=cm.cycle_id AND pp.member_id=cm.member_id AND pp.status='POSTED'),0),0)),0)::float AS "previousDue",
@@ -1209,11 +1426,12 @@ router.get("/reports/export", requireAuth, ownerOnly, async (req, res) => {
 
   if (type === "audit") {
     const r = await pool.query(`SELECT a.id,a.created_at,COALESCE(u.name,'System') AS actor,
-      COALESCE(u.role,'SYSTEM') AS role,a.action,a.entity_type,a.entity_id,a.detail
+      COALESCE(u.role,'SYSTEM') AS role,a.action,a.entity_type,a.entity_id,a.member_id,a.cycle_id,a.related_transaction_id,
+      a.reason,a.effective_date,a.before_value,a.after_value,a.detail
       FROM fund_audit a LEFT JOIN fund_users u ON u.id=a.actor_id
       ORDER BY a.created_at DESC`);
-    return sendCsv(res, "audit-backup", ["Audit ID", "Timestamp", "User", "Role", "Action", "Entity Type", "Entity ID", "Details"],
-      r.rows.map((x) => [x.id, x.created_at, x.actor, x.role, x.action, x.entity_type, x.entity_id, x.detail]));
+    return sendCsv(res, "audit-backup", ["Audit ID", "Timestamp", "User", "Role", "Action", "Entity Type", "Entity ID", "Member ID", "Cycle ID", "Related Transaction ID", "Reason", "Effective Date", "Before", "After", "Details"],
+      r.rows.map((x) => [x.id, x.created_at, x.actor, x.role, x.action, x.entity_type, x.entity_id, x.member_id, x.cycle_id, x.related_transaction_id, x.reason, x.effective_date, x.before_value, x.after_value, x.detail]));
   }
 
   if (type === "due") {

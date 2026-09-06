@@ -3,6 +3,13 @@
 ALTER TABLE fund_members ADD COLUMN IF NOT EXISTS notes text NOT NULL DEFAULT '';
 ALTER TABLE fund_members ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
 ALTER TABLE fund_members ADD COLUMN IF NOT EXISTS nid text;
+ALTER TABLE fund_audit ADD COLUMN IF NOT EXISTS member_id integer;
+ALTER TABLE fund_audit ADD COLUMN IF NOT EXISTS cycle_id integer;
+ALTER TABLE fund_audit ADD COLUMN IF NOT EXISTS related_transaction_id text;
+ALTER TABLE fund_audit ADD COLUMN IF NOT EXISTS reason text;
+ALTER TABLE fund_audit ADD COLUMN IF NOT EXISTS effective_date date;
+ALTER TABLE fund_audit ADD COLUMN IF NOT EXISTS before_value jsonb;
+ALTER TABLE fund_audit ADD COLUMN IF NOT EXISTS after_value jsonb;
 ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS cycle_id integer;
 ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS collection_date date NOT NULL DEFAULT CURRENT_DATE;
 ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS shares integer NOT NULL DEFAULT 1;

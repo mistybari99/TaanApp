@@ -462,6 +462,15 @@ export interface AuditEntry {
   actor: string;
   action: string;
   detail: string;
+  entityType?: string | null;
+  entityId?: string | null;
+  memberId?: number | null;
+  cycleId?: number | null;
+  relatedTransactionId?: string | null;
+  reason?: string | null;
+  effectiveDate?: string | null;
+  beforeValue?: Record<string, unknown> | null;
+  afterValue?: Record<string, unknown> | null;
   createdAt: string;
 }
 
