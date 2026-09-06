@@ -1,0 +1,99 @@
+TASK — CSV IMPORT WITH MISSING MOBILE SUPPORT
+
+Do NOT import the real CSV yet until this change is complete.
+Do NOT create Cycle #02.
+Do NOT modify or delete any genuine financial data.
+
+Requirement:
+
+The current real member CSV contains only:
+- Member Name
+- Share quantity
+
+Allow the selected active cycle's CSV import to create/update members even when Mobile is blank/missing.
+
+Rules:
+
+1. CSV import must allow:
+   - Name = required
+   - Share = required
+   - Mobile = optional during initial CSV import
+
+2. If Mobile is blank in the CSV:
+   - Keep mobile as NULL/blank.
+   - Do not reject the row only because Mobile is missing.
+
+3. Existing member records with missing Mobile must be editable later so staff can add the Mobile number.
+
+4. Manual NEW member creation should continue to require Mobile.
+
+5. Existing member editing:
+   - Mobile can be added later.
+   - NID remains optional.
+   - Business Name remains optional.
+   - Note remains optional.
+
+6. Preserve all existing validation:
+   - Duplicate Member ID protection
+   - Duplicate Mobile protection when a Mobile exists
+   - Ambiguous CSV matching must still reject
+   - Invalid share values must still reject
+   - Selected active cycle isolation must remain intact
+
+7. Do NOT change:
+   - Payment logic
+   - Due logic
+   - Draw logic
+   - Share transfer logic
+   - Settlement logic
+   - Audit logic
+   - Cycle logic
+
+8. CSV preview must clearly show:
+   - Valid rows
+   - Name
+   - Shares
+   - Mobile = Missing/Not provided where applicable
+   - Existing-member match where applicable
+
+9. CSV commit must remain transactional.
+
+10. Add/update focused regression tests for:
+   - Name + Share CSV with no Mobile → PASS
+   - Existing member with missing Mobile → can be edited later
+   - Manual new member without Mobile → REJECT
+   - Duplicate Mobile → REJECT
+   - Existing CSV matching ambiguity → REJECT
+
+11. Run:
+   - API typecheck
+   - Frontend typecheck
+   - Relevant tests
+   - API build
+   - Web build
+   - Final database invariant check
+
+12. Use synthetic data only for testing and clean it completely afterward.
+
+FINAL DATABASE MUST REMAIN:
+
+Cycle #01 = ACTIVE
+Tracking start = NULL
+Members = 0
+Payments = 0
+Settlements = 0
+Draws = 0
+Transfers = 0
+Transfer settlements = 0
+Due entries = 0
+Cycle #02 = does not exist
+
+STOP after this task.
+
+Final response must report:
+- What was changed
+- Tests passed/failed
+- Build status
+- Confirmation that no real CSV was imported
+- Confirmation that no genuine data was modified
+- Final database counts
