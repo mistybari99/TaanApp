@@ -1,0 +1,19 @@
+{
+  "name": "ISLAMIYA Revolving Fund",
+  "short_name": "ISLAMIYA Fund",
+  "description": "Member daily collection, receipt and settlement management",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8f5f5",
+  "theme_color": "#74142d",
+  "lang": "bn",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

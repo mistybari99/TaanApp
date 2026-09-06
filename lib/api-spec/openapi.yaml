@@ -1,36 +1,247 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
-  version: 0.1.0
-  description: API specification
+  version: 1.0.0
+  description: ISLAMIYA Revolving Fund API
 servers:
   - url: /api
-    description: Base API path
-tags:
-  - name: health
-    description: Health operations
 paths:
   /healthz:
     get:
       operationId: healthCheck
-      tags: [health]
-      summary: Health check
-      description: Returns server health status
       responses:
         "200":
-          description: Healthy
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HealthStatus"
+          description: OK
+          content: { application/json: { schema: { $ref: "#/components/schemas/HealthStatus" } } }
+  /auth/login:
+    post:
+      operationId: login
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/LoginInput" } } }
+      responses:
+        "200": { description: Signed in, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      responses:
+        "200": { description: Current user, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
+  /auth/logout:
+    post:
+      operationId: logout
+      responses:
+        "204": { description: Signed out }
+  /dashboard:
+    get:
+      operationId: getDashboard
+      responses:
+        "200": { description: Owner dashboard, content: { application/json: { schema: { $ref: "#/components/schemas/Dashboard" } } } }
+  /members:
+    get:
+      operationId: listMembers
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Members, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Member" } } } } }
+    post:
+      operationId: createMember
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MemberInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Member" } } } }
+  /payments:
+    get:
+      operationId: listPayments
+      responses:
+        "200": { description: Payments, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Payment" } } } } }
+    post:
+      operationId: createPayment
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PaymentInput" } } }
+      responses:
+        "201": { description: Posted, content: { application/json: { schema: { $ref: "#/components/schemas/Payment" } } } }
+        "409": { description: Duplicate warning }
+  /payments/{id}/reverse:
+    post:
+      operationId: reversePayment
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ReversalInput" } } }
+      responses:
+        "200": { description: Reversed, content: { application/json: { schema: { $ref: "#/components/schemas/Payment" } } } }
+  /settlements:
+    get:
+      operationId: listSettlements
+      responses:
+        "200": { description: Settlements, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Settlement" } } } } }
+    post:
+      operationId: createSettlement
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SettlementInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Settlement" } } } }
+  /collectors:
+    get:
+      operationId: listCollectors
+      responses:
+        "200": { description: Collectors, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/User" } } } } }
+  /audit:
+    get:
+      operationId: listAudit
+      responses:
+        "200": { description: Audit, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AuditEntry" } } } } }
+  /settings:
+    get:
+      operationId: getSettings
+      responses:
+        "200": { description: Settings, content: { application/json: { schema: { $ref: "#/components/schemas/Settings" } } } }
+    patch:
+      operationId: updateSettings
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SettingsInput" } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Settings" } } } }
+  /reports/export:
+    get:
+      operationId: exportReport
+      parameters:
+        - { name: type, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: CSV, content: { text/csv: { schema: { type: string } } } }
 components:
   schemas:
     HealthStatus:
       type: object
+      required: [status, database, serverTime]
       properties:
-        status:
-          type: string
-      required:
-        - status
-
+        status: { type: string }
+        database: { type: string }
+        serverTime: { type: string }
+    LoginInput:
+      type: object
+      required: [username, password]
+      properties: { username: { type: string }, password: { type: string } }
+    User:
+      type: object
+      required: [id, name, username, role]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        username: { type: string }
+        role: { type: string, enum: [OWNER, COLLECTOR] }
+    Member:
+      type: object
+      required: [id, memberId, name, mobile, shares, dailyAmount, joiningDate, status, todayPaid, todayDue]
+      properties:
+        id: { type: integer }
+        memberId: { type: string }
+        name: { type: string }
+        mobile: { type: string }
+        address: { type: string }
+        shares: { type: integer }
+        dailyAmount: { type: number }
+        joiningDate: { type: string }
+        status: { type: string, enum: [active, inactive] }
+        todayPaid: { type: number }
+        todayDue: { type: number }
+    MemberInput:
+      type: object
+      required: [memberId, name, mobile, shares, dailyAmount, joiningDate, status]
+      properties:
+        memberId: { type: string }
+        name: { type: string }
+        mobile: { type: string }
+        address: { type: string }
+        shares: { type: integer }
+        dailyAmount: { type: number }
+        joiningDate: { type: string }
+        status: { type: string }
+    Payment:
+      type: object
+      required: [id, receiptId, memberId, memberName, amount, collectorName, verificationStatus, createdAt, status]
+      properties:
+        id: { type: integer }
+        receiptId: { type: string }
+        memberId: { type: integer }
+        memberName: { type: string }
+        amount: { type: number }
+        collectorName: { type: string }
+        verificationStatus: { type: string }
+        createdAt: { type: string }
+        status: { type: string }
+    PaymentInput:
+      type: object
+      required: [memberId, amount, verificationMethod, confirmDuplicate]
+      properties:
+        memberId: { type: integer }
+        amount: { type: number }
+        verificationMethod: { type: string, enum: [PIN, COLLECTOR_CONFIRMATION] }
+        verificationCode: { type: string }
+        confirmDuplicate: { type: boolean }
+    ReversalInput:
+      type: object
+      required: [reason]
+      properties: { reason: { type: string } }
+    Settlement:
+      type: object
+      required: [id, amount, collectorName, reference, createdAt]
+      properties:
+        id: { type: integer }
+        amount: { type: number }
+        collectorName: { type: string }
+        reference: { type: string }
+        createdAt: { type: string }
+    SettlementInput:
+      type: object
+      required: [amount, reference]
+      properties: { amount: { type: number }, reference: { type: string }, note: { type: string } }
+    AuditEntry:
+      type: object
+      required: [id, actor, action, detail, createdAt]
+      properties:
+        id: { type: integer }
+        actor: { type: string }
+        action: { type: string }
+        detail: { type: string }
+        createdAt: { type: string }
+    CollectorPerformance:
+      type: object
+      required: [name, collected, payments, cash]
+      properties: { name: { type: string }, collected: { type: number }, payments: { type: integer }, cash: { type: number } }
+    Dashboard:
+      type: object
+      required: [totalMembers, todayTarget, collected, due, collectorCash, officeDeposits, unsettledCash, paymentCount, performances, dueMembers, recentPayments, audit]
+      properties:
+        totalMembers: { type: integer }
+        todayTarget: { type: number }
+        collected: { type: number }
+        due: { type: number }
+        collectorCash: { type: number }
+        officeDeposits: { type: number }
+        unsettledCash: { type: number }
+        paymentCount: { type: integer }
+        performances: { type: array, items: { $ref: "#/components/schemas/CollectorPerformance" } }
+        dueMembers: { type: array, items: { $ref: "#/components/schemas/Member" } }
+        recentPayments: { type: array, items: { $ref: "#/components/schemas/Payment" } }
+        audit: { type: array, items: { $ref: "#/components/schemas/AuditEntry" } }
+    Settings:
+      type: object
+      required: [organizationName, expectedMembers, defaultDailyPerShare, demoMode, biometricOptional]
+      properties:
+        organizationName: { type: string }
+        expectedMembers: { type: integer }
+        defaultDailyPerShare: { type: number }
+        demoMode: { type: boolean }
+        biometricOptional: { type: boolean }
+    SettingsInput:
+      type: object
+      properties:
+        organizationName: { type: string }
+        expectedMembers: { type: integer }
+        defaultDailyPerShare: { type: number }

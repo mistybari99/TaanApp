@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "ISLAMIYA Revolving Fund"
+description = "A production-oriented mobile-first PWA for member-based daily collections, with owner and collector roles, central synchronized records, member management, immutable payment audit trails, settlements, receipts, reporting, and offline-aware Android usability."
+version = "1.0.0"
+id = "artifacts/islamiya-fund"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19899
+
+[services.development]
+run = "pnpm --filter @workspace/islamiya-fund run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/islamiya-fund", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/islamiya-fund/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19899"
+BASE_PATH = "/"
