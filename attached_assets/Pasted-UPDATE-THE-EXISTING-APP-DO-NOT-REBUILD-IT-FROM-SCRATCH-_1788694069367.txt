@@ -1,0 +1,361 @@
+UPDATE THE EXISTING APP — DO NOT REBUILD IT FROM SCRATCH.
+
+Project: ISLAMIYA Revolving Fund
+
+IMPORTANT:
+- Preserve all existing working features.
+- Do not redesign the whole UI.
+- Do not change the existing tech stack unless absolutely necessary.
+- Do not delete existing data.
+- Do not create unnecessary complex features.
+- Keep the implementation lightweight and suitable for the current Free usage environment.
+- Before changing anything, inspect the existing database/schema, routes, components and current collection workflow.
+- Reuse the existing architecture wherever possible.
+
+GOAL:
+Convert the current fixed-member collection system into a lightweight Cycle-based Revolving Fund system.
+
+==================================================
+1. MEMBER MANAGEMENT
+==================================================
+
+Create/maintain a permanent Members database.
+
+Each member should have at minimum:
+
+- Member ID (unique, permanent)
+- Name
+- Phone (optional)
+- Status: Active / Inactive
+- Created date
+- Notes (optional)
+
+IMPORTANT:
+A member must NEVER be deleted permanently if they have historical transactions.
+
+If a member leaves:
+- Change status to Inactive.
+- Preserve all previous collection and draw history.
+
+If a new person joins:
+- Add a new member.
+- Give them a new permanent Member ID.
+
+The system must NOT be limited to the current 31 or 108 members.
+
+==================================================
+2. FUND / CYCLE SYSTEM
+==================================================
+
+Create a lightweight "Fund Cycle" concept.
+
+Each cycle should have:
+
+- Cycle ID
+- Cycle name/number
+- Start date
+- End date (optional)
+- Daily contribution per share = ৳100
+- Draw frequency = Weekly
+- Draw day = Friday
+- Status: Active / Completed
+
+Example:
+
+Cycle #01
+Start: 28/03/2026
+Daily contribution: ৳100/share
+Draw: Every Friday
+
+When one cycle ends, create a new cycle.
+
+A new cycle can have:
+- Existing members
+- New members
+- Members who left the previous cycle excluded
+
+Do NOT mix transactions between different cycles.
+
+==================================================
+3. CYCLE MEMBERS
+==================================================
+
+For each cycle, maintain which members participate.
+
+Each cycle-member record should contain:
+
+- Cycle
+- Member
+- Number of shares
+- Daily contribution
+
+Daily contribution should automatically calculate:
+
+shares × ৳100
+
+Example:
+1 share = ৳100/day
+2 shares = ৳200/day
+5 shares = ৳500/day
+
+A member's share count may be different in a different cycle.
+
+Do NOT modify old cycle records when a member's shares change in a new cycle.
+
+==================================================
+4. DAILY COLLECTION
+==================================================
+
+Keep the existing collection workflow if it already exists.
+
+For every collection record store:
+
+- Cycle
+- Member
+- Collection date
+- Amount
+- Number of shares
+- Collector/staff name or ID
+- Verification status
+- Notes
+
+IMPORTANT:
+The system must support flexible payment.
+
+Example:
+A member owes 3 days × ৳100 = ৳300 and pays all three days together.
+
+The system should allow recording ৳300 as a collection while maintaining an accurate outstanding/balance calculation.
+
+Do not force the member to make a separate payment every day.
+
+==================================================
+5. COLLECTOR / STAFF VERIFICATION
+==================================================
+
+Keep this simple.
+
+Every collection must identify:
+
+- Who collected the money
+- Date/time
+- Amount
+
+If the existing app already has collector/staff functionality, reuse it.
+
+Do NOT build a complicated HR system.
+
+The purpose is simple accountability:
+
+Member → Amount → Date → Collector
+
+Also maintain a simple daily cash handover/reconciliation record if the current app supports it.
+
+==================================================
+6. WEEKLY FRIDAY DRAW / TĀN
+==================================================
+
+This is a REQUIRED feature.
+
+Create a "Friday Draw" section.
+
+Each draw must have:
+
+- Draw ID
+- Cycle
+- Draw date
+- Winner member
+- Winner Member ID
+- Winning amount
+- Status
+- Notes
+
+The system must keep permanent Draw History.
+
+Example:
+
+Cycle #01
+Draw #01
+Date: Friday
+Winner: Member X
+Amount: ৳XXXX
+
+Draw #02
+Date: Friday
+Winner: Member Y
+Amount: ৳XXXX
+
+etc.
+
+==================================================
+7. DRAW HISTORY
+==================================================
+
+Create a simple Draw History page/table.
+
+Filters:
+
+- Cycle
+- Date
+- Member
+- Draw number
+
+Show:
+
+Date | Cycle | Draw No | Winner | Amount
+
+Historical draw records must NEVER disappear when a new cycle starts.
+
+==================================================
+8. MEMBER HISTORY
+==================================================
+
+When opening a member profile, show a simple history:
+
+MEMBER PROFILE
+
+Name
+Member ID
+Current status
+
+Current/selected cycle:
+- Shares
+- Daily contribution
+- Total collected
+- Outstanding
+
+History:
+- Previous cycles
+- Collection history
+- Friday draw/winner history
+
+This is important because I need to know:
+
+"Which Friday did this member receive the draw?"
+
+and
+
+"How much has this member paid?"
+
+==================================================
+9. CYCLE COMPLETION
+==================================================
+
+When a cycle ends:
+
+- Mark cycle as Completed.
+- Preserve ALL data.
+- Do not delete members.
+- Do not delete collections.
+- Do not delete draw history.
+
+Then create a new cycle.
+
+The new cycle starts with a clean collection balance.
+
+==================================================
+10. CSV IMPORT
+==================================================
+
+DO NOT automatically import the CSV yet.
+
+Prepare the system so that later I can import a real member CSV.
+
+Expected basic CSV fields:
+
+name,shares
+
+During import:
+
+- Show Preview first.
+- Allow validation before saving.
+- Do not overwrite existing members blindly.
+- Existing members should be matched by Member ID if available.
+- New members should be created.
+- Shares should be assigned to the selected cycle.
+
+IMPORTANT:
+Do NOT hard-code the current 31 members into the application.
+
+==================================================
+11. KEEP THE UI SIMPLE
+==================================================
+
+Do not create a huge dashboard.
+
+Navigation should be approximately:
+
+Dashboard
+Members
+Current Cycle
+Collection
+Friday Draw
+Draw History
+Member History
+Settings
+
+Use the existing design/style of the application.
+
+Only add the minimum UI necessary.
+
+==================================================
+12. DATA SAFETY
+==================================================
+
+CRITICAL:
+
+- Never delete historical financial records automatically.
+- Never overwrite previous cycle data.
+- Never mix different cycles.
+- Use permanent Member IDs.
+- Use proper relationships between Member, Cycle, Collection and Draw.
+- Preserve existing data during migration.
+- If schema migration is required, make it backward-compatible.
+
+==================================================
+13. IMPLEMENTATION STRATEGY
+==================================================
+
+Before coding:
+
+1. Inspect the current application.
+2. Identify the existing member model.
+3. Identify the existing collection model.
+4. Identify the existing database.
+5. Identify current routes/components.
+6. Reuse existing collection functionality.
+
+Then implement ONLY the missing pieces.
+
+After implementation run:
+
+- Type check
+- Build
+- Existing tests
+- Database/schema validation
+- Basic CRUD verification
+
+Fix any errors caused by your changes.
+
+DO NOT spend effort on visual redesign.
+
+FINAL ACCEPTANCE CRITERIA:
+
+I should be able to:
+
+1. Add a new member.
+2. Mark a member inactive without deleting history.
+3. Create a new Fund Cycle.
+4. Add existing/new members to a cycle.
+5. Assign shares per cycle.
+6. Record daily/flexible collections.
+7. See collector accountability.
+8. Run/record a Friday draw.
+9. See all previous draw winners.
+10. Open a member and see their complete history.
+11. Finish a cycle and start another without losing old records.
+12. Later import a CSV into a selected cycle.
+
+Keep this implementation LIGHTWEIGHT, STABLE and BACKWARD-COMPATIBLE.
+
+Do not add features that are not requested above.
