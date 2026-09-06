@@ -1,0 +1,107 @@
+Understood.
+
+DO NOT use the Replit Google Sheets Connector.
+DO NOT upgrade.
+DO NOT publish.
+DO NOT purchase anything.
+
+Keep the current PostgreSQL database and all existing functionality exactly as it is.
+
+For now, consider the current application the completed working core.
+
+Do NOT replace PostgreSQL with Google Sheets.
+
+Instead, finish the current application with these priorities:
+
+1. Verify all existing Owner and Collector features.
+
+
+2. Verify payment creation and receipt generation.
+
+
+3. Verify duplicate-payment protection.
+
+
+4. Verify offline queue and reconnect synchronization.
+
+
+5. Verify due calculation.
+
+
+6. Verify Collector settlement.
+
+
+7. Verify audit trail.
+
+
+8. Verify CSV member import for the real 108 members.
+
+
+9. Verify Owner Dashboard uses real database data.
+
+
+10. Verify reports and CSV export.
+
+
+11. Verify PWA/mobile interface.
+
+
+12. Fix any remaining bugs or broken UI.
+
+
+13. Keep the application simple and fast.
+
+
+14. Do not add unnecessary new features.
+
+
+
+IMPORTANT:
+Keep PostgreSQL as the central database.
+
+Add a simple DATA EXPORT/BACKUP capability so that the Owner can export:
+
+Members
+
+Payments
+
+Collectors
+
+Settlements
+
+Audit Log
+
+Reports
+
+
+as CSV files.
+
+The exported CSV files can then be manually uploaded/stored in my Google Drive.
+
+This avoids any paid Google/Replit connector.
+
+If a completely free Google Sheets integration can later be implemented through a normal Google Apps Script Web App without requiring a Replit paid connector, leave it as a future optional integration. Do NOT implement anything that requires upgrading.
+
+Do NOT publish the application.
+
+Do NOT consume the free publishing slot.
+
+Do NOT upgrade my Replit plan.
+
+Do not make any more architectural changes unless necessary.
+
+FINAL STATUS:
+The goal of this task is to leave me with a stable, tested, production-ready application in the current development environment, ready for publishing later when I explicitly approve it.
+
+After completing the checks, give me ONLY:
+
+Bugs found and fixed
+
+Tests completed
+
+Any remaining issue
+
+Exact next step required from me
+
+
+Then STOP.

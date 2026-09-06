@@ -82,6 +82,27 @@ export default function ReportsPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>ডাটা ব্যাকআপ (CSV Backup)</CardTitle>
+          <CardDescription>ডাউনলোড করা ফাইল Google Drive-এ manually সংরক্ষণ করতে পারবেন।</CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {[
+            ["members", "সদস্য (Members)"],
+            ["payments", "পেমেন্ট (Payments)"],
+            ["collectors", "কালেক্টর (Collectors)"],
+            ["settlements", "জমা (Settlements)"],
+            ["audit", "অডিট লগ (Audit Log)"],
+            ["monthly", "মাসিক রিপোর্ট (Monthly Report)"],
+          ].map(([type, label]) => (
+            <Button key={type} variant="outline" onClick={() => handleExport(type)} className="justify-start">
+              <Download className="w-4 h-4 mr-2" /> {label}
+            </Button>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>সাম্প্রতিক অডিট লগ (Recent Audit Logs)</CardTitle>
         </CardHeader>
         <CardContent>

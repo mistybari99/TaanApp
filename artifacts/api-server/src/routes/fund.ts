@@ -254,11 +254,81 @@ router.get("/dashboard",requireAuth,async(req:AuthedRequest,res)=>{
   const target=money(members.rows[0].target), collected=money(payments.rows[0].amount), deposits=money(settlements.rows[0].amount);
   return res.json({totalMembers:members.rows[0].count,todayTarget:target,collected,due:Math.max(0,target-collected),collectorCash:collected,officeDeposits:deposits,unsettledCash:collected-deposits,paymentCount:payments.rows[0].count,performances:perf.rows,dueMembers:due.rows.map(m=>({...m,todayDue:money(m.dailyAmount)-money(m.todayPaid)})),recentPayments:recent.rows,audit:audits.rows});
 });
-router.get("/reports/export",requireAuth,ownerOnly,async(req,res)=>{
-  const type=String(req.query.type??"payments").replace(/[^a-z-]/g,"");
-  const r=await pool.query(`SELECT p.receipt_id,m.member_id,m.name,p.amount,p.verification_status,u.name collector,p.status,p.created_at FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id ORDER BY p.created_at DESC`);
-  const csv=["Receipt ID,Member ID,Member,Amount,Verification,Collector,Status,Date",...r.rows.map(x=>[x.receipt_id,x.member_id,x.name,x.amount,x.verification_status,x.collector,x.status,x.created_at.toISOString()].map(v=>`"${String(v).replaceAll('"','""')}"`).join(","))].join("\n");
-  res.setHeader("Content-Type","text/csv; charset=utf-8");res.setHeader("Content-Disposition",`attachment; filename=islamiya-${type}.csv`);res.send("\\uFEFF"+csv);
+const csvCell = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+const sendCsv = (res: Response, filename: string, headers: string[], rows: unknown[][]) => {
+  const csv = [headers.join(","), ...rows.map((row) => row.map(csvCell).join(","))].join("\n");
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename=islamiya-${filename}.csv`);
+  res.send("\uFEFF" + csv);
+};
+
+router.get("/reports/export", requireAuth, ownerOnly, async (req, res) => {
+  const type = String(req.query.type ?? "payments").toLowerCase().replace(/[^a-z-]/g, "");
+
+  if (type === "members") {
+    const r = await pool.query(`SELECT member_id,name,mobile,address,shares,daily_amount,joining_date,status
+      FROM fund_members ORDER BY member_id`);
+    return sendCsv(res, "members-backup", ["Member ID", "Name", "Mobile", "Address", "Shares", "Daily Amount", "Joining Date", "Status"],
+      r.rows.map((x) => [x.member_id, x.name, x.mobile, x.address, x.shares, x.daily_amount, x.joining_date, x.status]));
+  }
+
+  if (type === "collectors") {
+    const r = await pool.query(`SELECT id,name,username,role,active,created_at
+      FROM fund_users ORDER BY role,name`);
+    return sendCsv(res, "collectors-backup", ["Collector ID", "Name", "Username", "Role", "Active", "Created At"],
+      r.rows.map((x) => [x.id, x.name, x.username, x.role, x.active, x.created_at]));
+  }
+
+  if (type === "settlements" || type === "settlement") {
+    const r = await pool.query(`SELECT s.id,u.id AS collector_id,u.name AS collector_name,
+      s.created_at::date AS settlement_date,s.amount,s.reference,s.note
+      FROM fund_settlements s JOIN fund_users u ON u.id=s.collector_id
+      ORDER BY s.created_at DESC`);
+    return sendCsv(res, "settlements-backup", ["Settlement ID", "Collector ID", "Collector", "Date", "Deposited Amount", "Reference", "Notes"],
+      r.rows.map((x) => [x.id, x.collector_id, x.collector_name, x.settlement_date, x.amount, x.reference, x.note]));
+  }
+
+  if (type === "audit") {
+    const r = await pool.query(`SELECT a.id,a.created_at,COALESCE(u.name,'System') AS actor,
+      COALESCE(u.role,'SYSTEM') AS role,a.action,a.entity_type,a.entity_id,a.detail
+      FROM fund_audit a LEFT JOIN fund_users u ON u.id=a.actor_id
+      ORDER BY a.created_at DESC`);
+    return sendCsv(res, "audit-backup", ["Audit ID", "Timestamp", "User", "Role", "Action", "Entity Type", "Entity ID", "Details"],
+      r.rows.map((x) => [x.id, x.created_at, x.actor, x.role, x.action, x.entity_type, x.entity_id, x.detail]));
+  }
+
+  if (type === "due") {
+    const r = await pool.query(`SELECT m.member_id,m.name,m.mobile,m.shares,m.daily_amount,
+      COALESCE(SUM(p.amount) FILTER (WHERE p.created_at::date=CURRENT_DATE AND p.status='POSTED'),0)::float AS today_paid,
+      GREATEST(m.daily_amount-COALESCE(SUM(p.amount) FILTER (WHERE p.created_at::date=CURRENT_DATE AND p.status='POSTED'),0),0)::float AS today_due
+      FROM fund_members m LEFT JOIN fund_payments p ON p.member_id=m.id
+      WHERE m.status='active' GROUP BY m.id
+      HAVING COALESCE(SUM(p.amount) FILTER (WHERE p.created_at::date=CURRENT_DATE AND p.status='POSTED'),0) < m.daily_amount
+      ORDER BY m.member_id`);
+    return sendCsv(res, "due-members", ["Member ID", "Name", "Mobile", "Shares", "Daily Amount", "Today Paid", "Today Due"],
+      r.rows.map((x) => [x.member_id, x.name, x.mobile, x.shares, x.daily_amount, x.today_paid, x.today_due]));
+  }
+
+  if (type === "collector") {
+    const r = await pool.query(`SELECT u.id,u.name,COUNT(p.id)::int AS payment_count,
+      COALESCE(SUM(p.amount),0)::float AS collected
+      FROM fund_users u LEFT JOIN fund_payments p ON p.collector_id=u.id AND p.status='POSTED'
+      WHERE u.role='COLLECTOR' GROUP BY u.id ORDER BY u.name`);
+    return sendCsv(res, "collector-collection", ["Collector ID", "Collector", "Payment Count", "Collected Amount"],
+      r.rows.map((x) => [x.id, x.name, x.payment_count, x.collected]));
+  }
+
+  const period = type === "weekly" ? "p.created_at >= CURRENT_DATE - INTERVAL '6 days'"
+    : type === "monthly" ? "p.created_at >= date_trunc('month', CURRENT_DATE)"
+    : type === "daily" ? "p.created_at::date = CURRENT_DATE"
+    : "TRUE";
+  const r = await pool.query(`SELECT p.id AS payment_id,p.receipt_id,m.member_id,m.name AS member_name,
+      p.created_at::date AS payment_date,p.created_at::time AS payment_time,p.amount,
+      p.verification_status,u.id AS collector_id,u.name AS collector_name,p.status,p.idempotency_key,p.created_at
+      FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id
+      WHERE ${period} ORDER BY p.created_at DESC`);
+  return sendCsv(res, `payments-${type || "all"}`, ["Payment ID", "Receipt ID", "Member ID", "Member", "Payment Date", "Payment Time", "Amount", "Verification", "Collector ID", "Collector", "Status", "Idempotency Key", "Created At"],
+    r.rows.map((x) => [x.payment_id, x.receipt_id, x.member_id, x.member_name, x.payment_date, x.payment_time, x.amount, x.verification_status, x.collector_id, x.collector_name, x.status, x.idempotency_key, x.created_at]));
 });
 
 export default router;
