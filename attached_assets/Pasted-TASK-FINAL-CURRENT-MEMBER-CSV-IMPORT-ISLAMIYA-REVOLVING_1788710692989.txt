@@ -1,0 +1,116 @@
+TASK — FINAL CURRENT MEMBER CSV IMPORT
+ISLAMIYA REVOLVING FUND — CYCLE #01
+
+IMPORTANT:
+The newly uploaded CSV file is the ONLY authoritative current member list for this import.
+
+Do NOT use, merge, or import the previous CSV/list.
+The previous CSV was incorrect and must NOT be committed.
+
+OBJECTIVE:
+Import the newly uploaded final CSV into the currently active Cycle #01.
+
+FINAL EXPECTED DATA:
+- Members: 37
+- Total shares: 108
+- Daily contribution: ৳100 per share
+- Expected daily collection: ৳10,800
+
+CSV FORMAT:
+- Header: name,shares
+- Mobile numbers are intentionally missing from this CSV.
+- Do NOT reject rows because Mobile is missing.
+- Do NOT invent mobile numbers, NID, business name, address, or any other information.
+
+IMPORTANT MEMBER RULE:
+- "বিপ্লব (বাজার)" appears ONCE in this final CSV with 15 shares.
+- Treat it as ONE member with 15 shares.
+- Do not recreate the old 10 + 5 duplicate rows.
+
+IMPORT SAFETY:
+1. First perform a DRY-RUN / PREVIEW only.
+2. Validate:
+   - exactly 37 rows
+   - exactly 108 total shares
+   - no malformed rows
+   - no duplicate/ambiguous member identities
+   - no unexpected existing-member matches
+3. Show the complete preview before committing.
+4. Do NOT commit if the count or total shares differs from:
+   37 members / 108 shares.
+5. Do NOT import any payment, due, draw, settlement, transfer, or historical paper-book data.
+6. Do NOT create Cycle #02.
+7. Do NOT modify genuine financial history.
+
+PREVIOUS CSV:
+- The previously uploaded/created incorrect CSV must NOT be used.
+- If it exists only as an uploaded/import file or temporary CSV artifact, remove/archive it so it cannot accidentally be imported later.
+- Do NOT delete genuine database member records or financial records.
+- Do NOT delete application source code or Git history.
+- Only remove the obsolete/incorrect CSV artifact if it is safe to identify it unambiguously.
+
+MEMBER CREATION:
+For each valid row:
+- Create/reconcile the permanent Member record.
+- Add that member to Cycle #01.
+- Store the CSV share quantity as the Cycle #01 share quantity.
+- Mobile may remain NULL/blank for this initial import.
+- Preserve the ability for Owner to add Mobile, NID, Business Name, Notes, etc. later.
+- Do not use the missing Mobile field as a reason to reject this import.
+
+IMPORTANT:
+Permanent Member information and Cycle #01 membership information must remain separate.
+
+TRANSACTION SAFETY:
+- Use the existing transactional CSV import mechanism.
+- If anything fails, rollback the entire import.
+- Never partially import the CSV.
+- Do not create duplicate members.
+- Do not create duplicate Cycle #01 memberships.
+
+AFTER COMMIT:
+Verify from the database/API:
+
+Cycle #01:
+- ACTIVE
+- Tracking start remains NULL unless explicitly changed by Owner
+- Cycle #02 does not exist
+
+Members:
+- 37 members
+- 108 total Cycle #01 shares
+
+Financial records must remain:
+- Payments: 0
+- Settlements: 0
+- Draws: 0
+- Transfers: 0
+- Transfer settlements: 0
+- Due entries: 0
+
+Do NOT start live tracking automatically.
+Do NOT create payment records.
+Do NOT create due records.
+Do NOT create draw records.
+
+FINAL VERIFICATION:
+After successful commit, report:
+
+1. Imported member count
+2. Total Cycle #01 shares
+3. Expected daily collection
+4. Any existing-member matches
+5. Any rejected rows
+6. Mobile-missing count
+7. Database final counts
+8. Confirmation that the previous incorrect CSV was not imported
+9. Confirmation that no Cycle #02 was created
+10. Confirmation that no financial history was changed
+
+EXPECTED FINAL RESULT:
+37 members
+108 shares
+৳10,800/day
+
+STOP after this import and verification.
+Do not perform any unrelated application changes.
