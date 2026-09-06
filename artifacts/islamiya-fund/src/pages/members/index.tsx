@@ -14,10 +14,12 @@ import { Link } from "wouter"
 
 export default function MembersPage() {
   const [search, setSearch] = useState("")
+  const [selectedMemberId, setSelectedMemberId] = useState("")
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [isImportOpen, setIsImportOpen] = useState(false)
   
   const { data: members, isLoading, refetch } = useListMembers({ search: search || undefined })
+  const { data: allMembers } = useListMembers({})
   const { data: cycles } = useListCycles()
   const { data: user } = useGetCurrentUser()
   const createMember = useCreateMember()
@@ -516,16 +518,48 @@ export default function MembersPage() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2 max-w-sm">
+      <div className="flex flex-col sm:flex-row items-stretch gap-2 max-w-2xl">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input 
-            placeholder="Search members..." 
+            placeholder="নাম বা Member ID দিয়ে খুঁজুন..."
             className="pl-9"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value)
+              setSelectedMemberId("")
+            }}
           />
         </div>
+        <select
+          aria-label="সদস্য নির্বাচন করুন"
+          className="h-10 min-w-[220px] rounded-md border bg-background px-3 text-sm"
+          value={selectedMemberId}
+          onChange={(e) => {
+            const memberId = e.target.value
+            setSelectedMemberId(memberId)
+            const selectedMember = allMembers?.find((member) => String(member.id) === memberId)
+            setSearch(selectedMember?.memberId ?? "")
+          }}
+        >
+          <option value="">সদস্য নির্বাচন করুন...</option>
+          {allMembers?.map((member) => (
+            <option key={member.id} value={member.id}>
+              {member.name} · {member.memberId}
+            </option>
+          ))}
+        </select>
+        {selectedMemberId && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setSelectedMemberId("")
+              setSearch("")
+            }}
+          >
+            সব দেখুন
+          </Button>
+        )}
       </div>
 
       <div className="border rounded-xl bg-card overflow-hidden">
