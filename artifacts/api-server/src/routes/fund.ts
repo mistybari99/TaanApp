@@ -24,6 +24,15 @@ const money = (value: unknown) => Number(value ?? 0);
 const isIsoDate = (value: unknown): value is string => /^\d{4}-\d{2}-\d{2}$/.test(String(value ?? ""));
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+export const allocatePayment = (amount: number, previousDue: number) => {
+  const safeAmount = Math.max(0, roundMoney(amount));
+  const safePreviousDue = Math.max(0, roundMoney(previousDue));
+  const previousDueApplied = roundMoney(Math.min(safeAmount, safePreviousDue));
+  return {
+    previousDueApplied,
+    currentPeriodApplied: roundMoney(safeAmount - previousDueApplied),
+  };
+};
 const idempotency = (value: unknown) => {
   const key = String(value ?? "").trim();
   return key || null;
@@ -147,6 +156,60 @@ const tanPreviousPeriodsComplete = async (queryable: Queryable, period: TanPerio
   return Number(result.rows[0]?.count ?? 0) === 0;
 };
 
+const tanDueForMembers = async (queryable: Queryable, cycleId: number, period: TanPeriodRow | null) => {
+  const boundary = period?.periodStart ?? todayIso();
+  const periodId = period?.periodId ?? 0;
+  const result = await queryable.query(
+    `SELECT cm.member_id AS "memberId",
+      GREATEST(
+        COALESCE((SELECT SUM(de.amount) FROM fund_due_entries de WHERE de.cycle_id=$1 AND de.member_id=cm.member_id),0)
+        + COALESCE((SELECT SUM(o.required_amount) FROM fund_tan_period_member_obligations o
+          JOIN fund_tan_periods p ON p.id=o.tan_period_id
+          WHERE o.cycle_id=$1 AND o.member_id=cm.member_id AND p.period_end < $2::date),0)
+        - COALESCE((SELECT SUM(pp.previous_due_applied) FROM fund_payments pp
+          WHERE pp.cycle_id=$1 AND pp.member_id=cm.member_id AND pp.status='POSTED'),0),0
+      )::float AS "previousDue",
+      GREATEST(
+        COALESCE((SELECT o.required_amount FROM fund_tan_period_member_obligations o
+          WHERE o.tan_period_id=$3 AND o.member_id=cm.member_id),0)
+        - COALESCE((SELECT SUM(pp.current_period_applied) FROM fund_payments pp
+          WHERE pp.tan_period_id=$3 AND pp.member_id=cm.member_id AND pp.status='POSTED'),0),0
+      )::float AS "currentPeriodDue"
+     FROM fund_cycle_members cm
+     WHERE cm.cycle_id=$1`,
+    [cycleId, boundary, periodId],
+  );
+  return new Map(result.rows.map((row) => [Number(row.memberId), row]));
+};
+
+const tanDashboardMemberRows = async (
+  queryable: Queryable,
+  cycleId: number,
+  period: TanPeriodRow | null,
+  dueByMember: Map<number, any>,
+  collectorId?: number,
+) => {
+  const params: unknown[] = [cycleId];
+  const access = collectorId
+    ? ` AND (m.assigned_collector_id=$${params.push(collectorId)} OR m.assigned_collector_id IS NULL)`
+    : "";
+  const result = await queryable.query(
+    `SELECT m.id,m.member_id AS "memberId",m.name,m.mobile,m.address,cm.shares,
+      cm.daily_contribution::float AS "dailyAmount",m.joining_date::text AS "joiningDate",m.status
+     FROM fund_members m
+     JOIN fund_cycle_members cm ON cm.member_id=m.id AND cm.cycle_id=$1
+     WHERE m.status='active'${access}
+     ORDER BY m.member_id`,
+    params,
+  );
+  return result.rows.map((member) => {
+    const due = dueByMember.get(Number(member.id));
+    const previousDue = money(due?.previousDue);
+    const currentPeriodDue = period ? money(due?.currentPeriodDue) : 0;
+    return { ...member, previousDue, currentPeriodDue, todayDue: currentPeriodDue, totalDue: previousDue + currentPeriodDue };
+  });
+};
+
 const transferSelect = `
   SELECT t.id,t.transfer_id AS "transferId",t.cycle_id AS "cycleId",c.cycle_number AS "cycleNumber",c.name AS "cycleName",
     t.transfer_date::text AS "transferDate",
@@ -244,6 +307,11 @@ router.get("/members", requireAuth, async (req: AuthedRequest, res) => {
   const params: unknown[] = [search];
   let allowed = "";
   if (req.user?.role === "COLLECTOR") { params.push(req.user.id); allowed = " AND (m.assigned_collector_id=$2 OR m.assigned_collector_id IS NULL)"; }
+  const activeCycle = await pool.query("SELECT id FROM fund_cycles WHERE status='ACTIVE' LIMIT 1");
+  const activeCycleId = Number(activeCycle.rows[0]?.id ?? 0);
+  const activeTan = activeCycleId ? await tanConfigForCycle(pool, activeCycleId) : null;
+  const activeTanPeriod = activeCycleId ? await tanPeriodForDate(pool, activeCycleId, todayIso()) : null;
+  const tanDue = activeTan ? await tanDueForMembers(pool, activeCycleId, activeTanPeriod) : new Map<number, any>();
   const rows = await pool.query(
     `SELECT m.id,m.member_id AS "memberId",m.name,m.mobile,m.address,m.shares,m.daily_amount::float AS "dailyAmount",
        m.joining_date::text AS "joiningDate",m.created_at AS "createdAt",m.notes,m.status,
@@ -262,8 +330,11 @@ router.get("/members", requireAuth, async (req: AuthedRequest, res) => {
   );
   res.json(rows.rows.map((m) => {
     const trackingReady = Boolean(m.currentDailyAmount) && Boolean(m.trackingStartDate) && todayIso() >= String(m.trackingStartDate);
-     const todayDue = trackingReady ? Math.max(0, money(m.currentDailyAmount) - money(m.todayPaid)) : 0;
-     return { ...m, todayDue, totalDue: todayDue + money(m.previousDue) };
+    const tanMemberDue = activeTan ? tanDue.get(Number(m.id)) : null;
+    const previousDue = activeTan ? money(tanMemberDue?.previousDue) : money(m.previousDue);
+    const currentPeriodDue = activeTan ? money(tanMemberDue?.currentPeriodDue) : 0;
+    const todayDue = activeTan ? currentPeriodDue : trackingReady ? Math.max(0, money(m.currentDailyAmount) - money(m.todayPaid)) : 0;
+    return { ...m, previousDue, currentPeriodDue, todayDue, totalDue: todayDue + previousDue };
   }));
 });
 router.post("/members", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
@@ -813,16 +884,29 @@ router.post("/cycles/:id/tan/lock", requireAuth, ownerOnly, async (req: AuthedRe
       [cycleId,tanStartDate,drawsPerWeek,totalShares,totalDrawDates,dailyPerShare,expectedDailyCollection,weeklyCollectionUnit,perDrawWinnerAmount,req.user!.id],
     );
     const tanConfigId = Number(created.rows[0].id);
+    const memberSnapshots = await client.query(
+      "SELECT member_id AS \"memberId\",shares FROM fund_cycle_members WHERE cycle_id=$1 ORDER BY member_id",
+      [cycleId],
+    );
     for (let index = 0; index < totalDrawDates; index += 1) {
       const periodStart = addDays(tanStartDate, index * 7);
       const periodEnd = addDays(periodStart, 6);
-      await client.query(
+      const period = await client.query(
         `INSERT INTO fund_tan_periods(tan_config_id,cycle_id,sequence_no,period_start,period_end,draw_date,expected_collection)
-         VALUES($1,$2,$3,$4,$5,$6,$7)`,
+         VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
         [tanConfigId,cycleId,index + 1,periodStart,periodEnd,periodEnd,weeklyCollectionUnit],
       );
+      for (const member of memberSnapshots.rows) {
+        await client.query(
+          `INSERT INTO fund_tan_period_member_obligations(tan_period_id,cycle_id,member_id,shares_snapshot,required_amount)
+           VALUES($1,$2,$3,$4,$5)`,
+          [period.rows[0].id, cycleId, member.memberId, member.shares, roundMoney(Number(member.shares) * dailyPerShare)],
+        );
+      }
     }
-    await client.query("UPDATE fund_cycles SET tracking_start_date=$2 WHERE id=$1", [cycleId, tanStartDate]);
+    if (!previousTan) {
+      await client.query("UPDATE fund_cycles SET tracking_start_date=$2 WHERE id=$1", [cycleId, tanStartDate]);
+    }
     await auditOn(client, req.user!.id, "TAN_LOCKED", `Locked TAN for cycle ${cycleId}: ${totalShares} shares, ${drawsPerWeek} draws/week, ${totalDrawDates} draw-dates`, "tan_config", String(tanConfigId), {
       cycleId,
       effectiveDate: tanStartDate,
@@ -839,6 +923,10 @@ router.post("/cycles/:id/tan/lock", requireAuth, ownerOnly, async (req: AuthedRe
   }
 });
 router.get("/cycles/:id/members", requireAuth, async (req: AuthedRequest, res) => {
+  const cycleId = Number(req.params.id);
+  const tan = await tanConfigForCycle(pool, cycleId);
+  const tanPeriod = tan ? await tanPeriodForDate(pool, cycleId, todayIso()) : null;
+  const tanDue = tan ? await tanDueForMembers(pool, cycleId, tanPeriod) : new Map<number, any>();
   const params: unknown[] = [Number(req.params.id)];
   let access = "";
   if (req.user?.role === "COLLECTOR") { params.push(req.user.id); access = " AND (m.assigned_collector_id=$2 OR m.assigned_collector_id IS NULL)"; }
@@ -853,10 +941,13 @@ router.get("/cycles/:id/members", requireAuth, async (req: AuthedRequest, res) =
     FROM fund_cycle_members cm JOIN fund_members m ON m.id=cm.member_id JOIN fund_cycles c ON c.id=cm.cycle_id
       LEFT JOIN fund_payments p ON p.cycle_id=cm.cycle_id AND p.member_id=cm.member_id
     WHERE cm.cycle_id=$1${access} GROUP BY cm.id,m.id,c.id ORDER BY m.member_id`, params);
-  return res.json(result.rows.map((member) => ({
-    ...member,
-    totalDue: money(member.todayDue) + money(member.previousDue),
-  })));
+  return res.json(result.rows.map((member) => {
+    const tanMemberDue = tan ? tanDue.get(Number(member.memberId)) : null;
+    const previousDue = tan ? money(tanMemberDue?.previousDue) : money(member.previousDue);
+    const currentPeriodDue = tan ? money(tanMemberDue?.currentPeriodDue) : 0;
+    const todayDue = tan ? currentPeriodDue : money(member.todayDue);
+    return { ...member, previousDue, currentPeriodDue, todayDue, totalDue: todayDue + previousDue };
+  }));
 });
 router.post("/cycles/:id/members", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
   const cycleId = Number(req.params.id);
@@ -1534,8 +1625,9 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
     }
     const tan = await tanConfigForCycle(client, selectedCycleId, true);
     let tanPeriodId: number | null = null;
+    let tanPeriod: TanPeriodRow | null = null;
     if (tan) {
-      const tanPeriod = await tanPeriodForDate(client, selectedCycleId, paidDate, true);
+      tanPeriod = await tanPeriodForDate(client, selectedCycleId, paidDate, true);
       if (!tanPeriod || !tanPeriodIsLive(tanPeriod) || !(await tanPreviousPeriodsComplete(client, tanPeriod))) {
         await client.query("ROLLBACK");
         return res.status(409).json({ error: "Payments can only be recorded during the currently open TAN period" });
@@ -1557,13 +1649,16 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "Member is not enrolled in the selected cycle" });
     }
-    const outstanding = await client.query(
-      `SELECT GREATEST(COALESCE((SELECT SUM(amount) FROM fund_due_entries WHERE cycle_id=$1 AND member_id=$2),0)
-        - COALESCE((SELECT SUM(previous_due_applied) FROM fund_payments WHERE cycle_id=$1 AND member_id=$2 AND status='POSTED'),0),0)::float AS previous_due`,
-      [selectedCycleId, memberId],
-    );
-    const previousDueApplied = roundMoney(Math.min(Number(amount), money(outstanding.rows[0]?.previous_due)));
-    const currentPeriodApplied = roundMoney(Number(amount) - previousDueApplied);
+    const tanDue = tan ? await tanDueForMembers(client, selectedCycleId, tanPeriod) : null;
+    const previousDueOutstanding = tan
+      ? money(tanDue?.get(Number(memberId))?.previousDue)
+      : money((await client.query(
+        `SELECT GREATEST(COALESCE((SELECT SUM(amount) FROM fund_due_entries WHERE cycle_id=$1 AND member_id=$2),0)
+          - COALESCE((SELECT SUM(previous_due_applied) FROM fund_payments WHERE cycle_id=$1 AND member_id=$2 AND status='POSTED'),0),0)::float AS previous_due`,
+        [selectedCycleId, memberId],
+      )).rows[0]?.previous_due);
+    const allocation = allocatePayment(Number(amount), previousDueOutstanding);
+    const { previousDueApplied, currentPeriodApplied } = allocation;
     const receiptId = `IRF-${new Date().toISOString().slice(0,10).replaceAll("-","")}-${randomBytes(3).toString("hex").toUpperCase()}`;
     const verification = verificationMethod === "PIN" && verificationCode ? "PIN VERIFIED" : "COLLECTOR CONFIRMED";
     const r = await client.query(
@@ -1739,6 +1834,15 @@ router.get("/dashboard",requireAuth,async(req:AuthedRequest,res)=>{
    const trackingStartDate = activeCycleResult.rows[0]?.tracking_start_date ?? null;
    const trackingReady = Boolean(trackingStartDate && todayIso() >= String(trackingStartDate));
    const readySql = trackingReady ? "TRUE" : "FALSE";
+    const activeTan = activeCycleId ? await tanConfigForCycle(pool, activeCycleId) : null;
+    const activeTanPeriod = activeTan ? await tanPeriodForDate(pool, activeCycleId, todayIso()) : null;
+    const activeTanDue = activeTan ? await tanDueForMembers(pool, activeCycleId, activeTanPeriod) : new Map<number, any>();
+    const tanCollectorRows = activeTan && req.user!.role === "COLLECTOR"
+      ? await tanDashboardMemberRows(pool, activeCycleId, activeTanPeriod, activeTanDue, req.user!.id)
+      : [];
+    const tanOwnerRows = activeTan && req.user!.role !== "COLLECTOR"
+      ? await tanDashboardMemberRows(pool, activeCycleId, activeTanPeriod, activeTanDue)
+      : [];
    if(req.user!.role==="COLLECTOR"){
       const [members,payments,settlements,due,recent,reconciliation]=await Promise.all([
         pool.query(`SELECT COUNT(*)::int count,COALESCE(SUM(CASE WHEN ${readySql} THEN cm.daily_contribution ELSE 0 END),0)::float target
@@ -1765,8 +1869,18 @@ router.get("/dashboard",requireAuth,async(req:AuthedRequest,res)=>{
            FROM fund_cycle_members cm JOIN fund_members m ON m.id=cm.member_id
            WHERE cm.cycle_id=${activeCycleId} AND (m.assigned_collector_id=$1 OR m.assigned_collector_id IS NULL)`,[req.user!.id])
      ]);
-      const target=money(members.rows[0].target),collected=money(payments.rows[0].amount),deposits=money(settlements.rows[0].amount),previousDue=money(reconciliation.rows[0]?.previousDue);
-      return res.json({trackingReady,trackingStartDate,totalMembers:members.rows[0].count,todayTarget:target,collected,due:Math.max(0,target-collected)+previousDue,previousDue,totalDue:Math.max(0,target-collected)+previousDue,transferValue:money(reconciliation.rows[0]?.transferValue),transferSettlementValue:money(reconciliation.rows[0]?.transferSettlementValue),drawCount:Number(reconciliation.rows[0]?.drawCount ?? 0),collectorCash:collected,officeDeposits:deposits,unsettledCash:collected-deposits,paymentCount:payments.rows[0].count,performances:[{name:req.user!.name,collected,payments:payments.rows[0].count,cash:collected-deposits}],dueMembers:due.rows.map(m=>({...m,todayDue:money(m.dailyAmount)-money(m.todayPaid),totalDue:money(m.todayDue)+money(m.previousDue)})),recentPayments:recent.rows,audit:[]});
+       const target=money(members.rows[0].target),collected=money(payments.rows[0].amount),deposits=money(settlements.rows[0].amount);
+       const currentCollectionDue = activeTan
+         ? tanCollectorRows.reduce((sum, member) => sum + money(member.currentPeriodDue), 0)
+         : Math.max(0, target - collected);
+       const previousDue = activeTan
+         ? tanCollectorRows.reduce((sum, member) => sum + money(member.previousDue), 0)
+         : money(reconciliation.rows[0]?.previousDue);
+       const totalDue = currentCollectionDue + previousDue;
+       const dueMembers = activeTan
+         ? tanCollectorRows.filter((member) => money(member.totalDue) > 0).slice(0, 20)
+         : due.rows.map(m => ({...m,todayDue:Math.max(0,money(m.dailyAmount)-money(m.todayPaid)),totalDue:Math.max(0,money(m.dailyAmount)-money(m.todayPaid))+money(m.previousDue)}));
+       return res.json({trackingReady,trackingStartDate,totalMembers:members.rows[0].count,todayTarget:target,currentCollectionDue,collected,due:currentCollectionDue,previousDue,totalDue,transferValue:money(reconciliation.rows[0]?.transferValue),transferSettlementValue:money(reconciliation.rows[0]?.transferSettlementValue),drawCount:Number(reconciliation.rows[0]?.drawCount ?? 0),collectorCash:collected,officeDeposits:deposits,unsettledCash:collected-deposits,paymentCount:payments.rows[0].count,performances:[{name:req.user!.name,collected,payments:payments.rows[0].count,cash:collected-deposits}],dueMembers,recentPayments:recent.rows,audit:[]});
    }
     const [members,payments,settlements,perf,due,recent,audits,reconciliation]=await Promise.all([
       pool.query(`SELECT COUNT(*)::int count,COALESCE(SUM(CASE WHEN ${readySql} THEN cm.daily_contribution ELSE 0 END),0)::float target
@@ -1793,8 +1907,18 @@ router.get("/dashboard",requireAuth,async(req:AuthedRequest,res)=>{
         COALESCE((SELECT COUNT(*) FROM fund_draws d WHERE d.cycle_id=${activeCycleId} AND d.status='RECORDED'),0)::int AS "drawCount"
         FROM fund_cycle_members cm WHERE cm.cycle_id=${activeCycleId}`)
    ]);
-    const target=money(members.rows[0].target), collected=money(payments.rows[0].amount), deposits=money(settlements.rows[0].amount),previousDue=money(reconciliation.rows[0]?.previousDue);
-    return res.json({trackingReady,trackingStartDate,totalMembers:members.rows[0].count,todayTarget:target,collected,due:Math.max(0,target-collected)+previousDue,previousDue,totalDue:Math.max(0,target-collected)+previousDue,transferValue:money(reconciliation.rows[0]?.transferValue),transferSettlementValue:money(reconciliation.rows[0]?.transferSettlementValue),drawCount:Number(reconciliation.rows[0]?.drawCount ?? 0),collectorCash:collected,officeDeposits:deposits,unsettledCash:collected-deposits,paymentCount:payments.rows[0].count,performances:perf.rows,dueMembers:due.rows.map(m=>{const todayDue=Math.max(0,money(m.dailyAmount)-money(m.todayPaid)); return {...m,todayDue,totalDue:todayDue+money(m.previousDue)}}),recentPayments:recent.rows,audit:audits.rows});
+  const target=money(members.rows[0].target), collected=money(payments.rows[0].amount), deposits=money(settlements.rows[0].amount);
+  const currentCollectionDue = activeTan
+    ? tanOwnerRows.reduce((sum, member) => sum + money(member.currentPeriodDue), 0)
+    : Math.max(0, target - collected);
+  const previousDue = activeTan
+    ? tanOwnerRows.reduce((sum, member) => sum + money(member.previousDue), 0)
+    : money(reconciliation.rows[0]?.previousDue);
+  const totalDue = currentCollectionDue + previousDue;
+  const dueMembers = activeTan
+    ? tanOwnerRows.filter((member) => money(member.totalDue) > 0).slice(0, 20)
+    : due.rows.map(m=>{const todayDue=Math.max(0,money(m.dailyAmount)-money(m.todayPaid)); return {...m,todayDue,totalDue:todayDue+money(m.previousDue)}});
+  return res.json({trackingReady,trackingStartDate,totalMembers:members.rows[0].count,todayTarget:target,currentCollectionDue,collected,due:currentCollectionDue,previousDue,totalDue,transferValue:money(reconciliation.rows[0]?.transferValue),transferSettlementValue:money(reconciliation.rows[0]?.transferSettlementValue),drawCount:Number(reconciliation.rows[0]?.drawCount ?? 0),collectorCash:collected,officeDeposits:deposits,unsettledCash:collected-deposits,paymentCount:payments.rows[0].count,performances:perf.rows,dueMembers,recentPayments:recent.rows,audit:audits});
 });
 const csvCell = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
 const sendCsv = (res: Response, filename: string, headers: string[], rows: unknown[][]) => {

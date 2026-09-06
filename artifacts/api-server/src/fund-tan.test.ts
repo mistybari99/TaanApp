@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import app from "./app";
+import { allocatePayment } from "./routes/fund";
 import { pool } from "@workspace/db";
 
 const prefix = `SYN-TAN-${process.pid}-${Date.now()}`;
@@ -16,6 +17,13 @@ const previousSaturday = (date: string) => {
   const day = new Date(`${date}T00:00:00Z`).getUTCDay();
   return addDays(date, -((day + 1) % 7));
 };
+
+test("payment allocation always clears Previous Due before Current Collection", () => {
+  assert.deepEqual(allocatePayment(500, 300), { previousDueApplied: 300, currentPeriodApplied: 200 });
+  assert.deepEqual(allocatePayment(100, 300), { previousDueApplied: 100, currentPeriodApplied: 0 });
+  assert.deepEqual(allocatePayment(700, 300), { previousDueApplied: 300, currentPeriodApplied: 400 });
+  assert.deepEqual(allocatePayment(500, 900), { previousDueApplied: 500, currentPeriodApplied: 0 });
+});
 
 test("TAN schedule preserves 108-share math and protects legacy financial writes", async () => {
   const token = `${prefix}-owner-token`;
@@ -157,6 +165,142 @@ test("TAN schedule preserves 108-share math and protects legacy financial writes
       await pool.query("DELETE FROM fund_users WHERE id=$1", [ownerId]);
     }
     if (memberIds.length) await pool.query("DELETE FROM fund_members WHERE id = ANY($1::int[])", [memberIds]);
+  }
+});
+
+test("TAN rollover carries closed-period debt and reversal restores it", async () => {
+  const token = `${prefix}-due-owner-token`;
+  const client = await pool.connect();
+  let server: ReturnType<typeof app.listen> | undefined;
+  let ownerId = 0;
+  let cycleId = 0;
+  let memberId = 0;
+  try {
+    await client.query("BEGIN");
+    const owner = await client.query(
+      `INSERT INTO fund_users(name,username,password_hash,role)
+       VALUES($1,$2,'synthetic','OWNER') RETURNING id`,
+      [`${prefix} due owner`, `${prefix}-due-owner`],
+    );
+    ownerId = owner.rows[0].id;
+    await client.query(
+      `INSERT INTO fund_sessions(token_hash,user_id,expires_at)
+       VALUES($1,$2,now()+interval '10 minutes')`,
+      [hashToken(token), ownerId],
+    );
+    const member = await client.query(
+      `INSERT INTO fund_members(member_id,name,mobile,address,shares,daily_amount,joining_date,status)
+       VALUES($1,$2,$3,'test',7,700,CURRENT_DATE,'active') RETURNING id`,
+      [`${prefix}-DUE-M1`, `${prefix} due member`, `018${String(99).padStart(8, "0")}`],
+    );
+    memberId = member.rows[0].id;
+    const currentStart = previousSaturday(isoToday());
+    const tanStart = addDays(currentStart, -14);
+    const cycle = await client.query(
+      `INSERT INTO fund_cycles(cycle_number,name,start_date,daily_per_share,status,tracking_start_date,notes)
+       VALUES((SELECT COALESCE(MAX(cycle_number),0)+1 FROM fund_cycles),$1,$2,100,'COMPLETED',$2,$3)
+       RETURNING id`,
+      [`${prefix} due cycle`, tanStart, prefix],
+    );
+    cycleId = cycle.rows[0].id;
+    await client.query(
+      `INSERT INTO fund_cycle_members(cycle_id,member_id,shares,daily_contribution)
+       VALUES($1,$2,7,700)`,
+      [cycleId, memberId],
+    );
+    const config = await client.query(
+      `INSERT INTO fund_tan_configs(cycle_id,tan_start_date,draws_per_week,total_shares,total_draw_dates,daily_per_share,
+        expected_daily_collection,weekly_collection_unit,per_draw_winner_amount,locked_by)
+       VALUES($1,$2,1,7,3,100,700,700,700,$3) RETURNING id`,
+      [cycleId, tanStart, ownerId],
+    );
+    const periodIds: number[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const periodStart = addDays(tanStart, index * 7);
+      const periodEnd = addDays(periodStart, 6);
+      const period = await client.query(
+        `INSERT INTO fund_tan_periods(tan_config_id,cycle_id,sequence_no,period_start,period_end,draw_date,expected_collection)
+         VALUES($1,$2,$3,$4,$5,$6,700) RETURNING id`,
+        [config.rows[0].id, cycleId, index + 1, periodStart, periodEnd, periodEnd],
+      );
+      periodIds.push(period.rows[0].id);
+      await client.query(
+        `INSERT INTO fund_tan_period_member_obligations(tan_period_id,cycle_id,member_id,shares_snapshot,required_amount)
+         VALUES($1,$2,$3,7,700)`,
+        [period.rows[0].id, cycleId, memberId],
+      );
+    }
+    await client.query("COMMIT");
+
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server?.once("listening", () => resolve()));
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const readDue = async () => {
+      const response = await fetch(`${baseUrl}/api/cycles/${cycleId}/members`, {
+        headers: { cookie: `irf_session=${token}` },
+      });
+      assert.equal(response.status, 200);
+      const rows = await response.json() as Array<{ previousDue: number; currentPeriodDue: number; totalDue: number }>;
+      return rows[0];
+    };
+
+    const initial = await readDue();
+    assert.equal(initial.previousDue, 1400);
+    assert.equal(initial.currentPeriodDue, 700);
+    assert.equal(initial.totalDue, 2100);
+
+    const partial = await client.query(
+      `INSERT INTO fund_payments(receipt_id,member_id,cycle_id,collection_date,shares,amount,collector_id,verification_status,status,previous_due_applied,current_period_applied,tan_period_id)
+       VALUES($1,$2,$3,$4,7,500,$5,'TEST','POSTED',500,0,$6) RETURNING id`,
+      [`${prefix}-P1`, memberId, cycleId, isoToday(), ownerId, periodIds[2]],
+    );
+    const afterPartial = await readDue();
+    assert.equal(afterPartial.previousDue, 900);
+    assert.equal(afterPartial.currentPeriodDue, 700);
+    assert.equal(afterPartial.totalDue, 1600);
+
+    const currentPayment = await client.query(
+      `INSERT INTO fund_payments(receipt_id,member_id,cycle_id,collection_date,shares,amount,collector_id,verification_status,status,previous_due_applied,current_period_applied,tan_period_id)
+       VALUES($1,$2,$3,$4,7,900,$5,'TEST','POSTED',900,0,$6) RETURNING id`,
+      [`${prefix}-P2`, memberId, cycleId, isoToday(), ownerId, periodIds[2]],
+    );
+    const afterClear = await readDue();
+    assert.equal(afterClear.previousDue, 0);
+    assert.equal(afterClear.currentPeriodDue, 700);
+    assert.equal(afterClear.totalDue, 700);
+
+    await client.query("UPDATE fund_payments SET status='REVERSED',correction_reason='test reversal' WHERE id=$1", [currentPayment.rows[0].id]);
+    await client.query(
+      `INSERT INTO fund_payments(receipt_id,member_id,cycle_id,collection_date,shares,amount,collector_id,verification_status,status,reversed_payment_id,previous_due_applied,current_period_applied)
+       VALUES($1,$2,$3,$4,7,900,$5,'TEST REVERSAL','REVERSAL',$6,900,0)`,
+      [`${prefix}-R2`, memberId, cycleId, isoToday(), ownerId, currentPayment.rows[0].id],
+    );
+    const afterReversal = await readDue();
+    assert.equal(afterReversal.previousDue, 900);
+    assert.equal(afterReversal.currentPeriodDue, 700);
+    assert.equal(afterReversal.totalDue, 1600);
+    assert.equal(new Date(`${addDays(currentStart, -1)}T00:00:00Z`).getUTCDay(), 5);
+    assert.equal(new Date(`${currentStart}T00:00:00Z`).getUTCDay(), 6);
+  } finally {
+    if (server) await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
+    await client.query("ROLLBACK").catch(() => undefined);
+    client.release();
+    if (cycleId) {
+      await pool.query("DELETE FROM fund_payments WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_tan_period_member_obligations WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_tan_periods WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_tan_configs WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_cycle_members WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_cycles WHERE id=$1", [cycleId]);
+    }
+    if (ownerId) {
+      await pool.query("DELETE FROM fund_audit WHERE actor_id=$1", [ownerId]);
+      await pool.query("DELETE FROM fund_sessions WHERE user_id=$1", [ownerId]);
+      await pool.query("DELETE FROM fund_users WHERE id=$1", [ownerId]);
+    }
+    if (memberId) await pool.query("DELETE FROM fund_members WHERE id=$1", [memberId]);
   }
 });
 

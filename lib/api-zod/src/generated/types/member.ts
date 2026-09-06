@@ -20,6 +20,7 @@ export interface Member {
   status: MemberStatus;
   todayPaid: number;
   todayDue: number;
+  currentPeriodDue?: number;
   previousDue?: number;
   totalDue?: number;
   createdAt?: string;

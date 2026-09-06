@@ -43,6 +43,7 @@ export default function CollectorHome() {
     mobile: member.mobile,
     dailyAmount: member.dailyContribution,
     todayPaid: Math.max(0, member.dailyContribution - member.todayDue),
+    currentPeriodDue: member.currentPeriodDue ?? member.todayDue,
     previousDue: member.previousDue ?? 0,
     totalDue: (member.previousDue ?? 0) + member.todayDue,
   })), [cycleMembers])
@@ -187,14 +188,20 @@ export default function CollectorHome() {
         </Card>
         <Card className="bg-destructive/10 border-destructive/20">
           <CardContent className="p-4 flex flex-col items-center justify-center text-center">
-            <span className="text-xs text-destructive">বাকি সংগ্রহ</span>
-            <span className="text-xl font-bold mt-1 text-destructive">{formatCurrency(dashboard?.due || 0)}</span>
+            <span className="text-xs text-destructive">Current Collection</span>
+            <span className="text-xl font-bold mt-1 text-destructive">{formatCurrency(dashboard?.currentCollectionDue ?? dashboard?.due ?? 0)}</span>
           </CardContent>
         </Card>
         <Card className="bg-amber-50 border-amber-200">
           <CardContent className="p-4 flex flex-col items-center justify-center text-center">
             <span className="text-xs text-amber-800">আগের বকেয়া</span>
             <span className="text-xl font-bold mt-1 text-amber-900">{formatCurrency(dashboard?.previousDue || 0)}</span>
+          </CardContent>
+        </Card>
+        <Card className="bg-destructive/5 border-destructive/20">
+          <CardContent className="p-4 flex flex-col items-center justify-center text-center">
+            <span className="text-xs text-destructive">TOTAL DUE</span>
+            <span className="text-xl font-bold mt-1 text-destructive">{formatCurrency(dashboard?.totalDue || 0)}</span>
           </CardContent>
         </Card>
       </div>
@@ -274,7 +281,7 @@ export default function CollectorHome() {
               <div className="space-y-4">
                 <div className="grid grid-cols-3 gap-2 rounded-lg bg-muted/50 p-3 text-center text-sm">
                   <div><div className="font-semibold">{formatCurrency(selectedMember?.previousDue ?? 0)}</div><div className="text-xs text-muted-foreground">আগের বকেয়া</div></div>
-                  <div><div className="font-semibold">{formatCurrency(selectedMember?.dailyAmount ?? 0)}</div><div className="text-xs text-muted-foreground">আজকের due</div></div>
+                  <div><div className="font-semibold">{formatCurrency(selectedMember?.currentPeriodDue ?? selectedMember?.dailyAmount ?? 0)}</div><div className="text-xs text-muted-foreground">Current collection</div></div>
                   <div><div className="font-semibold text-destructive">{formatCurrency(selectedMember?.totalDue ?? selectedMember?.dailyAmount ?? 0)}</div><div className="text-xs text-muted-foreground">মোট due</div></div>
                 </div>
                 <div className="space-y-2">

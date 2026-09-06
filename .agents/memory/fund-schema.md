@@ -20,3 +20,9 @@ TAN schedules are versioned within the same cycle rather than making the cycle i
 **Why:** Cycle #01 is intentionally permanent, so a completed TAN must be followed by a new schedule without rewriting prior period, draw, payment, or audit links.
 
 **How to apply:** Require the current TAN to be completed before creating another, snapshot the new share/formula values, and resolve operational period checks against the latest schedule.
+
+Each TAN period must have member-level obligation snapshots; Previous Due is the sum of closed-period snapshots plus manual due entries minus posted allocations, not a recalculation from today's shares.
+
+**Why:** Share transfers or later membership edits must not rewrite a member's historical obligation, while payments still need deterministic Previous Due → current-period allocation.
+
+**How to apply:** Create obligation snapshots when locking a TAN, use the current period snapshot for Current Collection, and exclude reversed payments from posted allocation totals.

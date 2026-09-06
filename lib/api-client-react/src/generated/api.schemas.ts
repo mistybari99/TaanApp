@@ -86,6 +86,7 @@ export interface Member {
   status: MemberStatus;
   todayPaid: number;
   todayDue: number;
+  currentPeriodDue?: number;
   previousDue?: number;
   totalDue?: number;
   createdAt?: string;
@@ -195,6 +196,7 @@ export interface CycleMember {
   dailyContribution: number;
   totalCollected: number;
   todayDue: number;
+  currentPeriodDue?: number;
   previousDue?: number;
   totalDue?: number;
 }
@@ -597,6 +599,7 @@ export interface Dashboard {
   trackingStartDate: string | null;
   totalMembers: number;
   todayTarget: number;
+  currentCollectionDue: number;
   collected: number;
   due: number;
   previousDue: number;

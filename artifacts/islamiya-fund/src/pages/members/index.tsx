@@ -572,7 +572,7 @@ export default function MembersPage() {
               <TableHead className="text-right">দৈনিক জমা (Daily)</TableHead>
               <TableHead className="text-right">আগের বকেয়া (Previous)</TableHead>
               <TableHead className="text-right">মোট বকেয়া (Total)</TableHead>
-              <TableHead className="text-right">আজকের বকেয়া (Due)</TableHead>
+               <TableHead className="text-right">Current Collection</TableHead>
               <TableHead>স্ট্যাটাস</TableHead>
               <TableHead className="text-right">অ্যাকশন</TableHead>
             </TableRow>

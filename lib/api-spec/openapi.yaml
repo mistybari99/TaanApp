@@ -348,6 +348,7 @@ components:
         status: { type: string, enum: [active, inactive] }
         todayPaid: { type: number }
         todayDue: { type: number }
+        currentPeriodDue: { type: number }
         previousDue: { type: number }
         totalDue: { type: number }
         createdAt: { type: string }
@@ -414,6 +415,7 @@ components:
         dailyContribution: { type: number }
         totalCollected: { type: number }
         todayDue: { type: number }
+        currentPeriodDue: { type: number }
         previousDue: { type: number }
         totalDue: { type: number }
     CycleMemberInput:
@@ -776,12 +778,13 @@ components:
       properties: { name: { type: string }, collected: { type: number }, payments: { type: integer }, cash: { type: number } }
     Dashboard:
       type: object
-      required: [trackingReady, trackingStartDate, totalMembers, todayTarget, collected, due, collectorCash, officeDeposits, unsettledCash, paymentCount, performances, dueMembers, recentPayments, audit, previousDue, totalDue, transferValue, transferSettlementValue, drawCount]
+      required: [trackingReady, trackingStartDate, totalMembers, todayTarget, currentCollectionDue, collected, due, collectorCash, officeDeposits, unsettledCash, paymentCount, performances, dueMembers, recentPayments, audit, previousDue, totalDue, transferValue, transferSettlementValue, drawCount]
       properties:
         trackingReady: { type: boolean }
         trackingStartDate: { type: string, nullable: true }
         totalMembers: { type: integer }
         todayTarget: { type: number }
+        currentCollectionDue: { type: number }
         collected: { type: number }
         due: { type: number }
         previousDue: { type: number }

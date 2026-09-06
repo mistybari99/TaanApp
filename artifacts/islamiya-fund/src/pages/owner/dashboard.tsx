@@ -84,12 +84,23 @@ export default function OwnerDashboard() {
         
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">বকেয়া</CardTitle>
+            <CardTitle className="text-sm font-medium">Current Collection</CardTitle>
             <AlertCircle className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-destructive">{formatCurrency(dashboard.due)}</div>
-            <p className="text-xs text-muted-foreground">Due Amount</p>
+            <div className="text-2xl font-bold text-destructive">{formatCurrency(dashboard.currentCollectionDue ?? dashboard.due)}</div>
+            <p className="text-xs text-muted-foreground">Current period due</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-destructive/5 border-destructive/20">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">মোট বকেয়া</CardTitle>
+            <AlertCircle className="h-4 w-4 text-destructive" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-destructive">{formatCurrency(dashboard.totalDue)}</div>
+            <p className="text-xs text-muted-foreground">Previous + current</p>
           </CardContent>
         </Card>
 
@@ -143,7 +154,7 @@ export default function OwnerDashboard() {
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <UserRoundX className="w-5 h-5 text-destructive" />
-              আজকের বকেয়া সদস্য
+              মোট বকেয়া সদস্য
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -154,7 +165,7 @@ export default function OwnerDashboard() {
                     <p className="font-medium">{member.name}</p>
                     <p className="text-xs text-muted-foreground">{member.memberId}</p>
                   </div>
-                  <span className="font-semibold text-destructive">{formatCurrency(member.todayDue)}</span>
+                  <span className="font-semibold text-destructive">{formatCurrency(member.totalDue ?? member.todayDue)}</span>
                 </div>
               ))}
               {dashboard.dueMembers.length === 0 && (

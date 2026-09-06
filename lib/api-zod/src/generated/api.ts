@@ -78,6 +78,7 @@ export const GetDashboardResponse = zod.object({
   "trackingStartDate": zod.string().nullable(),
   "totalMembers": zod.number().int(),
   "todayTarget": zod.number(),
+  "currentCollectionDue": zod.number(),
   "collected": zod.number(),
   "due": zod.number(),
   "previousDue": zod.number(),
@@ -108,6 +109,7 @@ export const GetDashboardResponse = zod.object({
   "status": zod.enum(['active', 'inactive']),
   "todayPaid": zod.number(),
   "todayDue": zod.number(),
+  "currentPeriodDue": zod.number().optional(),
   "previousDue": zod.number().optional(),
   "totalDue": zod.number().optional(),
   "createdAt": zod.string().optional(),
@@ -325,6 +327,7 @@ export const ListCycleMembersResponseItem = zod.object({
   "dailyContribution": zod.number(),
   "totalCollected": zod.number(),
   "todayDue": zod.number(),
+  "currentPeriodDue": zod.number().optional(),
   "previousDue": zod.number().optional(),
   "totalDue": zod.number().optional()
 })
@@ -358,6 +361,7 @@ export const UpsertCycleMemberResponse = zod.object({
   "dailyContribution": zod.number(),
   "totalCollected": zod.number(),
   "todayDue": zod.number(),
+  "currentPeriodDue": zod.number().optional(),
   "previousDue": zod.number().optional(),
   "totalDue": zod.number().optional()
 })
@@ -556,6 +560,7 @@ export const ListMembersResponseItem = zod.object({
   "status": zod.enum(['active', 'inactive']),
   "todayPaid": zod.number(),
   "todayDue": zod.number(),
+  "currentPeriodDue": zod.number().optional(),
   "previousDue": zod.number().optional(),
   "totalDue": zod.number().optional(),
   "createdAt": zod.string().optional(),
@@ -590,6 +595,7 @@ export const CreateMemberResponse = zod.object({
   "status": zod.enum(['active', 'inactive']),
   "todayPaid": zod.number(),
   "todayDue": zod.number(),
+  "currentPeriodDue": zod.number().optional(),
   "previousDue": zod.number().optional(),
   "totalDue": zod.number().optional(),
   "createdAt": zod.string().optional(),
@@ -671,6 +677,7 @@ export const UpdateMemberResponse = zod.object({
   "status": zod.enum(['active', 'inactive']),
   "todayPaid": zod.number(),
   "todayDue": zod.number(),
+  "currentPeriodDue": zod.number().optional(),
   "previousDue": zod.number().optional(),
   "totalDue": zod.number().optional(),
   "createdAt": zod.string().optional(),
@@ -696,6 +703,7 @@ export const GetMemberHistoryResponse = zod.object({
   "status": zod.enum(['active', 'inactive']),
   "todayPaid": zod.number(),
   "todayDue": zod.number(),
+  "currentPeriodDue": zod.number().optional(),
   "previousDue": zod.number().optional(),
   "totalDue": zod.number().optional(),
   "createdAt": zod.string().optional(),

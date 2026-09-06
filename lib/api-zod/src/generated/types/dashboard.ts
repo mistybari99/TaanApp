@@ -15,6 +15,7 @@ export interface Dashboard {
   trackingStartDate: string | null;
   totalMembers: number;
   todayTarget: number;
+  currentCollectionDue: number;
   collected: number;
   due: number;
   previousDue: number;
