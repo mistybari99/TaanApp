@@ -31,6 +31,19 @@ paths:
       operationId: logout
       responses:
         "204": { description: Signed out }
+  /onboarding/status:
+    get:
+      operationId: getOnboardingStatus
+      responses:
+        "200": { description: Setup state, content: { application/json: { schema: { $ref: "#/components/schemas/OnboardingStatus" } } } }
+  /onboarding/initialize:
+    post:
+      operationId: initializeFund
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OnboardingInput" } } }
+      responses:
+        "201": { description: First owner created, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
   /dashboard:
     get:
       operationId: getDashboard
@@ -50,6 +63,14 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/MemberInput" } } }
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Member" } } } }
+  /members/import:
+    post:
+      operationId: importMembers
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MemberImportInput" } } }
+      responses:
+        "200": { description: Import preview or result, content: { application/json: { schema: { $ref: "#/components/schemas/MemberImportResult" } } } }
   /payments:
     get:
       operationId: listPayments
@@ -90,6 +111,23 @@ paths:
       operationId: listCollectors
       responses:
         "200": { description: Collectors, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/User" } } } } }
+    post:
+      operationId: createCollector
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CollectorInput" } } }
+      responses:
+        "201": { description: Collector created, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
+  /collectors/{id}:
+    patch:
+      operationId: updateCollector
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CollectorUpdate" } } }
+      responses:
+        "200": { description: Collector updated, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
   /audit:
     get:
       operationId: listAudit
@@ -135,6 +173,34 @@ components:
         name: { type: string }
         username: { type: string }
         role: { type: string, enum: [OWNER, COLLECTOR] }
+        active: { type: boolean }
+    OnboardingStatus:
+      type: object
+      required: [initialized, demoMode]
+      properties:
+        initialized: { type: boolean }
+        demoMode: { type: boolean }
+    OnboardingInput:
+      type: object
+      required: [organizationName, ownerName, username, password]
+      properties:
+        organizationName: { type: string, minLength: 2 }
+        ownerName: { type: string, minLength: 2 }
+        username: { type: string, minLength: 3 }
+        password: { type: string, minLength: 8 }
+    CollectorInput:
+      type: object
+      required: [name, username, password]
+      properties:
+        name: { type: string, minLength: 2 }
+        username: { type: string, minLength: 3 }
+        password: { type: string, minLength: 8 }
+    CollectorUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 2 }
+        active: { type: boolean }
+        password: { type: string, minLength: 8 }
     Member:
       type: object
       required: [id, memberId, name, mobile, shares, dailyAmount, joiningDate, status, todayPaid, todayDue]
@@ -162,6 +228,37 @@ components:
         dailyAmount: { type: number }
         joiningDate: { type: string }
         status: { type: string }
+    MemberImportRow:
+      type: object
+      required: [memberId, name, mobile, shares, dailyAmount, joiningDate, status]
+      properties:
+        memberId: { type: string }
+        name: { type: string }
+        mobile: { type: string }
+        address: { type: string }
+        shares: { type: integer }
+        dailyAmount: { type: number }
+        joiningDate: { type: string }
+        status: { type: string }
+    MemberImportInput:
+      type: object
+      required: [dryRun, rows]
+      properties:
+        dryRun: { type: boolean }
+        rows: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/MemberImportRow" } }
+    MemberImportError:
+      type: object
+      required: [row, message]
+      properties:
+        row: { type: integer }
+        message: { type: string }
+    MemberImportResult:
+      type: object
+      required: [valid, imported, errors]
+      properties:
+        valid: { type: integer }
+        imported: { type: integer }
+        errors: { type: array, items: { $ref: "#/components/schemas/MemberImportError" } }
     Payment:
       type: object
       required: [id, receiptId, memberId, memberName, amount, collectorName, verificationStatus, createdAt, status]
@@ -184,6 +281,7 @@ components:
         verificationMethod: { type: string, enum: [PIN, COLLECTOR_CONFIRMATION] }
         verificationCode: { type: string }
         confirmDuplicate: { type: boolean }
+        idempotencyKey: { type: string, minLength: 8 }
     ReversalInput:
       type: object
       required: [reason]
@@ -200,7 +298,7 @@ components:
     SettlementInput:
       type: object
       required: [amount, reference]
-      properties: { amount: { type: number }, reference: { type: string }, note: { type: string } }
+      properties: { amount: { type: number }, reference: { type: string }, note: { type: string }, idempotencyKey: { type: string, minLength: 8 } }
     AuditEntry:
       type: object
       required: [id, actor, action, detail, createdAt]

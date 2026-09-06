@@ -4,9 +4,10 @@ import { getGetCurrentUserQueryKey, useGetCurrentUser, useLogout } from "@worksp
 import { 
   LayoutDashboard, Users, UserSquare, Receipt, 
   ArrowDownToLine, FileText, Settings, Activity, 
-  LogOut, Wallet 
+  LogOut, Wallet, WifiOff, RefreshCw
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useSync } from "@/contexts/sync-context"
 
 interface NavItem {
   href: string;
@@ -32,6 +33,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation()
   const { data: user, isLoading } = useGetCurrentUser({ query: { retry: false, queryKey: getGetCurrentUserQueryKey() } })
   const logout = useLogout()
+  const { isOnline, pendingCount, syncQueue, isSyncing } = useSync()
 
   React.useEffect(() => {
     if (!isLoading && !user && location !== "/") {
@@ -52,6 +54,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     })
   }
 
+  const OfflineBadge = () => {
+    if (isOnline && pendingCount === 0) return null;
+    return (
+      <button 
+        onClick={() => syncQueue()}
+        disabled={isSyncing || !isOnline}
+        className="flex items-center gap-1.5 text-xs bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300 px-3 py-1.5 rounded-full font-medium shadow-sm transition-transform active:scale-95 disabled:opacity-50"
+      >
+        {!isOnline ? <WifiOff className="w-3.5 h-3.5" /> : <RefreshCw className={cn("w-3.5 h-3.5", isSyncing && "animate-spin")} />}
+        {pendingCount > 0 ? `${pendingCount} পেন্ডিং` : 'অফলাইন'}
+      </button>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-muted/30 flex flex-col md:flex-row">
       {/* Desktop Sidebar */}
@@ -65,9 +81,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         
-        <div className="p-4 border-b bg-muted/20">
-          <p className="text-sm font-medium">{user.name}</p>
-          <p className="text-xs text-muted-foreground capitalize">{user.role.toLowerCase()}</p>
+        <div className="p-4 border-b bg-muted/20 flex flex-col gap-2">
+          <div>
+            <p className="text-sm font-medium">{user.name}</p>
+            <p className="text-xs text-muted-foreground capitalize">{user.role.toLowerCase()}</p>
+          </div>
+          <div className="mt-2">
+             <OfflineBadge />
+          </div>
         </div>
 
         <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
@@ -118,12 +139,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <span>ISLAMIYA</span>
           </div>
-          <button 
-            onClick={handleLogout}
-            className="p-2 text-muted-foreground hover:text-destructive transition-colors"
-          >
-            <LogOut className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-3">
+            <OfflineBadge />
+            <button 
+              onClick={handleLogout}
+              className="p-2 text-muted-foreground hover:text-destructive transition-colors"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
         </header>
 
         <div className="flex-1 p-4 md:p-8">

@@ -1,5 +1,6 @@
 import { useState } from "react"
-import { useListSettlements, useCreateSettlement, useListCollectors, useGetDashboard } from "@workspace/api-client-react"
+import { useListSettlements, useGetDashboard, useCreateSettlement, getListSettlementsQueryKey, getGetDashboardQueryKey } from "@workspace/api-client-react"
+import { useQueryClient } from "@tanstack/react-query"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,36 +9,44 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { toast } from "sonner"
 import { ArrowDownToLine, Wallet } from "lucide-react"
+import { useSync } from "@/contexts/sync-context"
 
 export default function SettlementsPage() {
   const { data: settlements, isLoading, refetch } = useListSettlements()
   const { data: dashboard, refetch: refetchDashboard } = useGetDashboard()
+  const { addToQueue } = useSync()
   const createSettlement = useCreateSettlement()
+  const queryClient = useQueryClient()
   
   const [isOpen, setIsOpen] = useState(false)
   const [amount, setAmount] = useState("")
   const [reference, setReference] = useState("")
 
-  const handleDeposit = () => {
-    createSettlement.mutate({
-      data: {
-        amount: Number(amount),
-        reference,
-        note: "Daily Deposit"
+  const handleDeposit = async () => {
+    const payload = {
+      amount: Number(amount),
+      reference,
+      note: "Daily Deposit",
+      idempotencyKey: crypto.randomUUID()
+    };
+    
+    if (!navigator.onLine) {
+      addToQueue({ type: 'SETTLEMENT', payload, id: payload.idempotencyKey });
+      toast.success("অফলাইনে নিরাপদে রাখা হয়েছে; সংযোগ ফিরলে সিঙ্ক হবে (Queued safely)");
+    } else {
+      try {
+        await createSettlement.mutateAsync({ data: payload });
+        toast.success("জমা সেভ হয়েছে (Deposit Recorded)");
+        queryClient.invalidateQueries({ queryKey: getListSettlementsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() });
+      } catch (error: any) {
+        toast.error(error?.message || "জমা সেভ করা যায়নি (Deposit failed)");
+        return;
       }
-    }, {
-      onSuccess: () => {
-        toast.success("জমা সফল হয়েছে (Deposit Successful)")
-        setIsOpen(false)
-        setAmount("")
-        setReference("")
-        refetch()
-        refetchDashboard()
-      },
-      onError: (err: any) => {
-        toast.error(err.message || "ব্যর্থ হয়েছে")
-      }
-    })
+    }
+    setIsOpen(false);
+    setAmount("");
+    setReference("");
   }
 
   return (
@@ -73,7 +82,7 @@ export default function SettlementsPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button onClick={handleDeposit} disabled={createSettlement.isPending || !amount}>
+              <Button onClick={handleDeposit} disabled={!amount}>
                 জমা দিন (Submit)
               </Button>
             </DialogFooter>

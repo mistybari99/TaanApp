@@ -24,7 +24,8 @@ export const LoginResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
   "username": zod.string(),
-  "role": zod.enum(['OWNER', 'COLLECTOR'])
+  "role": zod.enum(['OWNER', 'COLLECTOR']),
+  "active": zod.boolean().optional()
 })
 
 
@@ -32,11 +33,44 @@ export const GetCurrentUserResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
   "username": zod.string(),
-  "role": zod.enum(['OWNER', 'COLLECTOR'])
+  "role": zod.enum(['OWNER', 'COLLECTOR']),
+  "active": zod.boolean().optional()
 })
 
 
 export const LogoutResponse = zod.void()
+
+
+export const GetOnboardingStatusResponse = zod.object({
+  "initialized": zod.boolean(),
+  "demoMode": zod.boolean()
+})
+
+
+export const initializeFundBodyOrganizationNameMin = 2;
+
+export const initializeFundBodyOwnerNameMin = 2;
+
+export const initializeFundBodyUsernameMin = 3;
+
+export const initializeFundBodyPasswordMin = 8;
+
+
+
+export const InitializeFundBody = zod.object({
+  "organizationName": zod.string().min(initializeFundBodyOrganizationNameMin),
+  "ownerName": zod.string().min(initializeFundBodyOwnerNameMin),
+  "username": zod.string().min(initializeFundBodyUsernameMin),
+  "password": zod.string().min(initializeFundBodyPasswordMin)
+})
+
+export const InitializeFundResponse = zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "role": zod.enum(['OWNER', 'COLLECTOR']),
+  "active": zod.boolean().optional()
+})
 
 
 export const GetDashboardResponse = zod.object({
@@ -134,6 +168,34 @@ export const CreateMemberResponse = zod.object({
 })
 
 
+export const importMembersBodyRowsMax = 500;
+
+
+
+export const ImportMembersBody = zod.object({
+  "dryRun": zod.boolean(),
+  "rows": zod.array(zod.object({
+  "memberId": zod.string(),
+  "name": zod.string(),
+  "mobile": zod.string(),
+  "address": zod.string().optional(),
+  "shares": zod.number().int(),
+  "dailyAmount": zod.number(),
+  "joiningDate": zod.string(),
+  "status": zod.string()
+})).max(importMembersBodyRowsMax)
+})
+
+export const ImportMembersResponse = zod.object({
+  "valid": zod.number().int(),
+  "imported": zod.number().int(),
+  "errors": zod.array(zod.object({
+  "row": zod.number().int(),
+  "message": zod.string()
+}))
+})
+
+
 export const ListPaymentsResponseItem = zod.object({
   "id": zod.number().int(),
   "receiptId": zod.string(),
@@ -148,12 +210,17 @@ export const ListPaymentsResponseItem = zod.object({
 export const ListPaymentsResponse = zod.array(ListPaymentsResponseItem)
 
 
+export const createPaymentBodyIdempotencyKeyMin = 8;
+
+
+
 export const CreatePaymentBody = zod.object({
   "memberId": zod.number().int(),
   "amount": zod.number(),
   "verificationMethod": zod.enum(['PIN', 'COLLECTOR_CONFIRMATION']),
   "verificationCode": zod.string().optional(),
-  "confirmDuplicate": zod.boolean()
+  "confirmDuplicate": zod.boolean(),
+  "idempotencyKey": zod.string().min(createPaymentBodyIdempotencyKeyMin).optional()
 })
 
 export const CreatePaymentResponse = zod.object({
@@ -200,10 +267,15 @@ export const ListSettlementsResponseItem = zod.object({
 export const ListSettlementsResponse = zod.array(ListSettlementsResponseItem)
 
 
+export const createSettlementBodyIdempotencyKeyMin = 8;
+
+
+
 export const CreateSettlementBody = zod.object({
   "amount": zod.number(),
   "reference": zod.string(),
-  "note": zod.string().optional()
+  "note": zod.string().optional(),
+  "idempotencyKey": zod.string().min(createSettlementBodyIdempotencyKeyMin).optional()
 })
 
 export const CreateSettlementResponse = zod.object({
@@ -219,9 +291,58 @@ export const ListCollectorsResponseItem = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
   "username": zod.string(),
-  "role": zod.enum(['OWNER', 'COLLECTOR'])
+  "role": zod.enum(['OWNER', 'COLLECTOR']),
+  "active": zod.boolean().optional()
 })
 export const ListCollectorsResponse = zod.array(ListCollectorsResponseItem)
+
+
+export const createCollectorBodyNameMin = 2;
+
+export const createCollectorBodyUsernameMin = 3;
+
+export const createCollectorBodyPasswordMin = 8;
+
+
+
+export const CreateCollectorBody = zod.object({
+  "name": zod.string().min(createCollectorBodyNameMin),
+  "username": zod.string().min(createCollectorBodyUsernameMin),
+  "password": zod.string().min(createCollectorBodyPasswordMin)
+})
+
+export const CreateCollectorResponse = zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "role": zod.enum(['OWNER', 'COLLECTOR']),
+  "active": zod.boolean().optional()
+})
+
+
+export const UpdateCollectorParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const updateCollectorBodyNameMin = 2;
+
+export const updateCollectorBodyPasswordMin = 8;
+
+
+
+export const UpdateCollectorBody = zod.object({
+  "name": zod.string().min(updateCollectorBodyNameMin).optional(),
+  "active": zod.boolean().optional(),
+  "password": zod.string().min(updateCollectorBodyPasswordMin).optional()
+})
+
+export const UpdateCollectorResponse = zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "role": zod.enum(['OWNER', 'COLLECTOR']),
+  "active": zod.boolean().optional()
+})
 
 
 export const ListAuditResponseItem = zod.object({

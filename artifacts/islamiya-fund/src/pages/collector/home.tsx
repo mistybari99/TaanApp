@@ -1,5 +1,6 @@
-import { useState, useMemo } from "react"
-import { useListMembers, useCreatePayment, useGetDashboard } from "@workspace/api-client-react"
+import { useState, useMemo, useRef } from "react"
+import { useListMembers, useGetDashboard, useCreatePayment, getGetCurrentUserQueryKey, getGetDashboardQueryKey, getListPaymentsQueryKey, getListMembersQueryKey } from "@workspace/api-client-react"
+import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -7,7 +8,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { toast } from "sonner"
 import { formatCurrency } from "@/lib/utils"
-import { Search, UserCheck, CheckCircle2, History } from "lucide-react"
+import { Search, UserCheck, CheckCircle2 } from "lucide-react"
+import { useSync } from "@/contexts/sync-context"
+import { ReceiptDialog, ReceiptRef } from "@/components/receipt"
 
 export default function CollectorHome() {
   const [search, setSearch] = useState("")
@@ -18,8 +21,12 @@ export default function CollectorHome() {
   const [isDuplicateConfirm, setIsDuplicateConfirm] = useState(false)
   
   const { data: members, isLoading, refetch } = useListMembers({ search: search.length > 2 ? search : undefined })
-  const { data: dashboard, refetch: refetchDashboard } = useGetDashboard()
+  const { data: dashboard, refetch: refetchDashboard } = useGetDashboard({ query: { queryKey: getGetDashboardQueryKey(), refetchInterval: 15000 } })
+  
+  const { isOnline, addToQueue } = useSync()
   const createPayment = useCreatePayment()
+  const queryClient = useQueryClient()
+  const receiptRef = useRef<ReceiptRef>(null)
 
   // Find selected member
   const selectedMember = useMemo(() => members?.find(m => m.id === selectedMemberId), [members, selectedMemberId])
@@ -29,7 +36,6 @@ export default function CollectorHome() {
     const member = members?.find(m => m.id === id)
     if (member) {
       setAmount(member.dailyAmount.toString())
-      // Check if already paid today
       if (member.todayPaid > 0) {
         setIsDuplicateConfirm(true)
       } else {
@@ -40,7 +46,7 @@ export default function CollectorHome() {
     setSearch("")
   }
 
-  const handleCollect = () => {
+  const handleCollect = async () => {
     if (!selectedMember) return
     const numAmount = Number(amount)
     if (isNaN(numAmount) || numAmount <= 0) {
@@ -48,32 +54,52 @@ export default function CollectorHome() {
       return
     }
 
-    createPayment.mutate({
-      data: {
-        memberId: selectedMember.id,
-        amount: numAmount,
-        verificationMethod: pin ? "PIN" : "COLLECTOR_CONFIRMATION",
-        verificationCode: pin || undefined,
-        confirmDuplicate: isDuplicateConfirm
+    const payload = {
+      memberId: selectedMember.id,
+      amount: numAmount,
+      verificationMethod: pin ? "PIN" as const : "COLLECTOR_CONFIRMATION" as const,
+      verificationCode: pin || undefined,
+      confirmDuplicate: isDuplicateConfirm,
+      idempotencyKey: crypto.randomUUID()
+    };
+
+    const userState = queryClient.getQueryData<any>(getGetCurrentUserQueryKey());
+    if (!isOnline) {
+      addToQueue({ type: 'PAYMENT', payload, id: payload.idempotencyKey });
+      toast.success("অফলাইনে নিরাপদে রাখা হয়েছে; সংযোগ ফিরলে সিঙ্ক হবে (Queued safely)");
+      receiptRef.current?.show({
+        receiptId: `OFF-${payload.idempotencyKey.substring(0,6).toUpperCase()}`,
+        memberName: selectedMember.name, memberId: selectedMember.memberId, amount: numAmount,
+        date: new Date().toISOString(), collectorName: userState?.name || "Collector", status: 'PENDING'
+      });
+    } else {
+      try {
+        const result = await createPayment.mutateAsync({ data: payload });
+        toast.success("পেমেন্ট সেভ হয়েছে (Payment Recorded)");
+        receiptRef.current?.show({
+          receiptId: result.receiptId, memberName: selectedMember.name, memberId: selectedMember.memberId,
+          amount: result.amount, date: result.createdAt, collectorName: result.collectorName || userState?.name || "Collector",
+          status: 'COMPLETED'
+        });
+        queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListPaymentsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListMembersQueryKey() });
+      } catch (error: any) {
+        toast.error(error?.message || "পেমেন্ট সেভ করা যায়নি (Payment failed)");
+        return;
       }
-    }, {
-      onSuccess: () => {
-        toast.success("পেমেন্ট সফল হয়েছে (Payment Successful)")
-        setConfirmDialog(false)
-        setSelectedMemberId(null)
-        setAmount("")
-        setPin("")
-        refetch()
-        refetchDashboard()
-      },
-      onError: (err: any) => {
-        toast.error(err?.message || "পেমেন্ট ব্যর্থ হয়েছে (Payment Failed)")
-      }
-    })
+    }
+    setConfirmDialog(false);
+    setSelectedMemberId(null);
+    setAmount("");
+    setPin("");
+
   }
 
   return (
     <div className="space-y-4 max-w-md mx-auto">
+      <ReceiptDialog ref={receiptRef} />
+      
       {/* Collector Stats Snippet */}
       <div className="grid grid-cols-2 gap-3 mb-6">
         <Card className="bg-primary text-primary-foreground border-none">
@@ -240,9 +266,8 @@ export default function CollectorHome() {
             <Button 
               className="flex-1 h-12" 
               onClick={handleCollect}
-              disabled={createPayment.isPending}
             >
-              {createPayment.isPending ? "অপেক্ষা..." : "নিশ্চিত (Confirm)"}
+              নিশ্চিত (Confirm)
             </Button>
           </DialogFooter>
         </DialogContent>

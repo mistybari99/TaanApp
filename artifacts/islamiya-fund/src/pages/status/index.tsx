@@ -1,9 +1,11 @@
 import { getHealthCheckQueryKey, useHealthCheck } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Activity, Database, Server, Smartphone } from "lucide-react"
+import { Activity, Database, Server, Smartphone, Download } from "lucide-react"
+import { usePwaInstall } from "@/hooks/use-pwa"
 
 export default function StatusPage() {
   const { data: health, isLoading } = useHealthCheck({ query: { refetchInterval: 30000, queryKey: getHealthCheckQueryKey() } })
+  const { isInstallable, install } = usePwaInstall()
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -36,16 +38,27 @@ export default function StatusPage() {
         </Card>
 
         <Card className="md:col-span-2 bg-primary/5 border-primary/20">
-          <CardContent className="pt-6 flex items-start gap-4">
-            <div className="p-3 bg-primary text-primary-foreground rounded-xl">
+          <CardContent className="pt-6 flex flex-col sm:flex-row items-start gap-4">
+            <div className="p-3 bg-primary text-primary-foreground rounded-xl shrink-0">
               <Smartphone className="w-6 h-6" />
             </div>
-            <div>
+            <div className="flex-1">
               <h3 className="font-semibold text-lg">PWA অ্যাপ (PWA Install)</h3>
               <p className="text-sm text-muted-foreground mb-4">অফলাইন সুবিধা ও দ্রুত ব্যবহারের জন্য অ্যাপটি হোমস্ক্রিনে যোগ করুন।</p>
-              <div className="text-xs font-mono bg-background p-2 rounded border">
-                Android Chrome: Menu &gt; Install App / Add to Home screen
-              </div>
+              
+              {isInstallable ? (
+                <button 
+                  onClick={install}
+                  className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium text-sm hover:opacity-90 active:scale-95 transition-all"
+                >
+                  <Download className="w-4 h-4" />
+                  অ্যাপ ইনস্টল করুন (Install App)
+                </button>
+              ) : (
+                <div className="text-xs font-mono bg-background p-2 rounded border inline-block">
+                  Android Chrome: Menu &gt; Install App / Add to Home screen
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

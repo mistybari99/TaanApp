@@ -7,15 +7,23 @@
  */
 
 export * from './auditEntry';
+export * from './collectorInput';
 export * from './collectorPerformance';
+export * from './collectorUpdate';
 export * from './dashboard';
 export * from './exportReportParams';
 export * from './healthStatus';
 export * from './listMembersParams';
 export * from './loginInput';
 export * from './member';
+export * from './memberImportError';
+export * from './memberImportInput';
+export * from './memberImportResult';
+export * from './memberImportRow';
 export * from './memberInput';
 export * from './memberStatus';
+export * from './onboardingInput';
+export * from './onboardingStatus';
 export * from './payment';
 export * from './paymentInput';
 export * from './paymentInputVerificationMethod';

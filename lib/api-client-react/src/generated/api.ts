@@ -21,13 +21,19 @@ import type {
 
 import type {
   AuditEntry,
+  CollectorInput,
+  CollectorUpdate,
   Dashboard,
   ExportReportParams,
   HealthStatus,
   ListMembersParams,
   LoginInput,
   Member,
+  MemberImportInput,
+  MemberImportResult,
   MemberInput,
+  OnboardingInput,
+  OnboardingStatus,
   Payment,
   PaymentInput,
   ReversalInput,
@@ -337,6 +343,142 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       return useMutation(getLogoutMutationOptions(options));
     }
 
+export const getGetOnboardingStatusUrl = () => {
+
+
+
+
+  return `/api/onboarding/status`
+}
+
+export const getOnboardingStatus = async ( options?: Parameters<typeof customFetch>[1]): Promise<OnboardingStatus> => {
+
+  return customFetch<OnboardingStatus>(getGetOnboardingStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOnboardingStatusQueryKey = () => {
+    return [
+    `/api/onboarding/status`
+    ] as const;
+    }
+
+
+export const getGetOnboardingStatusQueryOptions = <TData = Awaited<ReturnType<typeof getOnboardingStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOnboardingStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOnboardingStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOnboardingStatus>>> = ({ signal }) => getOnboardingStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOnboardingStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetOnboardingStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getOnboardingStatus>>>
+export type GetOnboardingStatusQueryError = ErrorType<unknown>
+
+
+
+export function useGetOnboardingStatus<TData = Awaited<ReturnType<typeof getOnboardingStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOnboardingStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetOnboardingStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getInitializeFundUrl = () => {
+
+
+
+
+  return `/api/onboarding/initialize`
+}
+
+export const initializeFund = async (onboardingInput: OnboardingInput, options?: Parameters<typeof customFetch>[1]): Promise<User> => {
+
+  return customFetch<User>(getInitializeFundUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(onboardingInput)
+  }
+);}
+
+
+
+
+
+export const getInitializeFundMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof initializeFund>>, TError,{data: BodyType<OnboardingInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof initializeFund>>, TError,{data: BodyType<OnboardingInput>}, TContext> => {
+
+const mutationKey = ['initializeFund'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof initializeFund>>, {data: BodyType<OnboardingInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  initializeFund(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type InitializeFundMutationResult = NonNullable<Awaited<ReturnType<typeof initializeFund>>>
+    export type InitializeFundMutationBody = BodyType<OnboardingInput>
+    export type InitializeFundMutationError = ErrorType<unknown>
+
+    export const useInitializeFund = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof initializeFund>>, TError,{data: BodyType<OnboardingInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof initializeFund>>,
+        TError,
+        {data: BodyType<OnboardingInput>},
+        TContext
+      > => {
+      return useMutation(getInitializeFundMutationOptions(options));
+    }
+
 export const getGetDashboardUrl = () => {
 
 
@@ -549,6 +691,71 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getCreateMemberMutationOptions(options));
+    }
+
+export const getImportMembersUrl = () => {
+
+
+
+
+  return `/api/members/import`
+}
+
+export const importMembers = async (memberImportInput: MemberImportInput, options?: Parameters<typeof customFetch>[1]): Promise<MemberImportResult> => {
+
+  return customFetch<MemberImportResult>(getImportMembersUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(memberImportInput)
+  }
+);}
+
+
+
+
+
+export const getImportMembersMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importMembers>>, TError,{data: BodyType<MemberImportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof importMembers>>, TError,{data: BodyType<MemberImportInput>}, TContext> => {
+
+const mutationKey = ['importMembers'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof importMembers>>, {data: BodyType<MemberImportInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  importMembers(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ImportMembersMutationResult = NonNullable<Awaited<ReturnType<typeof importMembers>>>
+    export type ImportMembersMutationBody = BodyType<MemberImportInput>
+    export type ImportMembersMutationError = ErrorType<unknown>
+
+    export const useImportMembers = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importMembers>>, TError,{data: BodyType<MemberImportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof importMembers>>,
+        TError,
+        {data: BodyType<MemberImportInput>},
+        TContext
+      > => {
+      return useMutation(getImportMembersMutationOptions(options));
     }
 
 export const getListPaymentsUrl = () => {
@@ -959,6 +1166,137 @@ export function useListCollectors<TData = Awaited<ReturnType<typeof listCollecto
 
 
 
+
+export const getCreateCollectorUrl = () => {
+
+
+
+
+  return `/api/collectors`
+}
+
+export const createCollector = async (collectorInput: CollectorInput, options?: Parameters<typeof customFetch>[1]): Promise<User> => {
+
+  return customFetch<User>(getCreateCollectorUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(collectorInput)
+  }
+);}
+
+
+
+
+
+export const getCreateCollectorMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCollector>>, TError,{data: BodyType<CollectorInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCollector>>, TError,{data: BodyType<CollectorInput>}, TContext> => {
+
+const mutationKey = ['createCollector'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCollector>>, {data: BodyType<CollectorInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCollector(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCollectorMutationResult = NonNullable<Awaited<ReturnType<typeof createCollector>>>
+    export type CreateCollectorMutationBody = BodyType<CollectorInput>
+    export type CreateCollectorMutationError = ErrorType<unknown>
+
+    export const useCreateCollector = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCollector>>, TError,{data: BodyType<CollectorInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCollector>>,
+        TError,
+        {data: BodyType<CollectorInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCollectorMutationOptions(options));
+    }
+
+export const getUpdateCollectorUrl = (id: number,) => {
+
+
+
+
+  return `/api/collectors/${id}`
+}
+
+export const updateCollector = async (id: number,
+    collectorUpdate: CollectorUpdate, options?: Parameters<typeof customFetch>[1]): Promise<User> => {
+
+  return customFetch<User>(getUpdateCollectorUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(collectorUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateCollectorMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCollector>>, TError,{id: number;data: BodyType<CollectorUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCollector>>, TError,{id: number;data: BodyType<CollectorUpdate>}, TContext> => {
+
+const mutationKey = ['updateCollector'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCollector>>, {id: number;data: BodyType<CollectorUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateCollector(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCollectorMutationResult = NonNullable<Awaited<ReturnType<typeof updateCollector>>>
+    export type UpdateCollectorMutationBody = BodyType<CollectorUpdate>
+    export type UpdateCollectorMutationError = ErrorType<unknown>
+
+    export const useUpdateCollector = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCollector>>, TError,{id: number;data: BodyType<CollectorUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCollector>>,
+        TError,
+        {id: number;data: BodyType<CollectorUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateCollectorMutationOptions(options));
+    }
 
 export const getListAuditUrl = () => {
 

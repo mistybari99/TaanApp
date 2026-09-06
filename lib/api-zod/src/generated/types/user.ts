@@ -12,4 +12,5 @@ export interface User {
   name: string;
   username: string;
   role: UserRole;
+  active?: boolean;
 }

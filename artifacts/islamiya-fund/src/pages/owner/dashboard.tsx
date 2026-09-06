@@ -1,11 +1,11 @@
-import { useGetDashboard } from "@workspace/api-client-react"
+import { getGetDashboardQueryKey, useGetDashboard } from "@workspace/api-client-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatCurrency } from "@/lib/utils"
 import { Users, TrendingUp, AlertCircle, ArrowDownToLine, Wallet } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
 export default function OwnerDashboard() {
-  const { data: dashboard, isLoading } = useGetDashboard()
+  const { data: dashboard, isLoading } = useGetDashboard({ query: { queryKey: getGetDashboardQueryKey(), refetchInterval: 15000 } })
 
   if (isLoading) {
     return <div className="animate-pulse space-y-4">

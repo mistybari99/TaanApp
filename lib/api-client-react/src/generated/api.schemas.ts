@@ -29,6 +29,40 @@ export interface User {
   name: string;
   username: string;
   role: UserRole;
+  active?: boolean;
+}
+
+export interface OnboardingStatus {
+  initialized: boolean;
+  demoMode: boolean;
+}
+
+export interface OnboardingInput {
+  /** @minLength 2 */
+  organizationName: string;
+  /** @minLength 2 */
+  ownerName: string;
+  /** @minLength 3 */
+  username: string;
+  /** @minLength 8 */
+  password: string;
+}
+
+export interface CollectorInput {
+  /** @minLength 2 */
+  name: string;
+  /** @minLength 3 */
+  username: string;
+  /** @minLength 8 */
+  password: string;
+}
+
+export interface CollectorUpdate {
+  /** @minLength 2 */
+  name?: string;
+  active?: boolean;
+  /** @minLength 8 */
+  password?: string;
 }
 
 export type MemberStatus = typeof MemberStatus[keyof typeof MemberStatus];
@@ -64,6 +98,34 @@ export interface MemberInput {
   status: string;
 }
 
+export interface MemberImportRow {
+  memberId: string;
+  name: string;
+  mobile: string;
+  address?: string;
+  shares: number;
+  dailyAmount: number;
+  joiningDate: string;
+  status: string;
+}
+
+export interface MemberImportInput {
+  dryRun: boolean;
+  /** @maxItems 500 */
+  rows: MemberImportRow[];
+}
+
+export interface MemberImportError {
+  row: number;
+  message: string;
+}
+
+export interface MemberImportResult {
+  valid: number;
+  imported: number;
+  errors: MemberImportError[];
+}
+
 export interface Payment {
   id: number;
   receiptId: string;
@@ -90,6 +152,8 @@ export interface PaymentInput {
   verificationMethod: PaymentInputVerificationMethod;
   verificationCode?: string;
   confirmDuplicate: boolean;
+  /** @minLength 8 */
+  idempotencyKey?: string;
 }
 
 export interface ReversalInput {
@@ -108,6 +172,8 @@ export interface SettlementInput {
   amount: number;
   reference: string;
   note?: string;
+  /** @minLength 8 */
+  idempotencyKey?: string;
 }
 
 export interface AuditEntry {

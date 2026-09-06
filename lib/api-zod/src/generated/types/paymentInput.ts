@@ -13,4 +13,6 @@ export interface PaymentInput {
   verificationMethod: PaymentInputVerificationMethod;
   verificationCode?: string;
   confirmDuplicate: boolean;
+  /** @minLength 8 */
+  idempotencyKey?: string;
 }

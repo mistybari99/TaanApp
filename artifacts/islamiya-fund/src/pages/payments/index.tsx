@@ -1,13 +1,16 @@
+import { useRef } from "react"
 import { useListPayments, useReversePayment } from "@workspace/api-client-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { toast } from "sonner"
 import { FileText, RotateCcw } from "lucide-react"
+import { ReceiptDialog, ReceiptRef } from "@/components/receipt"
 
 export default function PaymentsPage() {
   const { data: payments, isLoading, refetch } = useListPayments()
   const reversePayment = useReversePayment()
+  const receiptRef = useRef<ReceiptRef>(null)
 
   const handleReverse = (id: number) => {
     if (confirm("আপনি কি নিশ্চিত এই পেমেন্টটি বাতিল করতে চান? (Are you sure to reverse this payment?)")) {
@@ -24,13 +27,22 @@ export default function PaymentsPage() {
     }
   }
 
-  const printReceipt = (receiptId: string) => {
-    toast.success(`রসিদ প্রিন্ট হচ্ছে... (Printing receipt ${receiptId})`)
-    // In a real app, this would generate a PDF or open a print dialog
+  const printReceipt = (payment: any) => {
+    receiptRef.current?.show({
+      receiptId: payment.receiptId,
+      memberName: payment.memberName,
+      memberId: payment.memberId,
+      amount: payment.amount,
+      date: payment.createdAt,
+      collectorName: payment.collectorName,
+      status: payment.status
+    });
   }
 
   return (
     <div className="space-y-6">
+      <ReceiptDialog ref={receiptRef} />
+      
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-primary">লেনদেন <span className="text-muted-foreground text-lg font-normal ml-2">Payments</span></h1>
         <p className="text-muted-foreground">পেমেন্ট ইতিহাস এবং রসিদ (Payment History & Receipts)</p>
@@ -71,7 +83,7 @@ export default function PaymentsPage() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => printReceipt(payment.receiptId)} title="Print Receipt">
+                      <Button variant="ghost" size="icon" onClick={() => printReceipt(payment)} title="Print Receipt">
                         <FileText className="w-4 h-4" />
                       </Button>
                       {payment.status === 'COMPLETED' && (

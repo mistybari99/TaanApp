@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useListMembers, useCreateMember } from "@workspace/api-client-react"
+import { useListMembers, useCreateMember, useImportMembers } from "@workspace/api-client-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -7,14 +7,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 import { formatCurrency } from "@/lib/utils"
-import { Plus, Search, UserPlus } from "lucide-react"
+import { Search, UserPlus, Upload, Download, AlertTriangle } from "lucide-react"
+import { downloadCsvTemplate, parseCsv } from "@/lib/csv"
 
 export default function MembersPage() {
   const [search, setSearch] = useState("")
   const [isAddOpen, setIsAddOpen] = useState(false)
+  const [isImportOpen, setIsImportOpen] = useState(false)
   
   const { data: members, isLoading, refetch } = useListMembers({ search: search || undefined })
   const createMember = useCreateMember()
+  const importMembers = useImportMembers()
 
   const [newMember, setNewMember] = useState({
     memberId: "",
@@ -24,6 +27,10 @@ export default function MembersPage() {
     shares: 1,
     dailyAmount: 100
   })
+
+  // Import State
+  const [importRows, setImportRows] = useState<any[]>([])
+  const [importPreview, setImportPreview] = useState<{valid: number, imported: number, errors: any[]} | null>(null)
 
   const handleAdd = () => {
     createMember.mutate({
@@ -45,6 +52,46 @@ export default function MembersPage() {
     })
   }
 
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const rows = await parseCsv(file);
+      setImportRows(rows);
+      // Run dry-run validation
+      importMembers.mutate({
+        data: { dryRun: true, rows }
+      }, {
+        onSuccess: (data) => {
+          setImportPreview(data);
+          if (data.errors.length > 0) {
+            toast.error(`${data.errors.length} টি লাইনে ভুল আছে`);
+          } else {
+            toast.success("সব ঠিক আছে, ইম্পোর্ট করতে পারেন");
+          }
+        },
+        onError: (err: any) => toast.error(err.message || "Validation failed")
+      });
+    } catch (err) {
+      toast.error("ফাইল পড়তে সমস্যা হয়েছে (Failed to read CSV)");
+    }
+  }
+
+  const handleCommitImport = () => {
+    importMembers.mutate({
+      data: { dryRun: false, rows: importRows }
+    }, {
+      onSuccess: (data) => {
+        toast.success(`${data.imported} জন সদস্য সফলভাবে যোগ করা হয়েছে`);
+        setIsImportOpen(false);
+        setImportRows([]);
+        setImportPreview(null);
+        refetch();
+      },
+      onError: (err: any) => toast.error(err.message || "Import failed")
+    })
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -53,47 +100,109 @@ export default function MembersPage() {
           <p className="text-muted-foreground">সদস্য পরিচালনা ও তালিকা (Manage Members)</p>
         </div>
         
-        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-          <DialogTrigger asChild>
-            <Button className="w-full sm:w-auto gap-2">
-              <UserPlus className="w-4 h-4" /> নতুন সদস্য
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>নতুন সদস্য যোগ করুন (Add Member)</DialogTitle>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="memberId" className="text-right">ID</Label>
-                <Input id="memberId" value={newMember.memberId} onChange={e => setNewMember({...newMember, memberId: e.target.value})} className="col-span-3" />
+        <div className="flex w-full sm:w-auto gap-2">
+          <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="flex-1 sm:flex-none gap-2">
+                <Upload className="w-4 h-4" /> CSV ইম্পোর্ট
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle>CSV থেকে সদস্য যোগ করুন</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="flex justify-between items-center bg-muted/50 p-4 rounded-lg">
+                  <div>
+                    <h4 className="font-semibold text-sm">সঠিক ফরম্যাট ব্যবহার করুন</h4>
+                    <p className="text-xs text-muted-foreground">টেমপ্লেট ডাউনলোড করে পূরণ করুন</p>
+                  </div>
+                  <Button variant="secondary" size="sm" onClick={downloadCsvTemplate}>
+                    <Download className="w-4 h-4 mr-2" /> টেমপ্লেট
+                  </Button>
+                </div>
+                
+                <div>
+                  <Label>CSV ফাইল নির্বাচন করুন</Label>
+                  <Input type="file" accept=".csv" onChange={handleFileChange} className="mt-1" />
+                </div>
+
+                {importPreview && (
+                  <div className="p-4 border rounded-lg bg-card space-y-2">
+                    <h4 className="font-semibold text-sm flex items-center gap-2">
+                      ভ্যালিডেশন রেজাল্ট 
+                      {importPreview.errors.length === 0 ? 
+                        <span className="text-green-600 text-xs px-2 bg-green-100 rounded">OK</span> : 
+                        <span className="text-red-600 text-xs px-2 bg-red-100 rounded">Errors found</span>}
+                    </h4>
+                    <p className="text-sm">মোট লাইন: {importRows.length}, সঠিক: {importPreview.valid}</p>
+                    {importPreview.errors.length > 0 && (
+                      <div className="max-h-32 overflow-y-auto text-xs space-y-1 mt-2">
+                        {importPreview.errors.map((err, i) => (
+                          <div key={i} className="text-destructive flex items-start gap-1">
+                            <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                            Row {err.row}: {err.message}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="name" className="text-right">নাম (Name)</Label>
-                <Input id="name" value={newMember.name} onChange={e => setNewMember({...newMember, name: e.target.value})} className="col-span-3" />
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsImportOpen(false)}>বাতিল</Button>
+                <Button 
+                  onClick={handleCommitImport} 
+                  disabled={importMembers.isPending || !importPreview || importPreview.errors.length > 0}
+                >
+                  ইম্পোর্ট নিশ্চিত করুন (Commit)
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+            <DialogTrigger asChild>
+              <Button className="flex-1 sm:flex-none gap-2">
+                <UserPlus className="w-4 h-4" /> নতুন সদস্য
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>নতুন সদস্য যোগ করুন (Add Member)</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="memberId" className="text-right">ID</Label>
+                  <Input id="memberId" value={newMember.memberId} onChange={e => setNewMember({...newMember, memberId: e.target.value})} className="col-span-3" />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="name" className="text-right">নাম (Name)</Label>
+                  <Input id="name" value={newMember.name} onChange={e => setNewMember({...newMember, name: e.target.value})} className="col-span-3" />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="mobile" className="text-right">মোবাইল (Mobile)</Label>
+                  <Input id="mobile" value={newMember.mobile} onChange={e => setNewMember({...newMember, mobile: e.target.value})} className="col-span-3" />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="address" className="text-right">ঠিকানা (Address)</Label>
+                  <Input id="address" value={newMember.address} onChange={e => setNewMember({...newMember, address: e.target.value})} className="col-span-3" />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="shares" className="text-right">শেয়ার (Shares)</Label>
+                  <Input id="shares" type="number" value={newMember.shares} onChange={e => setNewMember({...newMember, shares: Number(e.target.value)})} className="col-span-3" />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="dailyAmount" className="text-right">দৈনিক জমা</Label>
+                  <Input id="dailyAmount" type="number" value={newMember.dailyAmount} onChange={e => setNewMember({...newMember, dailyAmount: Number(e.target.value)})} className="col-span-3" />
+                </div>
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="mobile" className="text-right">মোবাইল (Mobile)</Label>
-                <Input id="mobile" value={newMember.mobile} onChange={e => setNewMember({...newMember, mobile: e.target.value})} className="col-span-3" />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="address" className="text-right">ঠিকানা (Address)</Label>
-                <Input id="address" value={newMember.address} onChange={e => setNewMember({...newMember, address: e.target.value})} className="col-span-3" />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="shares" className="text-right">শেয়ার (Shares)</Label>
-                <Input id="shares" type="number" value={newMember.shares} onChange={e => setNewMember({...newMember, shares: Number(e.target.value)})} className="col-span-3" />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="dailyAmount" className="text-right">দৈনিক জমা</Label>
-                <Input id="dailyAmount" type="number" value={newMember.dailyAmount} onChange={e => setNewMember({...newMember, dailyAmount: Number(e.target.value)})} className="col-span-3" />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button onClick={handleAdd} disabled={createMember.isPending}>সংরক্ষণ করুন (Save)</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              <DialogFooter>
+                <Button onClick={handleAdd} disabled={createMember.isPending}>সংরক্ষণ করুন (Save)</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="flex items-center gap-2 max-w-sm">

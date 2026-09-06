@@ -10,4 +10,6 @@ export interface SettlementInput {
   amount: number;
   reference: string;
   note?: string;
+  /** @minLength 8 */
+  idempotencyKey?: string;
 }
