@@ -106,6 +106,17 @@ CREATE TABLE IF NOT EXISTS fund_tan_periods (
   CHECK (draw_date = period_end)
 );
 
+CREATE TABLE IF NOT EXISTS fund_tan_period_member_obligations (
+  id serial PRIMARY KEY,
+  tan_period_id integer NOT NULL REFERENCES fund_tan_periods(id) ON DELETE RESTRICT,
+  cycle_id integer NOT NULL REFERENCES fund_cycles(id) ON DELETE RESTRICT,
+  member_id integer NOT NULL REFERENCES fund_members(id) ON DELETE RESTRICT,
+  shares_snapshot integer NOT NULL CHECK (shares_snapshot >= 0),
+  required_amount numeric NOT NULL CHECK (required_amount >= 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(tan_period_id, member_id)
+);
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fund_tan_periods_start_saturday_check') THEN
@@ -254,6 +265,8 @@ CREATE INDEX IF NOT EXISTS fund_payments_tan_period_idx ON fund_payments(tan_per
 CREATE INDEX IF NOT EXISTS fund_due_entries_tan_period_idx ON fund_due_entries(tan_period_id);
 CREATE INDEX IF NOT EXISTS fund_draws_tan_period_idx ON fund_draws(tan_period_id);
 CREATE INDEX IF NOT EXISTS fund_share_transfers_tan_period_idx ON fund_share_transfers(tan_period_id);
+CREATE INDEX IF NOT EXISTS fund_tan_obligations_member_idx
+  ON fund_tan_period_member_obligations(cycle_id, member_id, tan_period_id);
 CREATE UNIQUE INDEX IF NOT EXISTS fund_reversal_original_idx
   ON fund_payments(reversed_payment_id) WHERE reversed_payment_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS fund_due_entries_idempotency_idx

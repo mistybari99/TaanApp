@@ -1,0 +1,80 @@
+ISLAMIYA REVOLVING FUND
+TASK 2 — DRAW-DATE COLLECTION & PREVIOUS DUE LOGIC
+
+Tan-এর Saturday-to-Friday collection এবং Previous Due handling business rule অনুযায়ী implement/harden করো।
+
+BUSINESS RULE:
+
+প্রতিটি Draw-Date একটি collection closing period:
+
+Saturday → Friday = 1 Draw-Date.
+
+শুক্রবার হলো closing/draw day।
+
+কিন্তু শুক্রবারের মধ্যে কোনো member-এর পুরো collection না হলেও পরের Draw-Date automatically শুরু হবে।
+
+অর্থাৎ:
+Draw-Date 01 শেষ
+→ Draw-Date 02 automatically শুরু
+→ Draw-Date 01-এর unpaid amount = Previous Due
+
+Member পরের সপ্তাহে টাকা দিলে:
+
+Payment allocation order হবে:
+
+1. Previous Due আগে adjust হবে।
+2. Previous Due পুরো clear হওয়ার পর remaining payment Current Draw-Date collection-এ যাবে।
+
+উদাহরণ:
+
+Previous Due = ৳300
+Current collection = ৳700
+Member pays = ৳500
+
+Result:
+Previous Due adjusted = ৳300
+Current collection credited = ৳200
+Remaining current due = current required amount - ৳200
+
+আরেকটি গুরুত্বপূর্ণ rule:
+
+Member Previous Due রেখে Current Draw-Date-এর payment করতে চাইলে system তাকে Current period-এর clean collection হিসেবে দেখাবে না যতক্ষণ Previous Due outstanding আছে।
+
+Dashboard/Collector screen-এ clearly দেখাও:
+
+🔴 PREVIOUS DUE
+Current Collection
+TOTAL DUE
+
+Collector যেন সহজে বুঝতে পারে:
+- আগের সপ্তাহের কত বাকি
+- এই সপ্তাহে কত দেওয়ার কথা
+- মোট কত দিতে হবে
+
+IMPORTANT:
+Payment history rewrite করবে না।
+Previous Due historical obligation হিসেবে preserve করবে।
+Current share পরিবর্তনের কারণে Previous Due recalculate করবে না।
+
+Friday closing-এর পরে unpaid amount automatically Previous Due হিসেবে carry forward হবে।
+
+DO NOT:
+- Manually নতুন Draw-Date create করার requirement রাখবে না।
+- Previous Due delete/overwrite করবে না।
+- Existing payment/reversal/idempotency logic ভাঙবে না।
+- Real CSV import করবে না।
+- Cycle #02 create করবে না।
+
+Focused tests:
+- Full previous due payment
+- Partial previous due payment
+- Previous due + current payment
+- Multiple weeks accumulated due
+- Payment reversal restoring Previous Due
+- Draw-Date rollover
+- Friday closing
+- Saturday new period
+
+Typecheck + relevant tests + build চালাও।
+
+STOP after this task.
