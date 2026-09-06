@@ -24,6 +24,11 @@ const money = (value: unknown) => Number(value ?? 0);
 const isIsoDate = (value: unknown): value is string => /^\d{4}-\d{2}-\d{2}$/.test(String(value ?? ""));
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+const idempotency = (value: unknown) => {
+  const key = String(value ?? "").trim();
+  return key || null;
+};
+const sameMoney = (left: unknown, right: unknown) => Math.abs(money(left) - money(right)) < 0.005;
 type Queryable = { query: (text: string, values?: readonly unknown[]) => Promise<{ rows: any[]; rowCount?: number | null }> };
 const auditOn = async (queryable: Queryable, actorId: number, action: string, detail: string, entityType?: string, entityId?: string) =>
   queryable.query("INSERT INTO fund_audit(actor_id,action,detail,entity_type,entity_id) VALUES($1,$2,$3,$4,$5)", [actorId, action, detail, entityType ?? null, entityId ?? null]);
@@ -576,7 +581,7 @@ router.post("/share-transfers", requireAuth, ownerOnly, async (req: AuthedReques
   const toMemberId = Number(b.toMemberId);
   const quantity = Number(b.quantity ?? b.shares);
   const transferDate = isIsoDate(b.transferDate) ? String(b.transferDate) : todayIso();
-  const idempotencyKey = String(b.idempotencyKey ?? "").trim() || null;
+  const idempotencyKey = idempotency(b.idempotencyKey);
   const overrideWinner = b.overrideWinner === true;
   const settlementAmount = b.settlementAmount === undefined || b.settlementAmount === null || b.settlementAmount === ""
     ? null
@@ -597,6 +602,18 @@ router.post("/share-transfers", requireAuth, ownerOnly, async (req: AuthedReques
       await transactionLock(client, `share-transfer:${req.user!.id}:${idempotencyKey}`);
       const replay = await client.query(`${transferSelect} WHERE t.created_by=$1 AND t.idempotency_key=$2`, [req.user!.id, idempotencyKey]);
       if (replay.rows[0]) {
+        const existing = replay.rows[0];
+        const requestMatches = Number(existing.cycleId) === cycleId
+          && Number(existing.fromMemberId) === fromMemberId
+          && Number(existing.toMemberId) === toMemberId
+          && Number(existing.shares) === quantity
+          && String(existing.transferDate) === transferDate
+          && Boolean(existing.overrideWinner) === overrideWinner
+          && ((settlementAmount === null && existing.settlementAmount == null) || (settlementAmount !== null && sameMoney(existing.settlementAmount, settlementAmount)));
+        if (!requestMatches) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ error: "This idempotency key was already used for a different share transfer" });
+        }
         await client.query("COMMIT");
         return res.status(200).json(replay.rows[0]);
       }
@@ -736,7 +753,7 @@ router.post("/share-transfers", requireAuth, ownerOnly, async (req: AuthedReques
 router.post("/share-transfers/:id/settlement", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
   const transferId = Number(req.params.id);
   const amount = Number(req.body.amount);
-  const idempotencyKey = String(req.body.idempotencyKey ?? "").trim() || null;
+  const idempotencyKey = idempotency(req.body.idempotencyKey);
   if (!transferId || !Number.isFinite(amount) || amount < 0) return res.status(400).json({ error: "A settlement amount of zero or greater is required" });
   const client = await pool.connect();
   try {
@@ -745,6 +762,11 @@ router.post("/share-transfers/:id/settlement", requireAuth, ownerOnly, async (re
       await transactionLock(client, `transfer-settlement:${req.user!.id}:${idempotencyKey}`);
       const replay = await client.query(`${transferSelect} JOIN fund_transfer_settlements existing_settlement ON existing_settlement.transfer_id=t.id WHERE existing_settlement.approved_by=$1 AND existing_settlement.idempotency_key=$2`, [req.user!.id, idempotencyKey]);
       if (replay.rows[0]) {
+        const existing = replay.rows[0];
+        if (Number(existing.id) !== transferId || !sameMoney(existing.settlementAmount, amount)) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ error: "This idempotency key was already used for a different transfer settlement" });
+        }
         await client.query("COMMIT");
         return res.status(200).json(replay.rows[0]);
       }
@@ -809,7 +831,7 @@ router.post("/draws", requireAuth, ownerOnly, async (req: AuthedRequest, res) =>
   const cycleId = Number(b.cycleId);
   const winnerMemberId = Number(b.winnerMemberId);
   const drawDate = String(b.drawDate ?? "");
-  const idempotencyKey = String(b.idempotencyKey ?? "").trim() || null;
+  const idempotencyKey = idempotency(b.idempotencyKey);
   const status = String(b.status ?? "RECORDED");
   if (!cycleId || !winnerMemberId || !isIsoDate(drawDate) || Number(b.winningAmount) <= 0) {
     return res.status(400).json({ error: "Cycle, winner, draw date and positive winning amount are required" });
@@ -826,6 +848,14 @@ router.post("/draws", requireAuth, ownerOnly, async (req: AuthedRequest, res) =>
         d.winner_member_id AS "winnerMemberId",d.winning_amount::float AS "winningAmount",d.status,d.notes,d.created_at AS "createdAt"
         FROM fund_draws d WHERE d.cycle_id=$1 AND d.idempotency_key=$2`, [cycleId, idempotencyKey]);
       if (replay.rows[0]) {
+        const existing = replay.rows[0];
+        if (Number(existing.winnerMemberId) !== winnerMemberId
+          || String(existing.drawDate) !== drawDate
+          || !sameMoney(existing.winningAmount, b.winningAmount)
+          || String(existing.status) !== status) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ error: "This idempotency key was already used for a different draw" });
+        }
         await client.query("COMMIT");
         return res.status(200).json(replay.rows[0]);
       }
@@ -879,7 +909,8 @@ router.get("/payments", requireAuth, async (req: AuthedRequest, res) => {
   res.json(r.rows);
 });
 router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
-  const { memberId, cycleId, collectionDate, amount, notes, verificationMethod, verificationCode, confirmDuplicate, idempotencyKey } = req.body;
+  const { memberId, cycleId, collectionDate, amount, notes, verificationMethod, verificationCode, confirmDuplicate } = req.body;
+  const idempotencyKey = idempotency(req.body.idempotencyKey);
   if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) return res.status(400).json({ error: "Amount must be greater than zero" });
   const selectedCycleId = Number(cycleId);
   if (!selectedCycleId) return res.status(400).json({ error: "An active cycle is required for every payment" });
@@ -891,6 +922,14 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
       await transactionLock(client, `payment:${req.user!.id}:${idempotencyKey}`);
       const replay = await client.query(`SELECT p.id,p.receipt_id AS "receiptId",p.member_id AS "memberId",m.name AS "memberName",p.cycle_id AS "cycleId",p.collection_date::text AS "collectionDate",p.shares,p.notes,p.amount::float,p.previous_due_applied::float AS "previousDueApplied",p.current_period_applied::float AS "currentPeriodApplied",u.name AS "collectorName",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id WHERE p.collector_id=$1 AND p.idempotency_key=$2`, [req.user!.id,idempotencyKey]);
       if (replay.rows[0]) {
+        const existing = replay.rows[0];
+        if (Number(existing.memberId) !== Number(memberId)
+          || Number(existing.cycleId) !== selectedCycleId
+          || String(existing.collectionDate) !== paidDate
+          || !sameMoney(existing.amount, amount)) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ error: "This idempotency key was already used for a different payment" });
+        }
         await client.query("COMMIT");
         return res.status(200).json(replay.rows[0]);
       }
@@ -1004,14 +1043,21 @@ router.get("/settlements", requireAuth, async (req: AuthedRequest, res) => {
 });
 router.post("/settlements", requireAuth, async (req: AuthedRequest,res)=>{
   const b=req.body;
-  if (!Number.isFinite(Number(b.amount)) || Number(b.amount) <= 0 || !String(b.reference ?? "").trim()) return res.status(400).json({error:"A positive settlement amount and reference are required"});
+  const settlementAmount = Number(b.amount);
+  const reference = String(b.reference ?? "").trim();
+  const idempotencyKey = idempotency(b.idempotencyKey);
+  if (!Number.isFinite(settlementAmount) || settlementAmount <= 0 || !reference) return res.status(400).json({error:"A positive settlement amount and reference are required"});
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    if (b.idempotencyKey) {
-      await transactionLock(client, `settlement:${req.user!.id}:${b.idempotencyKey}`);
-      const replay=await client.query(`SELECT s.id,s.cycle_id AS "cycleId",s.amount::float,u.name AS "collectorName",s.reference,s.created_at AS "createdAt" FROM fund_settlements s JOIN fund_users u ON u.id=s.collector_id WHERE s.collector_id=$1 AND s.idempotency_key=$2`,[req.user!.id,b.idempotencyKey]);
+    if (idempotencyKey) {
+      await transactionLock(client, `settlement:${req.user!.id}:${idempotencyKey}`);
+      const replay=await client.query(`SELECT s.id,s.cycle_id AS "cycleId",s.amount::float,u.name AS "collectorName",s.reference,s.created_at AS "createdAt" FROM fund_settlements s JOIN fund_users u ON u.id=s.collector_id WHERE s.collector_id=$1 AND s.idempotency_key=$2`,[req.user!.id,idempotencyKey]);
       if(replay.rows[0]) {
+        if (!sameMoney(replay.rows[0].amount, settlementAmount) || String(replay.rows[0].reference) !== reference) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({error:"This idempotency key was already used for a different settlement"});
+        }
         await client.query("COMMIT");
         return res.status(200).json(replay.rows[0]);
       }
@@ -1025,8 +1071,8 @@ router.post("/settlements", requireAuth, async (req: AuthedRequest,res)=>{
       await client.query("ROLLBACK");
       return res.status(409).json({error:"Owner must set the digital tracking start date before recording settlements"});
     }
-    const r=await client.query(`INSERT INTO fund_settlements(collector_id,cycle_id,amount,reference,note,idempotency_key) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,cycle_id AS "cycleId",amount::float,reference,created_at AS "createdAt"`,[req.user!.id,activeCycle.rows[0].id,b.amount,b.reference,b.note??"",b.idempotencyKey??null]);
-    await auditOn(client, req.user!.id,"SETTLEMENT_CREATED",`${b.reference}: BDT ${b.amount}`,"settlement",String(r.rows[0].id));
+     const r=await client.query(`INSERT INTO fund_settlements(collector_id,cycle_id,amount,reference,note,idempotency_key) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,cycle_id AS "cycleId",amount::float,reference,created_at AS "createdAt"`,[req.user!.id,activeCycle.rows[0].id,settlementAmount,reference,b.note??"",idempotencyKey]);
+     await auditOn(client, req.user!.id,"SETTLEMENT_CREATED",`${reference}: BDT ${settlementAmount}`,"settlement",String(r.rows[0].id));
     await client.query("COMMIT");
     return res.status(201).json({...r.rows[0],collectorName:req.user!.name});
   } catch (error) {
