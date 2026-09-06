@@ -18,6 +18,11 @@ ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS notes text NOT NULL DEFAULT '
 ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS previous_due_applied numeric NOT NULL DEFAULT 0;
 ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS current_period_applied numeric NOT NULL DEFAULT 0;
 ALTER TABLE fund_settlements ADD COLUMN IF NOT EXISTS cycle_id integer;
+ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS tan_period_id integer;
+ALTER TABLE fund_due_entries ADD COLUMN IF NOT EXISTS tan_period_id integer;
+ALTER TABLE fund_draws ADD COLUMN IF NOT EXISTS tan_period_id integer;
+ALTER TABLE fund_draws ADD COLUMN IF NOT EXISTS draw_slot integer;
+ALTER TABLE fund_share_transfers ADD COLUMN IF NOT EXISTS tan_period_id integer;
 
 CREATE TABLE IF NOT EXISTS fund_cycles (
   id serial PRIMARY KEY,
@@ -57,6 +62,63 @@ CREATE TABLE IF NOT EXISTS fund_draws (
   UNIQUE(cycle_id, draw_number)
 );
 ALTER TABLE fund_draws ADD COLUMN IF NOT EXISTS idempotency_key text;
+
+-- A locked TAN schedule is additive to the legacy cycle/draw model. Legacy
+-- cycles remain valid with a NULL tan config and NULL tan_period_id values.
+CREATE TABLE IF NOT EXISTS fund_tan_configs (
+  id serial PRIMARY KEY,
+  cycle_id integer NOT NULL REFERENCES fund_cycles(id) ON DELETE RESTRICT,
+  tan_start_date date NOT NULL,
+  draws_per_week integer NOT NULL CHECK (draws_per_week > 0),
+  total_shares integer NOT NULL CHECK (total_shares > 0),
+  total_draw_dates integer NOT NULL CHECK (total_draw_dates > 0),
+  daily_per_share numeric NOT NULL CHECK (daily_per_share > 0),
+  expected_daily_collection numeric NOT NULL CHECK (expected_daily_collection > 0),
+  weekly_collection_unit numeric NOT NULL CHECK (weekly_collection_unit > 0),
+  per_draw_winner_amount numeric NOT NULL CHECK (per_draw_winner_amount > 0),
+  status text NOT NULL DEFAULT 'LOCKED' CHECK (status IN ('LOCKED','COMPLETED')),
+  locked_by integer NOT NULL REFERENCES fund_users(id) ON DELETE RESTRICT,
+  locked_at timestamptz NOT NULL DEFAULT now(),
+  completed_by integer REFERENCES fund_users(id) ON DELETE RESTRICT,
+  completed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE fund_tan_configs DROP CONSTRAINT IF EXISTS fund_tan_configs_cycle_id_key;
+CREATE INDEX IF NOT EXISTS fund_tan_configs_cycle_idx ON fund_tan_configs(cycle_id, id DESC);
+
+CREATE TABLE IF NOT EXISTS fund_tan_periods (
+  id serial PRIMARY KEY,
+  tan_config_id integer NOT NULL REFERENCES fund_tan_configs(id) ON DELETE RESTRICT,
+  cycle_id integer NOT NULL REFERENCES fund_cycles(id) ON DELETE RESTRICT,
+  sequence_no integer NOT NULL CHECK (sequence_no > 0),
+  period_start date NOT NULL,
+  period_end date NOT NULL,
+  draw_date date NOT NULL,
+  expected_collection numeric NOT NULL CHECK (expected_collection > 0),
+  status text NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','COMPLETED')),
+  completed_by integer REFERENCES fund_users(id) ON DELETE RESTRICT,
+  completed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(tan_config_id, sequence_no),
+  UNIQUE(tan_config_id, period_start),
+  UNIQUE(tan_config_id, draw_date),
+  CHECK (period_end = period_start + 6),
+  CHECK (draw_date = period_end)
+);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fund_tan_periods_start_saturday_check') THEN
+    ALTER TABLE fund_tan_periods
+      ADD CONSTRAINT fund_tan_periods_start_saturday_check
+      CHECK (EXTRACT(DOW FROM period_start) = 6) NOT VALID;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fund_tan_periods_end_friday_check') THEN
+    ALTER TABLE fund_tan_periods
+      ADD CONSTRAINT fund_tan_periods_end_friday_check
+      CHECK (EXTRACT(DOW FROM period_end) = 5) NOT VALID;
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS fund_cycle_member_share_history (
   id serial PRIMARY KEY,
@@ -185,6 +247,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS fund_settlements_collector_idempotency_idx
   ON fund_settlements(collector_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS fund_draws_cycle_idempotency_idx
   ON fund_draws(cycle_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS fund_draws_tan_slot_idx
+  ON fund_draws(tan_period_id, draw_slot)
+  WHERE tan_period_id IS NOT NULL AND draw_slot IS NOT NULL;
+CREATE INDEX IF NOT EXISTS fund_payments_tan_period_idx ON fund_payments(tan_period_id);
+CREATE INDEX IF NOT EXISTS fund_due_entries_tan_period_idx ON fund_due_entries(tan_period_id);
+CREATE INDEX IF NOT EXISTS fund_draws_tan_period_idx ON fund_draws(tan_period_id);
+CREATE INDEX IF NOT EXISTS fund_share_transfers_tan_period_idx ON fund_share_transfers(tan_period_id);
 CREATE UNIQUE INDEX IF NOT EXISTS fund_reversal_original_idx
   ON fund_payments(reversed_payment_id) WHERE reversed_payment_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS fund_due_entries_idempotency_idx

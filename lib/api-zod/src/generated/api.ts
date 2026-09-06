@@ -135,6 +135,15 @@ export const GetDashboardResponse = zod.object({
   "actor": zod.string(),
   "action": zod.string(),
   "detail": zod.string(),
+  "entityType": zod.string().nullish(),
+  "entityId": zod.string().nullish(),
+  "memberId": zod.number().int().nullish(),
+  "cycleId": zod.number().int().nullish(),
+  "relatedTransactionId": zod.string().nullish(),
+  "reason": zod.string().nullish(),
+  "effectiveDate": zod.string().nullish(),
+  "beforeValue": zod.record(zod.string(), zod.unknown()).nullish(),
+  "afterValue": zod.record(zod.string(), zod.unknown()).nullish(),
   "createdAt": zod.string()
 }))
 })
@@ -215,6 +224,88 @@ export const UpdateCycleResponse = zod.object({
   "notes": zod.string().optional(),
   "createdAt": zod.string().optional(),
   "memberCount": zod.number().int()
+})
+
+
+export const GetTanParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const GetTanResponse = zod.object({
+  "tan": zod.object({
+  "id": zod.number().int(),
+  "cycleId": zod.number().int(),
+  "tanStartDate": zod.string(),
+  "drawsPerWeek": zod.number().int(),
+  "totalShares": zod.number().int(),
+  "totalDrawDates": zod.number().int(),
+  "dailyPerShare": zod.number(),
+  "expectedDailyCollection": zod.number(),
+  "weeklyCollectionUnit": zod.number(),
+  "perDrawWinnerAmount": zod.number(),
+  "status": zod.enum(['LOCKED', 'COMPLETED']),
+  "lockedAt": zod.string().optional(),
+  "completedAt": zod.string().nullish()
+}).nullable(),
+  "periods": zod.array(zod.object({
+  "id": zod.number().int(),
+  "sequenceNo": zod.number().int(),
+  "periodStart": zod.string(),
+  "periodEnd": zod.string(),
+  "drawDate": zod.string(),
+  "expectedCollection": zod.number(),
+  "status": zod.enum(['OPEN', 'COMPLETED']),
+  "computedStatus": zod.enum(['SCHEDULED', 'OPEN', 'CLOSED', 'COMPLETED']),
+  "recordedDraws": zod.number().int(),
+  "completedAt": zod.string().nullish()
+})),
+  "activePeriod": zod.object({
+  "id": zod.number().int(),
+  "sequenceNo": zod.number().int(),
+  "periodStart": zod.string(),
+  "periodEnd": zod.string(),
+  "drawDate": zod.string(),
+  "expectedCollection": zod.number(),
+  "status": zod.enum(['OPEN', 'COMPLETED']),
+  "computedStatus": zod.enum(['SCHEDULED', 'OPEN', 'CLOSED', 'COMPLETED']),
+  "recordedDraws": zod.number().int(),
+  "completedAt": zod.string().nullish()
+}).nullable(),
+  "nextPeriod": zod.object({
+  "id": zod.number().int(),
+  "sequenceNo": zod.number().int(),
+  "periodStart": zod.string(),
+  "periodEnd": zod.string(),
+  "drawDate": zod.string(),
+  "expectedCollection": zod.number(),
+  "status": zod.enum(['OPEN', 'COMPLETED']),
+  "computedStatus": zod.enum(['SCHEDULED', 'OPEN', 'CLOSED', 'COMPLETED']),
+  "recordedDraws": zod.number().int(),
+  "completedAt": zod.string().nullish()
+}).nullable()
+})
+
+
+export const LockTanParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+
+
+
+export const LockTanBody = zod.object({
+  "tanStartDate": zod.string(),
+  "drawsPerWeek": zod.number().int().min(1)
+})
+
+export const LockTanResponse = zod.object({
+  "id": zod.number().int(),
+  "cycleId": zod.number().int(),
+  "totalShares": zod.number().int(),
+  "drawsPerWeek": zod.number().int(),
+  "totalDrawDates": zod.number().int(),
+  "perDrawWinnerAmount": zod.number(),
+  "tanStartDate": zod.string()
 })
 
 
@@ -544,12 +635,12 @@ export const ImportMembersResponse = zod.object({
   "name": zod.string(),
   "shares": zod.number().int(),
   "mobile": zod.string(),
-  "mobileStatus": zod.enum(["provided", "missing"]),
+  "mobileStatus": zod.enum(['provided', 'missing']),
   "existingMember": zod.object({
   "id": zod.number().int(),
   "memberId": zod.string(),
   "name": zod.string()
-}).nullable().optional()
+}).nullish()
 })).optional()
 })
 
@@ -815,12 +906,15 @@ export const ListDrawsResponseItem = zod.object({
   "winningAmount": zod.number(),
   "status": zod.string(),
   "notes": zod.string().optional(),
-  "createdAt": zod.string().optional()
+  "createdAt": zod.string().optional(),
+  "tanPeriodId": zod.number().int().nullish(),
+  "drawSlot": zod.number().int().nullish()
 })
 export const ListDrawsResponse = zod.array(ListDrawsResponseItem)
 
 
 export const createDrawBodyIdempotencyKeyMin = 8;
+
 
 
 
@@ -831,7 +925,9 @@ export const CreateDrawBody = zod.object({
   "winningAmount": zod.number(),
   "status": zod.string().optional(),
   "notes": zod.string().optional(),
-  "idempotencyKey": zod.string().min(createDrawBodyIdempotencyKeyMin).optional()
+  "idempotencyKey": zod.string().min(createDrawBodyIdempotencyKeyMin).optional(),
+  "tanPeriodId": zod.number().int().optional(),
+  "drawSlot": zod.number().int().min(1).optional()
 })
 
 export const CreateDrawResponse = zod.object({
@@ -847,7 +943,9 @@ export const CreateDrawResponse = zod.object({
   "winningAmount": zod.number(),
   "status": zod.string(),
   "notes": zod.string().optional(),
-  "createdAt": zod.string().optional()
+  "createdAt": zod.string().optional(),
+  "tanPeriodId": zod.number().int().nullish(),
+  "drawSlot": zod.number().int().nullish()
 })
 
 
@@ -914,6 +1012,15 @@ export const ListAuditResponseItem = zod.object({
   "actor": zod.string(),
   "action": zod.string(),
   "detail": zod.string(),
+  "entityType": zod.string().nullish(),
+  "entityId": zod.string().nullish(),
+  "memberId": zod.number().int().nullish(),
+  "cycleId": zod.number().int().nullish(),
+  "relatedTransactionId": zod.string().nullish(),
+  "reason": zod.string().nullish(),
+  "effectiveDate": zod.string().nullish(),
+  "beforeValue": zod.record(zod.string(), zod.unknown()).nullish(),
+  "afterValue": zod.record(zod.string(), zod.unknown()).nullish(),
   "createdAt": zod.string()
 })
 export const ListAuditResponse = zod.array(ListAuditResponseItem)

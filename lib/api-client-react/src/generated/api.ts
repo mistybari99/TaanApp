@@ -57,6 +57,9 @@ import type {
   ShareTransfer,
   ShareTransferInput,
   ShareTransferPreview,
+  TanLockInput,
+  TanLockResult,
+  TanResponse,
   TransferSettlementInput,
   User
 } from './api.schemas';
@@ -767,6 +770,143 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getUpdateCycleMutationOptions(options));
+    }
+
+export const getGetTanUrl = (id: number,) => {
+
+
+
+
+  return `/api/cycles/${id}/tan`
+}
+
+export const getTan = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<TanResponse> => {
+
+  return customFetch<TanResponse>(getGetTanUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTanQueryKey = (id: number,) => {
+    return [
+    `/api/cycles/${id}/tan`
+    ] as const;
+    }
+
+
+export const getGetTanQueryOptions = <TData = Awaited<ReturnType<typeof getTan>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTan>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTanQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTan>>> = ({ signal }) => getTan(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTan>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTanQueryResult = NonNullable<Awaited<ReturnType<typeof getTan>>>
+export type GetTanQueryError = ErrorType<unknown>
+
+
+
+export function useGetTan<TData = Awaited<ReturnType<typeof getTan>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTan>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTanQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getLockTanUrl = (id: number,) => {
+
+
+
+
+  return `/api/cycles/${id}/tan/lock`
+}
+
+export const lockTan = async (id: number,
+    tanLockInput: TanLockInput, options?: Parameters<typeof customFetch>[1]): Promise<TanLockResult> => {
+
+  return customFetch<TanLockResult>(getLockTanUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(tanLockInput)
+  }
+);}
+
+
+
+
+
+export const getLockTanMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof lockTan>>, TError,{id: number;data: BodyType<TanLockInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof lockTan>>, TError,{id: number;data: BodyType<TanLockInput>}, TContext> => {
+
+const mutationKey = ['lockTan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof lockTan>>, {id: number;data: BodyType<TanLockInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  lockTan(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LockTanMutationResult = NonNullable<Awaited<ReturnType<typeof lockTan>>>
+    export type LockTanMutationBody = BodyType<TanLockInput>
+    export type LockTanMutationError = ErrorType<unknown>
+
+    export const useLockTan = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof lockTan>>, TError,{id: number;data: BodyType<TanLockInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof lockTan>>,
+        TError,
+        {id: number;data: BodyType<TanLockInput>},
+        TContext
+      > => {
+      return useMutation(getLockTanMutationOptions(options));
     }
 
 export const getListCycleMembersUrl = (id: number,) => {

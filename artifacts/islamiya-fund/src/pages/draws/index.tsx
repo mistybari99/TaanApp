@@ -3,8 +3,10 @@ import {
   getListDrawsQueryKey,
   getListCycleMembersQueryKey,
   getListCyclesQueryKey,
+  getGetTanQueryKey,
   useCreateDraw,
   useGetCurrentUser,
+  useGetTan,
   useListCycleMembers,
   useListCycles,
   useListDraws,
@@ -45,19 +47,42 @@ function DrawSurface({ readOnly }: { readOnly: boolean }) {
   const { data: draws, isLoading: drawsLoading } = useListDraws(drawQuery, { query: { queryKey: getListDrawsQueryKey(drawQuery) } })
   const createDraw = useCreateDraw()
   const selectedCycle = cycles?.find((cycle) => cycle.id === cycleId) ?? cycles?.[0]
+  const { data: tanData } = useGetTan((selectedCycle?.id ?? 0) as number, {
+    query: { enabled: Boolean(selectedCycle?.id), queryKey: getGetTanQueryKey((selectedCycle?.id ?? 0) as number) },
+  })
 
   useEffect(() => {
     if (!cycleId && cycles?.[0]) setCycleId(cycles[0].id)
   }, [cycles, cycleId])
 
+  useEffect(() => {
+    if (tanData?.tan && tanData.activePeriod) {
+      setForm((current) => ({
+        ...current,
+        drawDate: tanData.activePeriod?.drawDate ?? current.drawDate,
+        winningAmount: String(tanData.tan?.perDrawWinnerAmount ?? current.winningAmount),
+      }))
+    }
+  }, [tanData?.tan?.id, tanData?.activePeriod?.id])
+
   const handleRecord = () => {
     if (!selectedCycle || !form.winnerMemberId || !form.winningAmount) return toast.error("চক্র, বিজয়ী ও জয়ের পরিমাণ নির্বাচন করুন")
-    createDraw.mutate({ data: { cycleId: selectedCycle.id, drawDate: form.drawDate, winnerMemberId: Number(form.winnerMemberId), winningAmount: Number(form.winningAmount), notes: form.notes || undefined } }, {
+    const activePeriod = tanData?.activePeriod
+    const data = {
+      cycleId: selectedCycle.id,
+      drawDate: form.drawDate,
+      winnerMemberId: Number(form.winnerMemberId),
+      winningAmount: Number(form.winningAmount),
+      notes: form.notes || undefined,
+      ...(activePeriod && tanData?.tan ? { tanPeriodId: activePeriod.id, drawSlot: activePeriod.recordedDraws + 1 } : {}),
+    }
+    createDraw.mutate({ data }, {
       onSuccess: () => {
         toast.success("শুক্রবারের ড্র সংরক্ষিত হয়েছে")
         setForm({ drawDate: today(), winnerMemberId: "", winningAmount: "", notes: "" })
         queryClient.invalidateQueries({ queryKey: getListDrawsQueryKey() })
         queryClient.invalidateQueries({ queryKey: getListCycleMembersQueryKey(selectedCycle.id) })
+        queryClient.invalidateQueries({ queryKey: getGetTanQueryKey(selectedCycle.id) })
       },
       onError: (error: any) => toast.error(error?.message || "ড্র সংরক্ষণ করা যায়নি"),
     })
@@ -76,11 +101,12 @@ function DrawSurface({ readOnly }: { readOnly: boolean }) {
           <CardHeader><CardTitle className="flex items-center gap-2"><Trophy className="w-5 h-5" /> নতুন ড্র রেকর্ড করুন</CardTitle><CardDescription>শুধু নির্বাচিত চক্রের অংশগ্রহণকারী সদস্য বিজয়ী হতে পারবেন</CardDescription></CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5 items-end">
             <div className="space-y-2"><Label>চক্র</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={selectedCycle?.id ?? ""} onChange={(event) => { setCycleId(Number(event.target.value)); setForm({ ...form, winnerMemberId: "" }) }}><option value="">চক্র নির্বাচন করুন</option>{cycles?.map((cycle) => <option key={cycle.id} value={cycle.id}>{cycle.name}</option>)}</select></div>
-            <div className="space-y-2"><Label>ড্র তারিখ</Label><Input type="date" value={form.drawDate} onChange={(event) => setForm({ ...form, drawDate: event.target.value })} /></div>
+            <div className="space-y-2"><Label>{tanData?.tan ? "Locked Draw-Date (শুক্রবার)" : "ড্র তারিখ"}</Label><Input type="date" value={form.drawDate} readOnly={Boolean(tanData?.tan)} onChange={(event) => setForm({ ...form, drawDate: event.target.value })} /></div>
             <div className="space-y-2"><Label>বিজয়ী সদস্য</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={form.winnerMemberId} onChange={(event) => setForm({ ...form, winnerMemberId: event.target.value })}><option value="">সদস্য নির্বাচন করুন</option>{cycleMembers?.map((member) => <option key={member.memberId} value={member.memberId}>{member.memberCode} — {member.name}</option>)}</select></div>
-            <div className="space-y-2"><Label>জয়ের পরিমাণ</Label><Input type="number" min={1} value={form.winningAmount} placeholder="৳0" onChange={(event) => setForm({ ...form, winningAmount: event.target.value })} /></div>
-            <Button onClick={handleRecord} disabled={createDraw.isPending || !selectedCycle}>ড্র সংরক্ষণ</Button>
+            <div className="space-y-2"><Label>{tanData?.tan ? `জয়ের পরিমাণ (fixed)` : "জয়ের পরিমাণ"}</Label><Input type="number" min={1} value={form.winningAmount} readOnly={Boolean(tanData?.tan)} placeholder="৳0" onChange={(event) => setForm({ ...form, winningAmount: event.target.value })} /></div>
+            <Button onClick={handleRecord} disabled={createDraw.isPending || !selectedCycle || (Boolean(tanData?.tan) && !tanData?.activePeriod)}>ড্র সংরক্ষণ</Button>
             <div className="sm:col-span-2 lg:col-span-5 space-y-2"><Label>নোট (ঐচ্ছিক)</Label><Input value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="ড্র সংক্রান্ত নোট" /></div>
+            {tanData?.tan && <div className="sm:col-span-2 lg:col-span-5 rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">TAN period {tanData.activePeriod ? `${tanData.activePeriod.sequenceNo}/${tanData.tan.totalDrawDates}` : "open নয়"} · এই Friday-তে winner slot {tanData.activePeriod ? `${tanData.activePeriod.recordedDraws + 1}/${tanData.tan.drawsPerWeek}` : "—"} · প্রতি winner {formatCurrency(tanData.tan.perDrawWinnerAmount)}</div>}
           </CardContent>
         </Card>
       )}

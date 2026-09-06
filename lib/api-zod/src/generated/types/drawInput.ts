@@ -15,4 +15,7 @@ export interface DrawInput {
   notes?: string;
   /** @minLength 8 */
   idempotencyKey?: string;
+  tanPeriodId?: number;
+  /** @minimum 1 */
+  drawSlot?: number;
 }

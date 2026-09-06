@@ -14,3 +14,9 @@ Cycle status alone is not enough to decide whether collection is open: a cycle m
 **Why:** A historical cycle start date must not silently create retroactive dues or make collectors believe paper-book balances are digitally payable.
 
 **How to apply:** Gate payment, settlement, due, dashboard, and report calculations by the active cycle's tracking start date while preserving the cycle's configured start date for history.
+
+TAN schedules are versioned within the same cycle rather than making the cycle itself disposable; only the latest locked TAN governs new collection and draw writes, while completed TAN rows remain historical.
+
+**Why:** Cycle #01 is intentionally permanent, so a completed TAN must be followed by a new schedule without rewriting prior period, draw, payment, or audit links.
+
+**How to apply:** Require the current TAN to be completed before creating another, snapshot the new share/formula values, and resolve operational period checks against the latest schedule.

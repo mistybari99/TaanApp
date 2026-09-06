@@ -6,6 +6,7 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "test:fund": "node --test --import tsx ./src/fund-safety.test.ts",
+    "test:tan": "node --test --import tsx ../artifacts/api-server/src/fund-tan.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

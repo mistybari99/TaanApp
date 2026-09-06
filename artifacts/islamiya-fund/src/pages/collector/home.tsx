@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react"
-import { useListMembers, useGetDashboard, useCreatePayment, useListCycles, useListCycleMembers, getGetCurrentUserQueryKey, getGetDashboardQueryKey, getListPaymentsQueryKey, getListMembersQueryKey, getListCycleMembersQueryKey } from "@workspace/api-client-react"
+import { useListMembers, useGetDashboard, useCreatePayment, useListCycles, useListCycleMembers, getGetCurrentUserQueryKey, getGetDashboardQueryKey, getListPaymentsQueryKey, getListMembersQueryKey, getListCycleMembersQueryKey, getGetTanQueryKey, useGetTan } from "@workspace/api-client-react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,6 +24,9 @@ export default function CollectorHome() {
   const { data: members, isLoading, refetch } = useListMembers({ search: search.length > 2 ? search : undefined })
   const { data: cycles } = useListCycles()
   const activeCycle = cycles?.find((cycle) => cycle.status === "ACTIVE") ?? cycles?.[0]
+  const { data: tanData } = useGetTan((activeCycle?.id ?? 0) as number, {
+    query: { enabled: Boolean(activeCycle?.id), queryKey: getGetTanQueryKey((activeCycle?.id ?? 0) as number) },
+  })
   const { data: cycleMembers } = useListCycleMembers((activeCycle?.id ?? 0) as number, { query: { enabled: Boolean(activeCycle?.id), queryKey: getListCycleMembersQueryKey((activeCycle?.id ?? 0) as number) } })
   const { data: dashboard, refetch: refetchDashboard } = useGetDashboard({ query: { queryKey: getGetDashboardQueryKey(), refetchInterval: 15000 } })
   
@@ -143,6 +146,20 @@ export default function CollectorHome() {
   return (
     <div className="space-y-4 max-w-md mx-auto">
       <ReceiptDialog ref={receiptRef} />
+      {tanData?.tan && (
+        <Card className={tanData.activePeriod ? "border-primary/30 bg-primary/5" : "border-amber-300 bg-amber-50"}>
+          <CardContent className="p-3">
+            <p className="text-sm font-semibold">{tanData.activePeriod ? "TAN collection period open" : tanData.nextPeriod ? "TAN collection period এখনো শুরু হয়নি" : "TAN সম্পূর্ণ হয়েছে"}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {tanData.activePeriod
+                ? `Period ${tanData.activePeriod.sequenceNo}/${tanData.tan.totalDrawDates}: ${tanData.activePeriod.periodStart} – ${tanData.activePeriod.periodEnd}; Friday draw ${tanData.activePeriod.recordedDraws}/${tanData.tan.drawsPerWeek}`
+                : tanData.nextPeriod
+                  ? `পরবর্তী period ${tanData.nextPeriod.sequenceNo} শুরু হবে ${tanData.nextPeriod.periodStart}`
+                  : "নতুন TAN lock না হওয়া পর্যন্ত collection বন্ধ"}
+            </p>
+          </CardContent>
+        </Card>
+      )}
       
       {/* Collector Stats Snippet */}
       <div className="grid grid-cols-2 gap-3 mb-6">

@@ -71,6 +71,23 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/FundCycleUpdate" } } }
       responses:
         "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/FundCycle" } } } }
+  /cycles/{id}/tan:
+    get:
+      operationId: getTan
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: TAN configuration and schedule, content: { application/json: { schema: { $ref: "#/components/schemas/TanResponse" } } } }
+  /cycles/{id}/tan/lock:
+    post:
+      operationId: lockTan
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TanLockInput" } } }
+      responses:
+        "201": { description: TAN locked, content: { application/json: { schema: { $ref: "#/components/schemas/TanLockResult" } } } }
   /cycles/{id}/members:
     get:
       operationId: listCycleMembers
@@ -501,6 +518,8 @@ components:
         status: { type: string }
         notes: { type: string }
         createdAt: { type: string }
+        tanPeriodId: { type: integer, nullable: true }
+        drawSlot: { type: integer, nullable: true }
     DrawInput:
       type: object
       required: [cycleId, drawDate, winnerMemberId, winningAmount]
@@ -512,6 +531,64 @@ components:
         status: { type: string }
         notes: { type: string }
         idempotencyKey: { type: string, minLength: 8 }
+        tanPeriodId: { type: integer }
+        drawSlot: { type: integer, minimum: 1 }
+    TanLockInput:
+      type: object
+      required: [tanStartDate, drawsPerWeek]
+      properties:
+        tanStartDate: { type: string }
+        drawsPerWeek: { type: integer, minimum: 1 }
+    TanPeriod:
+      type: object
+      required: [id, sequenceNo, periodStart, periodEnd, drawDate, expectedCollection, status, computedStatus, recordedDraws]
+      properties:
+        id: { type: integer }
+        sequenceNo: { type: integer }
+        periodStart: { type: string }
+        periodEnd: { type: string }
+        drawDate: { type: string }
+        expectedCollection: { type: number }
+        status: { type: string, enum: [OPEN, COMPLETED] }
+        computedStatus: { type: string, enum: [SCHEDULED, OPEN, CLOSED, COMPLETED] }
+        recordedDraws: { type: integer }
+        completedAt: { type: string, nullable: true }
+    TanConfig:
+      type: object
+      required: [id, cycleId, tanStartDate, drawsPerWeek, totalShares, totalDrawDates, dailyPerShare, expectedDailyCollection, weeklyCollectionUnit, perDrawWinnerAmount, status]
+      properties:
+        id: { type: integer }
+        cycleId: { type: integer }
+        tanStartDate: { type: string }
+        drawsPerWeek: { type: integer }
+        totalShares: { type: integer }
+        totalDrawDates: { type: integer }
+        dailyPerShare: { type: number }
+        expectedDailyCollection: { type: number }
+        weeklyCollectionUnit: { type: number }
+        perDrawWinnerAmount: { type: number }
+        status: { type: string, enum: [LOCKED, COMPLETED] }
+        lockedAt: { type: string }
+        completedAt: { type: string, nullable: true }
+    TanResponse:
+      type: object
+      required: [tan, periods, activePeriod, nextPeriod]
+      properties:
+        tan: { allOf: [{ $ref: "#/components/schemas/TanConfig" }], nullable: true }
+        periods: { type: array, items: { $ref: "#/components/schemas/TanPeriod" } }
+        activePeriod: { allOf: [{ $ref: "#/components/schemas/TanPeriod" }], nullable: true }
+        nextPeriod: { allOf: [{ $ref: "#/components/schemas/TanPeriod" }], nullable: true }
+    TanLockResult:
+      type: object
+      required: [id, cycleId, totalShares, drawsPerWeek, totalDrawDates, perDrawWinnerAmount, tanStartDate]
+      properties:
+        id: { type: integer }
+        cycleId: { type: integer }
+        totalShares: { type: integer }
+        drawsPerWeek: { type: integer }
+        totalDrawDates: { type: integer }
+        perDrawWinnerAmount: { type: number }
+        tanStartDate: { type: string }
     MemberHistory:
       type: object
       required: [member, cycles, payments, draws, transfers]

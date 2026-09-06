@@ -6,6 +6,7 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { MemberImportError } from './memberImportError';
+import type { MemberImportPreviewRow } from './memberImportPreviewRow';
 
 export interface MemberImportResult {
   valid: number;
@@ -15,16 +16,5 @@ export interface MemberImportResult {
   totalShares: number;
   expectedDailyCollection: number;
   previewToken: string;
-  previewRows?: Array<{
-    row: number;
-    name: string;
-    shares: number;
-    mobile: string;
-    mobileStatus: 'provided' | 'missing';
-    existingMember?: {
-      id: number;
-      memberId: string;
-      name: string;
-    } | null;
-  }>;
+  previewRows?: MemberImportPreviewRow[];
 }

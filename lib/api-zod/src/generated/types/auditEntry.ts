@@ -5,6 +5,8 @@
  * ISLAMIYA Revolving Fund API
  * OpenAPI spec version: 1.0.0
  */
+import type { AuditEntryAfterValue } from './auditEntryAfterValue';
+import type { AuditEntryBeforeValue } from './auditEntryBeforeValue';
 
 export interface AuditEntry {
   id: number;
@@ -18,7 +20,7 @@ export interface AuditEntry {
   relatedTransactionId?: string | null;
   reason?: string | null;
   effectiveDate?: string | null;
-  beforeValue?: Record<string, unknown> | null;
-  afterValue?: Record<string, unknown> | null;
+  beforeValue?: AuditEntryBeforeValue;
+  afterValue?: AuditEntryAfterValue;
   createdAt: string;
 }

@@ -20,4 +20,6 @@ export interface Draw {
   status: string;
   notes?: string;
   createdAt?: string;
+  tanPeriodId?: number | null;
+  drawSlot?: number | null;
 }

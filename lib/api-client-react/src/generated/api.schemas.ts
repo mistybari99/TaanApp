@@ -302,6 +302,8 @@ export interface Draw {
   status: string;
   notes?: string;
   createdAt?: string;
+  tanPeriodId?: number | null;
+  drawSlot?: number | null;
 }
 
 export interface DrawInput {
@@ -313,6 +315,87 @@ export interface DrawInput {
   notes?: string;
   /** @minLength 8 */
   idempotencyKey?: string;
+  tanPeriodId?: number;
+  /** @minimum 1 */
+  drawSlot?: number;
+}
+
+export interface TanLockInput {
+  tanStartDate: string;
+  /** @minimum 1 */
+  drawsPerWeek: number;
+}
+
+export type TanPeriodStatus = typeof TanPeriodStatus[keyof typeof TanPeriodStatus];
+
+
+export const TanPeriodStatus = {
+  OPEN: 'OPEN',
+  COMPLETED: 'COMPLETED',
+} as const;
+
+export type TanPeriodComputedStatus = typeof TanPeriodComputedStatus[keyof typeof TanPeriodComputedStatus];
+
+
+export const TanPeriodComputedStatus = {
+  SCHEDULED: 'SCHEDULED',
+  OPEN: 'OPEN',
+  CLOSED: 'CLOSED',
+  COMPLETED: 'COMPLETED',
+} as const;
+
+export interface TanPeriod {
+  id: number;
+  sequenceNo: number;
+  periodStart: string;
+  periodEnd: string;
+  drawDate: string;
+  expectedCollection: number;
+  status: TanPeriodStatus;
+  computedStatus: TanPeriodComputedStatus;
+  recordedDraws: number;
+  completedAt?: string | null;
+}
+
+export type TanConfigStatus = typeof TanConfigStatus[keyof typeof TanConfigStatus];
+
+
+export const TanConfigStatus = {
+  LOCKED: 'LOCKED',
+  COMPLETED: 'COMPLETED',
+} as const;
+
+export interface TanConfig {
+  id: number;
+  cycleId: number;
+  tanStartDate: string;
+  drawsPerWeek: number;
+  totalShares: number;
+  totalDrawDates: number;
+  dailyPerShare: number;
+  expectedDailyCollection: number;
+  weeklyCollectionUnit: number;
+  perDrawWinnerAmount: number;
+  status: TanConfigStatus;
+  lockedAt?: string;
+  completedAt?: string | null;
+}
+
+export interface TanResponse {
+  tan: TanConfig | null;
+  periods: TanPeriod[];
+  activePeriod: TanPeriod | null;
+  nextPeriod: TanPeriod | null;
+}
+
+export interface TanLockResult {
+  id: number;
+  cycleId: number;
+  totalShares: number;
+  drawsPerWeek: number;
+  totalDrawDates: number;
+  perDrawWinnerAmount: number;
+  tanStartDate: string;
 }
 
 export interface MemberCycleSummary {
@@ -405,6 +488,29 @@ export interface MemberImportError {
   message: string;
 }
 
+export type MemberImportPreviewRowMobileStatus = typeof MemberImportPreviewRowMobileStatus[keyof typeof MemberImportPreviewRowMobileStatus];
+
+
+export const MemberImportPreviewRowMobileStatus = {
+  provided: 'provided',
+  missing: 'missing',
+} as const;
+
+export interface MemberImportExistingMember {
+  id: number;
+  memberId: string;
+  name: string;
+}
+
+export interface MemberImportPreviewRow {
+  row: number;
+  name: string;
+  shares: number;
+  mobile: string;
+  mobileStatus: MemberImportPreviewRowMobileStatus;
+  existingMember?: MemberImportExistingMember | null;
+}
+
 export interface MemberImportResult {
   valid: number;
   imported: number;
@@ -414,19 +520,6 @@ export interface MemberImportResult {
   expectedDailyCollection: number;
   previewToken: string;
   previewRows?: MemberImportPreviewRow[];
-}
-
-export interface MemberImportPreviewRow {
-  row: number;
-  name: string;
-  shares: number;
-  mobile: string;
-  mobileStatus: 'provided' | 'missing';
-  existingMember?: {
-    id: number;
-    memberId: string;
-    name: string;
-  } | null;
 }
 
 export type PaymentInputVerificationMethod = typeof PaymentInputVerificationMethod[keyof typeof PaymentInputVerificationMethod];
@@ -471,6 +564,10 @@ export interface SettlementInput {
   idempotencyKey?: string;
 }
 
+export type AuditEntryBeforeValue = { [key: string]: unknown } | null;
+
+export type AuditEntryAfterValue = { [key: string]: unknown } | null;
+
 export interface AuditEntry {
   id: number;
   actor: string;
@@ -483,8 +580,8 @@ export interface AuditEntry {
   relatedTransactionId?: string | null;
   reason?: string | null;
   effectiveDate?: string | null;
-  beforeValue?: Record<string, unknown> | null;
-  afterValue?: Record<string, unknown> | null;
+  beforeValue?: AuditEntryBeforeValue;
+  afterValue?: AuditEntryAfterValue;
   createdAt: string;
 }
 

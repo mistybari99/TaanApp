@@ -73,7 +73,79 @@ const transactionLock = async (client: Queryable, scope: string) => {
   await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scope]);
 };
 const isFriday = (date: string) => new Date(`${date}T00:00:00Z`).getUTCDay() === 5;
+const isSaturday = (date: string) => new Date(`${date}T00:00:00Z`).getUTCDay() === 6;
+const addDays = (date: string, days: number) => {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+};
 const validStatus = (value: unknown, allowed: readonly string[]) => allowed.includes(String(value ?? ""));
+
+type TanPeriodRow = {
+  tanConfigId: number;
+  tanStartDate: string;
+  drawsPerWeek: number;
+  totalShares: number;
+  totalDrawDates: number;
+  dailyPerShare: number;
+  expectedDailyCollection: number;
+  weeklyCollectionUnit: number;
+  perDrawWinnerAmount: number;
+  tanStatus: "LOCKED" | "COMPLETED";
+  periodId: number;
+  sequenceNo: number;
+  periodStart: string;
+  periodEnd: string;
+  drawDate: string;
+  expectedCollection: number;
+  periodStatus: "OPEN" | "COMPLETED";
+};
+
+const tanPeriodForDate = async (queryable: Queryable, cycleId: number, date: string, forUpdate = false) => {
+  const result = await queryable.query(
+    `SELECT cfg.id AS "tanConfigId",cfg.tan_start_date::text AS "tanStartDate",cfg.draws_per_week AS "drawsPerWeek",
+      cfg.total_shares AS "totalShares",cfg.total_draw_dates AS "totalDrawDates",
+      cfg.daily_per_share::float AS "dailyPerShare",cfg.expected_daily_collection::float AS "expectedDailyCollection",
+      cfg.weekly_collection_unit::float AS "weeklyCollectionUnit",cfg.per_draw_winner_amount::float AS "perDrawWinnerAmount",
+      cfg.status AS "tanStatus",p.id AS "periodId",p.sequence_no AS "sequenceNo",
+      p.period_start::text AS "periodStart",p.period_end::text AS "periodEnd",p.draw_date::text AS "drawDate",
+      p.expected_collection::float AS "expectedCollection",p.status AS "periodStatus"
+     FROM fund_tan_configs cfg
+     JOIN fund_tan_periods p ON p.tan_config_id=cfg.id
+     WHERE cfg.cycle_id=$1 AND $2::date BETWEEN p.period_start AND p.period_end
+     ORDER BY cfg.id DESC,p.sequence_no
+     LIMIT 1
+     ${forUpdate ? "FOR UPDATE OF p" : ""}`,
+    [cycleId, date],
+  );
+  return (result.rows[0] as TanPeriodRow | undefined) ?? null;
+};
+
+const tanConfigForCycle = async (queryable: Queryable, cycleId: number, forUpdate = false) => {
+  const result = await queryable.query(
+    `SELECT cfg.id AS "tanConfigId",cfg.cycle_id AS "cycleId",cfg.tan_start_date::text AS "tanStartDate",
+      cfg.draws_per_week AS "drawsPerWeek",cfg.total_shares AS "totalShares",cfg.total_draw_dates AS "totalDrawDates",
+      cfg.daily_per_share::float AS "dailyPerShare",cfg.expected_daily_collection::float AS "expectedDailyCollection",
+      cfg.weekly_collection_unit::float AS "weeklyCollectionUnit",cfg.per_draw_winner_amount::float AS "perDrawWinnerAmount",
+      cfg.status AS "tanStatus",cfg.locked_at AS "lockedAt",cfg.completed_at AS "completedAt"
+     FROM fund_tan_configs cfg WHERE cfg.cycle_id=$1
+     ORDER BY cfg.id DESC LIMIT 1
+     ${forUpdate ? "FOR UPDATE" : ""}`,
+    [cycleId],
+  );
+  return result.rows[0] ?? null;
+};
+
+const tanPeriodIsLive = (period: TanPeriodRow | null, date = todayIso()) =>
+  Boolean(period && period.periodStatus !== "COMPLETED" && date >= period.periodStart && date <= period.periodEnd);
+
+const tanPreviousPeriodsComplete = async (queryable: Queryable, period: TanPeriodRow) => {
+  const result = await queryable.query(
+    "SELECT COUNT(*)::int AS count FROM fund_tan_periods WHERE tan_config_id=$1 AND sequence_no < $2 AND status <> 'COMPLETED'",
+    [period.tanConfigId, period.sequenceNo],
+  );
+  return Number(result.rows[0]?.count ?? 0) === 0;
+};
 
 const transferSelect = `
   SELECT t.id,t.transfer_id AS "transferId",t.cycle_id AS "cycleId",c.cycle_number AS "cycleNumber",c.name AS "cycleName",
@@ -287,6 +359,10 @@ router.post("/members/import", requireAuth, ownerOnly, async (req: AuthedRequest
   const cycle = await pool.query("SELECT id,status,daily_per_share::float AS daily_per_share,tracking_start_date::text AS tracking_start_date FROM fund_cycles WHERE id=$1", [cycleId]);
   if (!cycle.rows[0]) errors.push({ row: 1, message: "Selected cycle was not found" });
   else if (cycle.rows[0].status !== "ACTIVE") errors.push({ row: 1, message: "Members can only be imported into an active cycle" });
+  else {
+    const tan = await tanConfigForCycle(pool, cycleId);
+    if (tan) errors.push({ row: 1, message: "TAN is locked; member import cannot change the locked share total" });
+  }
   normalized.forEach((row, index) => {
     const rowNumber = index + 2;
     let match = row.memberId ? membersById.get(row.memberId) : undefined;
@@ -503,6 +579,8 @@ router.get("/cycles", requireAuth, async (_req, res) => {
   return res.json(result.rows);
 });
 router.post("/cycles", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  return res.status(409).json({ error: "Cycle #01 is the only supported cycle; create a new TAN period after it completes" });
+  /*
   const b = req.body;
   if (!String(b.name ?? "").trim() || !/^\d{4}-\d{2}-\d{2}$/.test(String(b.startDate ?? ""))) {
     return res.status(400).json({ error: "Cycle name and valid start date are required" });
@@ -523,6 +601,7 @@ router.post("/cycles", requireAuth, ownerOnly, async (req: AuthedRequest, res) =
   } catch {
     return res.status(409).json({ error: "Cycle number already exists or another active cycle is already open" });
   }
+  */
 });
 router.patch("/cycles/:id", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
@@ -541,6 +620,15 @@ router.patch("/cycles/:id", requireAuth, ownerOnly, async (req: AuthedRequest, r
     if (current.rows[0].status === "COMPLETED") {
       await client.query("ROLLBACK");
       return res.status(409).json({ error: "Completed cycles are locked and cannot be edited" });
+    }
+    const tan = await tanConfigForCycle(client, id);
+    if (tan && b.status === "COMPLETED" && tan.tanStatus !== "COMPLETED") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "The active TAN must complete all scheduled draw-dates before the cycle can be completed" });
+    }
+    if (tan && (b.name !== undefined || b.endDate !== undefined || b.trackingStartDate !== undefined || b.dailyPerShare !== undefined)) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "TAN configuration is locked; use a share transfer to move member shares" });
     }
     const requestedStatus = b.status ?? current.rows[0].status;
     if (!["ACTIVE", "COMPLETED"].includes(requestedStatus)) {
@@ -594,6 +682,162 @@ router.patch("/cycles/:id", requireAuth, ownerOnly, async (req: AuthedRequest, r
     client.release();
   }
 });
+
+router.get("/cycles/:id/tan", requireAuth, async (req: AuthedRequest, res) => {
+  const cycleId = Number(req.params.id);
+  const config = await tanConfigForCycle(pool, cycleId);
+  if (!config) return res.json({ tan: null, periods: [], activePeriod: null, nextPeriod: null });
+  const periods = await pool.query(
+    `SELECT p.id,p.sequence_no AS "sequenceNo",p.period_start::text AS "periodStart",p.period_end::text AS "periodEnd",
+      p.draw_date::text AS "drawDate",p.expected_collection::float AS "expectedCollection",p.status,
+      p.completed_at AS "completedAt",COUNT(d.id)::int AS "recordedDraws"
+     FROM fund_tan_periods p
+     LEFT JOIN fund_draws d ON d.tan_period_id=p.id AND d.status <> 'VOID'
+     WHERE p.tan_config_id=$1
+     GROUP BY p.id ORDER BY p.sequence_no`,
+    [config.tanConfigId],
+  );
+  const currentDate = todayIso();
+  const mapped = periods.rows.map((period) => ({
+    ...period,
+    computedStatus: period.status === "COMPLETED"
+      ? "COMPLETED"
+      : currentDate < String(period.periodStart)
+        ? "SCHEDULED"
+        : currentDate > String(period.periodEnd)
+          ? "CLOSED"
+          : "OPEN",
+  }));
+  const activePeriod = mapped.find((period) => period.computedStatus === "OPEN") ?? null;
+  const nextPeriod = mapped.find((period) => period.computedStatus === "SCHEDULED") ?? null;
+  return res.json({
+    tan: {
+      id: config.tanConfigId,
+      cycleId,
+      tanStartDate: config.tanStartDate,
+      drawsPerWeek: Number(config.drawsPerWeek),
+      totalShares: Number(config.totalShares),
+      totalDrawDates: Number(config.totalDrawDates),
+      dailyPerShare: money(config.dailyPerShare),
+      expectedDailyCollection: money(config.expectedDailyCollection),
+      weeklyCollectionUnit: money(config.weeklyCollectionUnit),
+      perDrawWinnerAmount: money(config.perDrawWinnerAmount),
+      status: config.tanStatus,
+      lockedAt: config.lockedAt,
+      completedAt: config.completedAt,
+    },
+    periods: mapped,
+    activePeriod,
+    nextPeriod,
+  });
+});
+
+router.post("/cycles/:id/tan/lock", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const cycleId = Number(req.params.id);
+  const tanStartDate = isIsoDate(req.body.tanStartDate ?? req.body.startDate)
+    ? String(req.body.tanStartDate ?? req.body.startDate)
+    : "";
+  const drawsPerWeek = Number(req.body.drawsPerWeek);
+  if (!cycleId || !isSaturday(tanStartDate) || !Number.isInteger(drawsPerWeek) || drawsPerWeek < 1) {
+    return res.status(400).json({ error: "TAN start date must be a Saturday and draws per week must be a positive whole number" });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await transactionLock(client, `tan-lock:${cycleId}`);
+    const cycle = await client.query(
+      `SELECT id,status,tracking_start_date::text AS "trackingStartDate",daily_per_share::float AS "dailyPerShare"
+       FROM fund_cycles WHERE id=$1 FOR UPDATE`,
+      [cycleId],
+    );
+    if (!cycle.rows[0]) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Cycle not found" });
+    }
+    if (cycle.rows[0].status !== "ACTIVE") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Only the active cycle can receive a TAN schedule" });
+    }
+    const previousTan = await tanConfigForCycle(client, cycleId, true);
+    if (previousTan && previousTan.tanStatus !== "COMPLETED") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "The current TAN must complete all draw-dates before a new TAN can be locked" });
+    }
+    if (!previousTan) {
+      if (cycle.rows[0].trackingStartDate && String(cycle.rows[0].trackingStartDate) !== tanStartDate) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "TAN start must match the existing digital tracking start date" });
+      }
+      const conflicts = await client.query(
+        `SELECT
+          (SELECT COUNT(*) FROM fund_payments WHERE cycle_id=$1) AS payments,
+          (SELECT COUNT(*) FROM fund_draws WHERE cycle_id=$1) AS draws,
+          (SELECT COUNT(*) FROM fund_due_entries WHERE cycle_id=$1) AS dues,
+          (SELECT COUNT(*) FROM fund_share_transfers WHERE cycle_id=$1) AS transfers`,
+        [cycleId],
+      );
+      const conflict = conflicts.rows[0];
+      if (Number(conflict.payments) || Number(conflict.draws) || Number(conflict.dues) || Number(conflict.transfers)) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "TAN can only be locked before financial activity exists in this cycle" });
+      }
+    } else {
+      const previousEnd = await client.query("SELECT MAX(period_end)::text AS \"periodEnd\" FROM fund_tan_periods WHERE tan_config_id=$1", [previousTan.tanConfigId]);
+      if (!previousEnd.rows[0]?.periodEnd || tanStartDate <= String(previousEnd.rows[0].periodEnd)) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "A new TAN must start after the previous TAN has ended" });
+      }
+    }
+    const shareResult = await client.query(
+      "SELECT COALESCE(SUM(shares),0)::int AS \"totalShares\" FROM fund_cycle_members WHERE cycle_id=$1",
+      [cycleId],
+    );
+    const totalShares = Number(shareResult.rows[0]?.totalShares ?? 0);
+    if (!totalShares) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Import or enroll cycle members before locking TAN" });
+    }
+    if (drawsPerWeek > totalShares || totalShares % drawsPerWeek !== 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Total shares must divide evenly by draws per week", totalShares, drawsPerWeek });
+    }
+    const dailyPerShare = money(cycle.rows[0].dailyPerShare);
+    const expectedDailyCollection = roundMoney(totalShares * dailyPerShare);
+    const weeklyCollectionUnit = expectedDailyCollection;
+    const perDrawWinnerAmount = roundMoney(weeklyCollectionUnit / drawsPerWeek);
+    const totalDrawDates = totalShares / drawsPerWeek;
+    const created = await client.query(
+      `INSERT INTO fund_tan_configs(cycle_id,tan_start_date,draws_per_week,total_shares,total_draw_dates,daily_per_share,
+        expected_daily_collection,weekly_collection_unit,per_draw_winner_amount,locked_by)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+      [cycleId,tanStartDate,drawsPerWeek,totalShares,totalDrawDates,dailyPerShare,expectedDailyCollection,weeklyCollectionUnit,perDrawWinnerAmount,req.user!.id],
+    );
+    const tanConfigId = Number(created.rows[0].id);
+    for (let index = 0; index < totalDrawDates; index += 1) {
+      const periodStart = addDays(tanStartDate, index * 7);
+      const periodEnd = addDays(periodStart, 6);
+      await client.query(
+        `INSERT INTO fund_tan_periods(tan_config_id,cycle_id,sequence_no,period_start,period_end,draw_date,expected_collection)
+         VALUES($1,$2,$3,$4,$5,$6,$7)`,
+        [tanConfigId,cycleId,index + 1,periodStart,periodEnd,periodEnd,weeklyCollectionUnit],
+      );
+    }
+    await client.query("UPDATE fund_cycles SET tracking_start_date=$2 WHERE id=$1", [cycleId, tanStartDate]);
+    await auditOn(client, req.user!.id, "TAN_LOCKED", `Locked TAN for cycle ${cycleId}: ${totalShares} shares, ${drawsPerWeek} draws/week, ${totalDrawDates} draw-dates`, "tan_config", String(tanConfigId), {
+      cycleId,
+      effectiveDate: tanStartDate,
+      afterValue: { totalShares, drawsPerWeek, totalDrawDates, perDrawWinnerAmount, tanStartDate },
+    });
+    await client.query("COMMIT");
+    return res.status(201).json({ id: tanConfigId, cycleId, totalShares, drawsPerWeek, totalDrawDates, perDrawWinnerAmount, tanStartDate });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    req.log.error({ error }, "TAN lock failed");
+    return res.status(409).json({ error: "TAN schedule could not be locked; no records were changed" });
+  } finally {
+    client.release();
+  }
+});
 router.get("/cycles/:id/members", requireAuth, async (req: AuthedRequest, res) => {
   const params: unknown[] = [Number(req.params.id)];
   let access = "";
@@ -627,6 +871,11 @@ router.post("/cycles/:id/members", requireAuth, ownerOnly, async (req: AuthedReq
   try {
     await client.query("BEGIN");
     const cycle = await client.query("SELECT status,daily_per_share::float AS per_share FROM fund_cycles WHERE id=$1 FOR UPDATE", [cycleId]);
+    const tan = await tanConfigForCycle(client, cycleId, true);
+    if (tan && tan.tanStatus !== "COMPLETED") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "TAN shares are locked; use the Share Transfer workflow instead of editing membership shares" });
+    }
     const member = await client.query("SELECT id FROM fund_members WHERE id=$1", [memberId]);
     if (!cycle.rows[0] || !member.rows[0]) {
       await client.query("ROLLBACK");
@@ -682,6 +931,16 @@ router.post("/due-entries", requireAuth, ownerOnly, async (req: AuthedRequest, r
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const tan = await tanConfigForCycle(client, cycleId, true);
+    let tanPeriodId: number | null = null;
+    if (tan) {
+      const tanPeriod = await tanPeriodForDate(client, cycleId, dueDate, true);
+      if (!tanPeriod || !tanPeriodIsLive(tanPeriod) || !(await tanPreviousPeriodsComplete(client, tanPeriod))) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "Previous due entries can only be recorded during the currently open TAN period" });
+      }
+      tanPeriodId = tanPeriod.periodId;
+    }
     if (idempotencyKey) {
       await transactionLock(client, `due-entry:${cycleId}:${memberId}:${idempotencyKey}`);
       const replay = await client.query(`SELECT id,cycle_id AS "cycleId",member_id AS "memberId",amount::float,due_date::text AS "dueDate",reason,created_at AS "createdAt"
@@ -705,10 +964,10 @@ router.post("/due-entries", requireAuth, ownerOnly, async (req: AuthedRequest, r
       [cycleId, memberId],
     );
     const previousDueBefore = money(dueBefore.rows[0]?.previousDue);
-    const entry = await client.query(`INSERT INTO fund_due_entries(cycle_id,member_id,amount,due_date,reason,idempotency_key,created_by)
-      VALUES($1,$2,$3,$4,$5,$6,$7)
+    const entry = await client.query(`INSERT INTO fund_due_entries(cycle_id,member_id,amount,due_date,reason,idempotency_key,created_by,tan_period_id)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8)
       RETURNING id,cycle_id AS "cycleId",member_id AS "memberId",amount::float,due_date::text AS "dueDate",reason,created_at AS "createdAt"`,
-      [cycleId, memberId, amount, dueDate, reason, idempotencyKey, req.user!.id]);
+      [cycleId, memberId, amount, dueDate, reason, idempotencyKey, req.user!.id, tanPeriodId]);
     await auditOn(client, req.user!.id, "DUE_ENTRY_CREATED", `Member ${memberId}: BDT ${amount}; ${reason}`, "due_entry", String(entry.rows[0].id), {
       memberId,
       cycleId,
@@ -740,6 +999,13 @@ router.get("/share-transfers/preview", requireAuth, ownerOnly, async (req: Authe
   if (cycle.rows[0].status !== "ACTIVE") return res.status(409).json({ error: "Completed cycles are locked" });
   if (!cycle.rows[0].tracking_start_date || todayIso() < String(cycle.rows[0].tracking_start_date)) {
     return res.status(409).json({ error: "Owner must open digital tracking before transferring shares" });
+  }
+  const tan = await tanConfigForCycle(pool, cycleId);
+  if (tan) {
+    const tanPeriod = await tanPeriodForDate(pool, cycleId, todayIso());
+    if (!tanPeriod || !tanPeriodIsLive(tanPeriod) || !(await tanPreviousPeriodsComplete(pool, tanPeriod))) {
+      return res.status(409).json({ error: "Share transfers are available only during the currently open TAN period" });
+    }
   }
   const membership = await pool.query(
     `SELECT cm.shares,m.member_id AS "memberCode",m.name
@@ -861,6 +1127,16 @@ router.post("/share-transfers", requireAuth, ownerOnly, async (req: AuthedReques
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "Transfer date must be on or after tracking start and not in the future" });
     }
+    const tan = await tanConfigForCycle(client, cycleId, true);
+    let tanPeriodId: number | null = null;
+    if (tan) {
+      const tanPeriod = await tanPeriodForDate(client, cycleId, transferDate, true);
+      if (!tanPeriod || !tanPeriodIsLive(tanPeriod) || !(await tanPreviousPeriodsComplete(client, tanPeriod))) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "Share transfers are available only during the currently open TAN period" });
+      }
+      tanPeriodId = tanPeriod.periodId;
+    }
     const people = await client.query(
       "SELECT id,name,status FROM fund_members WHERE id IN ($1,$2) FOR SHARE",
       [fromMemberId, toMemberId],
@@ -921,10 +1197,10 @@ router.post("/share-transfers", requireAuth, ownerOnly, async (req: AuthedReques
     const transferredValue = roundMoney(accumulatedValue * quantity / sourceShares);
     const transferId = `IRF-TR-${todayIso().replaceAll("-", "")}-${randomBytes(4).toString("hex").toUpperCase()}`;
     const transfer = await client.query(
-      `INSERT INTO fund_share_transfers(transfer_id,cycle_id,from_member_id,to_member_id,share_quantity,accumulated_value,transfer_date,notes,override_winner,created_by,idempotency_key)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      `INSERT INTO fund_share_transfers(transfer_id,cycle_id,from_member_id,to_member_id,share_quantity,accumulated_value,transfer_date,notes,override_winner,created_by,idempotency_key,tan_period_id)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING id`,
-      [transferId,cycleId,fromMemberId,toMemberId,quantity,transferredValue,transferDate,String(b.notes ?? ""),overrideWinner,req.user!.id,idempotencyKey],
+      [transferId,cycleId,fromMemberId,toMemberId,quantity,transferredValue,transferDate,String(b.notes ?? ""),overrideWinner,req.user!.id,idempotencyKey,tanPeriodId],
     );
     await client.query(
       `UPDATE fund_cycle_members
@@ -1085,7 +1361,8 @@ router.get("/draws", requireAuth, async (req, res) => {
   if (req.query.drawNumber) { values.push(Number(req.query.drawNumber)); clauses.push(`d.draw_number=$${values.length}`); }
   const result = await pool.query(`SELECT d.id,d.cycle_id AS "cycleId",c.cycle_number AS "cycleNumber",c.name AS "cycleName",
     d.draw_number AS "drawNumber",d.draw_date::text AS "drawDate",m.id AS "winnerMemberId",m.member_id AS "winnerMemberCode",
-    m.name AS "winnerName",d.winning_amount::float AS "winningAmount",d.status,d.notes,d.created_at AS "createdAt"
+    m.name AS "winnerName",d.winning_amount::float AS "winningAmount",d.status,d.notes,d.created_at AS "createdAt",
+    d.tan_period_id AS "tanPeriodId",d.draw_slot AS "drawSlot"
     FROM fund_draws d JOIN fund_cycles c ON c.id=d.cycle_id JOIN fund_members m ON m.id=d.winner_member_id
     ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""} ORDER BY d.draw_date DESC,d.draw_number DESC`, values);
   return res.json(result.rows);
@@ -1095,6 +1372,7 @@ router.post("/draws", requireAuth, ownerOnly, async (req: AuthedRequest, res) =>
   const cycleId = Number(b.cycleId);
   const winnerMemberId = Number(b.winnerMemberId);
   const drawDate = String(b.drawDate ?? "");
+  const requestedDrawSlot = b.drawSlot === undefined || b.drawSlot === null || b.drawSlot === "" ? null : Number(b.drawSlot);
   const idempotencyKey = idempotency(b.idempotencyKey);
   const status = String(b.status ?? "RECORDED");
   if (!cycleId || !winnerMemberId || !isIsoDate(drawDate) || Number(b.winningAmount) <= 0) {
@@ -1137,16 +1415,55 @@ router.post("/draws", requireAuth, ownerOnly, async (req: AuthedRequest, res) =>
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "Draw date cannot be before the digital tracking start" });
     }
+    const tan = await tanConfigForCycle(client, cycleId, true);
+    let tanPeriodId: number | null = null;
+    let drawSlot = requestedDrawSlot;
+    if (tan) {
+      const tanPeriod = await tanPeriodForDate(client, cycleId, drawDate, true);
+      if (!tanPeriod || !tanPeriodIsLive(tanPeriod) || drawDate !== todayIso() || !isFriday(drawDate)) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "TAN draws can only be recorded on the currently open period's Friday" });
+      }
+      if (!(await tanPreviousPeriodsComplete(client, tanPeriod))) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "Complete the previous TAN draw-date before recording this draw" });
+      }
+      if (status !== "RECORDED" || !sameMoney(b.winningAmount, tan.perDrawWinnerAmount)) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: `TAN winner amount is locked at BDT ${money(tan.perDrawWinnerAmount).toFixed(2)}` });
+      }
+      if (drawSlot === null) {
+        const nextSlot = await client.query("SELECT COALESCE(MAX(draw_slot),0)+1 AS slot FROM fund_draws WHERE tan_period_id=$1 AND status <> 'VOID'", [tanPeriod.periodId]);
+        drawSlot = Number(nextSlot.rows[0].slot);
+      }
+      if (!Number.isInteger(drawSlot) || drawSlot < 1 || drawSlot > Number(tan.drawsPerWeek)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: `Draw slot must be between 1 and ${tan.drawsPerWeek}` });
+      }
+      tanPeriodId = tanPeriod.periodId;
+    }
     const membership = await client.query("SELECT 1 FROM fund_cycle_members WHERE cycle_id=$1 AND member_id=$2", [cycleId,winnerMemberId]);
     if (!membership.rowCount) {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "Winner must participate in the selected cycle" });
     }
     const next = await client.query("SELECT COALESCE(MAX(draw_number),0)+1 AS number FROM fund_draws WHERE cycle_id=$1", [cycleId]);
-    const result = await client.query(`INSERT INTO fund_draws(cycle_id,draw_number,draw_date,winner_member_id,winning_amount,status,notes,idempotency_key)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,cycle_id AS "cycleId",draw_number AS "drawNumber",draw_date::text AS "drawDate",
-      winner_member_id AS "winnerMemberId",winning_amount::float AS "winningAmount",status,notes,created_at AS "createdAt"`,
-      [cycleId,Number(next.rows[0].number),drawDate,winnerMemberId,Number(b.winningAmount),status,b.notes ?? "",idempotencyKey]);
+    const result = await client.query(`INSERT INTO fund_draws(cycle_id,draw_number,draw_date,winner_member_id,winning_amount,status,notes,idempotency_key,tan_period_id,draw_slot)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,cycle_id AS "cycleId",draw_number AS "drawNumber",draw_date::text AS "drawDate",
+      winner_member_id AS "winnerMemberId",winning_amount::float AS "winningAmount",status,notes,created_at AS "createdAt",
+      tan_period_id AS "tanPeriodId",draw_slot AS "drawSlot"`,
+      [cycleId,Number(next.rows[0].number),drawDate,winnerMemberId,Number(b.winningAmount),status,b.notes ?? "",idempotencyKey,tanPeriodId,drawSlot]);
+    if (tanPeriodId) {
+      const tanPeriod = await client.query("SELECT tan_config_id,sequence_no FROM fund_tan_periods WHERE id=$1 FOR UPDATE", [tanPeriodId]);
+      const count = await client.query("SELECT COUNT(*)::int AS count FROM fund_draws WHERE tan_period_id=$1 AND status='RECORDED'", [tanPeriodId]);
+      if (Number(count.rows[0].count) === Number(tan.drawsPerWeek)) {
+        await client.query("UPDATE fund_tan_periods SET status='COMPLETED',completed_by=$2,completed_at=now() WHERE id=$1", [tanPeriodId, req.user!.id]);
+        const remaining = await client.query("SELECT COUNT(*)::int AS count FROM fund_tan_periods WHERE tan_config_id=$1 AND status <> 'COMPLETED'", [tanPeriod.rows[0].tan_config_id]);
+        if (Number(remaining.rows[0].count) === 0) {
+          await client.query("UPDATE fund_tan_configs SET status='COMPLETED',completed_by=$2,completed_at=now() WHERE id=$1", [tanPeriod.rows[0].tan_config_id, req.user!.id]);
+        }
+      }
+    }
     await auditOn(client, req.user!.id, "DRAW_RECORDED", `Recorded draw #${result.rows[0].drawNumber} for cycle ${cycleId}`, "draw", String(result.rows[0].id));
     await client.query("COMMIT");
     return res.status(201).json(result.rows[0]);
@@ -1215,6 +1532,16 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "Collection date must be on or after the digital tracking start and not in the future" });
     }
+    const tan = await tanConfigForCycle(client, selectedCycleId, true);
+    let tanPeriodId: number | null = null;
+    if (tan) {
+      const tanPeriod = await tanPeriodForDate(client, selectedCycleId, paidDate, true);
+      if (!tanPeriod || !tanPeriodIsLive(tanPeriod) || !(await tanPreviousPeriodsComplete(client, tanPeriod))) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "Payments can only be recorded during the currently open TAN period" });
+      }
+      tanPeriodId = tanPeriod.periodId;
+    }
     const duplicate = await client.query("SELECT 1 FROM fund_payments WHERE member_id=$1 AND cycle_id=$2 AND collection_date=$3 AND status='POSTED' LIMIT 1", [memberId, selectedCycleId, paidDate]);
     if (duplicate.rowCount && !confirmDuplicate) {
       await client.query("ROLLBACK");
@@ -1240,9 +1567,9 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
     const receiptId = `IRF-${new Date().toISOString().slice(0,10).replaceAll("-","")}-${randomBytes(3).toString("hex").toUpperCase()}`;
     const verification = verificationMethod === "PIN" && verificationCode ? "PIN VERIFIED" : "COLLECTOR CONFIRMED";
     const r = await client.query(
-      `INSERT INTO fund_payments(receipt_id,member_id,cycle_id,collection_date,shares,amount,collector_id,verification_status,notes,idempotency_key,previous_due_applied,current_period_applied)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id,receipt_id AS "receiptId",member_id AS "memberId",cycle_id AS "cycleId",collection_date::text AS "collectionDate",shares,notes,amount::float,previous_due_applied::float AS "previousDueApplied",current_period_applied::float AS "currentPeriodApplied",verification_status AS "verificationStatus",created_at AS "createdAt",status`,
-      [receiptId,memberId,selectedCycleId,paidDate,Number(cycleMember.rows[0].shares),amount,req.user!.id,verification,notes ?? "",idempotencyKey ?? null,previousDueApplied,currentPeriodApplied],
+      `INSERT INTO fund_payments(receipt_id,member_id,cycle_id,collection_date,shares,amount,collector_id,verification_status,notes,idempotency_key,previous_due_applied,current_period_applied,tan_period_id)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id,receipt_id AS "receiptId",member_id AS "memberId",cycle_id AS "cycleId",collection_date::text AS "collectionDate",shares,notes,amount::float,previous_due_applied::float AS "previousDueApplied",current_period_applied::float AS "currentPeriodApplied",verification_status AS "verificationStatus",created_at AS "createdAt",status`,
+      [receiptId,memberId,selectedCycleId,paidDate,Number(cycleMember.rows[0].shares),amount,req.user!.id,verification,notes ?? "",idempotencyKey ?? null,previousDueApplied,currentPeriodApplied,tanPeriodId],
     );
     await auditOn(client, req.user!.id, "PAYMENT_POSTED", `${receiptId}: BDT ${amount}; previous due ${previousDueApplied}`, "payment", String(r.rows[0].id));
     await client.query("COMMIT");

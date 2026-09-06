@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from "react"
 import {
   getListCycleMembersQueryKey,
   getListCyclesQueryKey,
-  useCreateCycle,
   useGetCurrentUser,
+  getGetTanQueryKey,
+  useGetTan,
+  useLockTan,
   useListCycleMembers,
   useListCycles,
   useListMembers,
@@ -17,7 +19,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { toast } from "sonner"
-import { CheckCircle2, Plus, Users } from "lucide-react"
+import { CheckCircle2, LockKeyhole, Users } from "lucide-react"
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -27,15 +29,19 @@ export default function CyclesPage() {
   const { data: cycles, isLoading } = useListCycles({ query: { queryKey: getListCyclesQueryKey() } })
   const { data: members } = useListMembers()
   const [selectedCycleId, setSelectedCycleId] = useState<number | null>(null)
-  const [newCycle, setNewCycle] = useState({ name: "", startDate: today(), trackingStartDate: today(), dailyPerShare: 100 })
   const [participant, setParticipant] = useState({ memberId: "", shares: 1 })
   const [trackingStartDate, setTrackingStartDate] = useState("")
+  const [tanStartDate, setTanStartDate] = useState("")
+  const [drawsPerWeek, setDrawsPerWeek] = useState(4)
   const [shareDrafts, setShareDrafts] = useState<Record<number, number>>({})
-  const createCycle = useCreateCycle()
   const updateCycle = useUpdateCycle()
   const upsertMember = useUpsertCycleMember()
+  const lockTan = useLockTan()
   const selectedCycle = cycles?.find((cycle) => cycle.id === selectedCycleId) ?? cycles?.[0]
   const activeId = selectedCycle?.id ?? null
+  const { data: tanData } = useGetTan((activeId ?? 0) as number, {
+    query: { enabled: Boolean(activeId), queryKey: getGetTanQueryKey((activeId ?? 0) as number) },
+  })
   const { data: cycleMembers, isLoading: membersLoading } = useListCycleMembers((activeId ?? 0) as number, {
     query: { enabled: Boolean(activeId), queryKey: getListCycleMembersQueryKey((activeId ?? 0) as number) },
   })
@@ -57,22 +63,23 @@ export default function CyclesPage() {
     return (members ?? []).filter((member) => !enrolled.has(member.id) && member.status === "active")
   }, [cycleMembers, members])
 
-  const handleCreate = () => {
-    if (!newCycle.name.trim()) return toast.error("চক্রের নাম দিন")
-    createCycle.mutate({ data: newCycle }, {
-      onSuccess: (created) => {
-        toast.success("নতুন চক্র তৈরি হয়েছে")
-        setNewCycle({ name: "", startDate: today(), trackingStartDate: today(), dailyPerShare: 100 })
-        setSelectedCycleId(created.id)
+  const handleLockTan = () => {
+    if (!activeId || !tanStartDate) {
+      toast.error("শনিবারের TAN শুরুর তারিখ দিন")
+      return
+    }
+    lockTan.mutate({ id: activeId, data: { tanStartDate, drawsPerWeek } }, {
+      onSuccess: () => {
+        toast.success("TAN schedule lock হয়েছে")
+        queryClient.invalidateQueries({ queryKey: getGetTanQueryKey(activeId) })
         queryClient.invalidateQueries({ queryKey: getListCyclesQueryKey() })
       },
-      onError: (error: any) => toast.error(error?.message || "চক্র তৈরি করা যায়নি"),
+      onError: (error: any) => toast.error(error?.message || "TAN schedule lock করা যায়নি"),
     })
-    return
   }
 
   const handleAddParticipant = () => {
-    if (!activeId || !participant.memberId) return toast.error("সদস্য নির্বাচন করুন")
+    if (!activeId || !participant.memberId || tanData?.tan) return toast.error("TAN lock হওয়ার পরে সরাসরি সদস্য যোগ করা যায় না")
     upsertMember.mutate({ id: activeId, data: { memberId: Number(participant.memberId), shares: Number(participant.shares) } }, {
       onSuccess: () => {
         toast.success("চক্রে সদস্য যোগ হয়েছে")
@@ -108,7 +115,7 @@ export default function CyclesPage() {
   }
 
   const saveShares = (memberId: number) => {
-    if (!activeId) return
+    if (!activeId || tanData?.tan) return toast.error("TAN lock হওয়ার পরে সরাসরি share edit করা যায় না")
     const shares = Number(shareDrafts[memberId])
     if (!Number.isInteger(shares) || shares < 1) return toast.error("শেয়ার ১ বা তার বেশি হতে হবে")
     return upsertMember.mutate({ id: activeId, data: { memberId, shares } }, {
@@ -127,22 +134,6 @@ export default function CyclesPage() {
         <h1 className="text-2xl font-bold tracking-tight text-primary">ফান্ড চক্র <span className="text-muted-foreground text-lg font-normal ml-2">Fund Cycles</span></h1>
         <p className="text-muted-foreground">প্রতিটি চক্রের সদস্য, শেয়ার ও সংগ্রহ আলাদা থাকে</p>
       </div>
-
-      {user?.role === "OWNER" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Plus className="w-5 h-5" /> নতুন চক্র তৈরি করুন</CardTitle>
-            <CardDescription>ডিফল্ট নিয়ম: প্রতি শেয়ারে প্রতিদিন ৳100, শুক্রবার সাপ্তাহিক ড্র</CardDescription>
-          </CardHeader>
-           <CardContent className="grid gap-4 sm:grid-cols-[1fr_170px_170px_150px_auto] items-end">
-            <div className="space-y-2"><Label>চক্রের নাম/নম্বর</Label><Input value={newCycle.name} placeholder="Cycle #01" onChange={(event) => setNewCycle({ ...newCycle, name: event.target.value })} /></div>
-            <div className="space-y-2"><Label>শুরুর তারিখ</Label><Input type="date" value={newCycle.startDate} onChange={(event) => setNewCycle({ ...newCycle, startDate: event.target.value })} /></div>
-             <div className="space-y-2"><Label>ডিজিটাল tracking শুরু</Label><Input type="date" value={newCycle.trackingStartDate} onChange={(event) => setNewCycle({ ...newCycle, trackingStartDate: event.target.value })} /></div>
-            <div className="space-y-2"><Label>৳/শেয়ার/দিন</Label><Input type="number" min={1} value={newCycle.dailyPerShare} onChange={(event) => setNewCycle({ ...newCycle, dailyPerShare: Number(event.target.value) })} /></div>
-            <Button onClick={handleCreate} disabled={createCycle.isPending}>চক্র তৈরি</Button>
-          </CardContent>
-        </Card>
-      )}
 
       <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
         <Card>
@@ -166,37 +157,63 @@ export default function CyclesPage() {
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div>
                   <CardTitle>{selectedCycle.name}</CardTitle>
-                  <CardDescription>চক্র #{selectedCycle.cycleNumber} · শুরু {formatDate(selectedCycle.startDate)} · ডিজিটাল tracking {selectedCycle.trackingStartDate ? formatDate(selectedCycle.trackingStartDate) : "এখনো খোলা হয়নি"} · শুক্রবার ড্র</CardDescription>
+                    <CardDescription>চক্র #{selectedCycle.cycleNumber} · শুরু {formatDate(selectedCycle.startDate)} · ডিজিটাল tracking {selectedCycle.trackingStartDate ? formatDate(selectedCycle.trackingStartDate) : "এখনো খোলা হয়নি"} · শুক্রবার ড্র</CardDescription>
                 </div>
                 {user?.role === "OWNER" && selectedCycle.status === "ACTIVE" && <Button variant="outline" onClick={completeCycle} disabled={updateCycle.isPending}>চক্র সম্পন্ন করুন</Button>}
               </div>
             </CardHeader>
             <CardContent className="space-y-5">
+              {user?.role === "OWNER" && selectedCycle.status === "ACTIVE" && !tanData?.tan && (
+                <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <LockKeyhole className="mt-0.5 h-5 w-5 text-primary" />
+                    <div>
+                      <p className="font-semibold">TAN period ও draw-date lock</p>
+                      <p className="text-xs text-muted-foreground">শুরু শনিবার হতে হবে। Lock হলে মোট share, draw/week, payout formula ও 27টি sequential Saturday–Friday period আর edit করা যাবে না।</p>
+                    </div>
+                  </div>
+                  {!tanData?.tan ? (
+                    <div className="grid gap-3 sm:grid-cols-[1fr_160px_auto] items-end">
+                      <div className="space-y-2"><Label>TAN শুরুর শনিবার</Label><Input type="date" value={tanStartDate} onChange={(event) => setTanStartDate(event.target.value)} /></div>
+                      <div className="space-y-2"><Label>প্রতি সপ্তাহে draw</Label><Input type="number" min={1} value={drawsPerWeek} onChange={(event) => setDrawsPerWeek(Number(event.target.value))} /></div>
+                      <Button onClick={handleLockTan} disabled={lockTan.isPending || !activeId}><LockKeyhole className="mr-2 h-4 w-4" />TAN lock করুন</Button>
+                    </div>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5 text-sm">
+                      <div><p className="text-muted-foreground">মোট share</p><p className="font-bold">{tanData.tan.totalShares}</p></div>
+                      <div><p className="text-muted-foreground">Draw/week</p><p className="font-bold">{tanData.tan.drawsPerWeek}</p></div>
+                      <div><p className="text-muted-foreground">মোট draw-date</p><p className="font-bold">{tanData.tan.totalDrawDates}</p></div>
+                      <div><p className="text-muted-foreground">প্রতি winner</p><p className="font-bold text-primary">{formatCurrency(tanData.tan.perDrawWinnerAmount)}</p></div>
+                      <div><p className="text-muted-foreground">বর্তমান period</p><p className="font-bold">{tanData.activePeriod ? `${tanData.activePeriod.sequenceNo}/${tanData.tan.totalDrawDates}` : tanData.nextPeriod ? `পরবর্তী ${tanData.nextPeriod.sequenceNo}` : "শেষ"}</p></div>
+                    </div>
+                  )}
+                </div>
+              )}
               {user?.role === "OWNER" && selectedCycle.status === "ACTIVE" && (
                 <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                     <div className="space-y-2 flex-1">
-                      <Label>ডিজিটাল collection শুরুর তারিখ</Label>
+                       <Label>ডিজিটাল collection শুরুর তারিখ</Label>
                       <Input type="date" value={trackingStartDate} onChange={(event) => setTrackingStartDate(event.target.value)} />
                       <p className="text-xs text-muted-foreground">এই তারিখের আগে কোনো due বা collection হিসাব হবে না।</p>
                     </div>
                     <Button variant="outline" onClick={saveTrackingStart} disabled={updateCycle.isPending || !trackingStartDate}>তারিখ সংরক্ষণ</Button>
                   </div>
-                  <p className="font-semibold">চক্রে সদস্য যোগ করুন</p>
-                  <div className="grid gap-3 sm:grid-cols-[1fr_130px_auto] items-end">
+                   {!tanData?.tan && <p className="font-semibold">চক্রে সদস্য যোগ করুন</p>}
+                   {!tanData?.tan && <div className="grid gap-3 sm:grid-cols-[1fr_130px_auto] items-end">
                     <div className="space-y-2"><Label>সদস্য</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={participant.memberId} onChange={(event) => setParticipant({ ...participant, memberId: event.target.value })}><option value="">সদস্য নির্বাচন করুন</option>{availableMembers.map((member) => <option key={member.id} value={member.id}>{member.memberId} — {member.name}</option>)}</select></div>
                     <div className="space-y-2"><Label>শেয়ার</Label><Input type="number" min={1} value={participant.shares} onChange={(event) => setParticipant({ ...participant, shares: Number(event.target.value) })} /></div>
                     <Button onClick={handleAddParticipant} disabled={upsertMember.isPending}>যোগ করুন</Button>
-                  </div>
+                   </div>}
                 </div>
               )}
               <div className="flex items-center gap-2 text-sm text-muted-foreground"><Users className="w-4 h-4" /> {cycleMembers?.length ?? 0} জন অংশগ্রহণকারী</div>
               <div className="border rounded-lg overflow-x-auto">
                  <table className="w-full text-sm">
-                   <thead className="bg-muted/50"><tr><th className="text-left p-3">সদস্য</th><th className="text-right p-3">শেয়ার</th><th className="text-right p-3">দৈনিক জমা</th><th className="text-right p-3">মোট সংগ্রহ</th><th className="text-right p-3">আজকের বাকি</th>{user?.role === "OWNER" && selectedCycle.status === "ACTIVE" && <th className="p-3"></th>}</tr></thead>
+                    <thead className="bg-muted/50"><tr><th className="text-left p-3">সদস্য</th><th className="text-right p-3">শেয়ার</th><th className="text-right p-3">দৈনিক জমা</th><th className="text-right p-3">মোট সংগ্রহ</th><th className="text-right p-3">আজকের বাকি</th>{user?.role === "OWNER" && selectedCycle.status === "ACTIVE" && !tanData?.tan && <th className="p-3"></th>}</tr></thead>
                   <tbody>
                      {membersLoading ? <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">লোড হচ্ছে...</td></tr> : cycleMembers?.length === 0 ? <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">এই চক্রে কোনো সদস্য নেই</td></tr> : cycleMembers?.map((member) => (
-                       <tr key={member.id} className="border-t"><td className="p-3"><div className="font-medium">{member.name}</div><div className="text-xs text-muted-foreground">{member.memberCode}</div></td><td className="p-3 text-right">{user?.role === "OWNER" && selectedCycle.status === "ACTIVE" ? <Input type="number" min={1} className="ml-auto w-20 text-right" value={shareDrafts[member.memberId] ?? member.shares} onChange={(event) => setShareDrafts({ ...shareDrafts, [member.memberId]: Number(event.target.value) })} /> : member.shares}</td><td className="p-3 text-right">{formatCurrency(member.dailyContribution)}</td><td className="p-3 text-right">{formatCurrency(member.totalCollected)}</td><td className="p-3 text-right font-medium text-destructive">{formatCurrency(member.todayDue)}</td>{user?.role === "OWNER" && selectedCycle.status === "ACTIVE" && <td className="p-3 text-right"><Button size="sm" variant="outline" onClick={() => saveShares(member.memberId)} disabled={upsertMember.isPending}>Save</Button></td>}</tr>
+                        <tr key={member.id} className="border-t"><td className="p-3"><div className="font-medium">{member.name}</div><div className="text-xs text-muted-foreground">{member.memberCode}</div></td><td className="p-3 text-right">{user?.role === "OWNER" && selectedCycle.status === "ACTIVE" && !tanData?.tan ? <Input type="number" min={1} className="ml-auto w-20 text-right" value={shareDrafts[member.memberId] ?? member.shares} onChange={(event) => setShareDrafts({ ...shareDrafts, [member.memberId]: Number(event.target.value) })} /> : member.shares}</td><td className="p-3 text-right">{formatCurrency(member.dailyContribution)}</td><td className="p-3 text-right">{formatCurrency(member.totalCollected)}</td><td className="p-3 text-right font-medium text-destructive">{formatCurrency(member.todayDue)}</td>{user?.role === "OWNER" && selectedCycle.status === "ACTIVE" && !tanData?.tan && <td className="p-3 text-right"><Button size="sm" variant="outline" onClick={() => saveShares(member.memberId)} disabled={upsertMember.isPending}>Save</Button></td>}</tr>
                     ))}
                   </tbody>
                 </table>
