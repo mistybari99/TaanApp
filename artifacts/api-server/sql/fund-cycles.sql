@@ -51,3 +51,40 @@ CREATE INDEX IF NOT EXISTS fund_cycle_members_cycle_idx ON fund_cycle_members(cy
 CREATE INDEX IF NOT EXISTS fund_draws_cycle_date_idx ON fund_draws(cycle_id, draw_date);
 CREATE UNIQUE INDEX IF NOT EXISTS fund_cycles_one_active_idx ON fund_cycles(status) WHERE status = 'ACTIVE';
 CREATE INDEX IF NOT EXISTS fund_settlements_cycle_idx ON fund_settlements(cycle_id, created_at);
+
+CREATE TABLE IF NOT EXISTS fund_share_transfers (
+  id serial PRIMARY KEY,
+  transfer_id text NOT NULL UNIQUE,
+  cycle_id integer NOT NULL REFERENCES fund_cycles(id) ON DELETE RESTRICT,
+  from_member_id integer NOT NULL REFERENCES fund_members(id) ON DELETE RESTRICT,
+  to_member_id integer NOT NULL REFERENCES fund_members(id) ON DELETE RESTRICT,
+  share_quantity integer NOT NULL CHECK (share_quantity > 0),
+  accumulated_value numeric NOT NULL DEFAULT 0 CHECK (accumulated_value >= 0),
+  transfer_date date NOT NULL,
+  notes text NOT NULL DEFAULT '',
+  override_winner boolean NOT NULL DEFAULT false,
+  created_by integer NOT NULL REFERENCES fund_users(id) ON DELETE RESTRICT,
+  idempotency_key text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (from_member_id <> to_member_id),
+  UNIQUE(created_by, idempotency_key)
+);
+
+CREATE TABLE IF NOT EXISTS fund_transfer_settlements (
+  id serial PRIMARY KEY,
+  transfer_id integer NOT NULL UNIQUE REFERENCES fund_share_transfers(id) ON DELETE RESTRICT,
+  cycle_id integer NOT NULL REFERENCES fund_cycles(id) ON DELETE RESTRICT,
+  amount numeric NOT NULL CHECK (amount >= 0),
+  status text NOT NULL DEFAULT 'APPROVED',
+  approved_by integer REFERENCES fund_users(id) ON DELETE RESTRICT,
+  approved_at timestamptz,
+  notes text NOT NULL DEFAULT '',
+  idempotency_key text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(approved_by, idempotency_key)
+);
+
+CREATE INDEX IF NOT EXISTS fund_share_transfers_cycle_date_idx ON fund_share_transfers(cycle_id, transfer_date, created_at);
+CREATE INDEX IF NOT EXISTS fund_share_transfers_from_idx ON fund_share_transfers(cycle_id, from_member_id, created_at);
+CREATE INDEX IF NOT EXISTS fund_share_transfers_to_idx ON fund_share_transfers(cycle_id, to_member_id, created_at);
+CREATE INDEX IF NOT EXISTS fund_transfer_settlements_cycle_idx ON fund_transfer_settlements(cycle_id, created_at);

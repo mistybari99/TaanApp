@@ -35,6 +35,7 @@ import type {
   HealthStatus,
   ListDrawsParams,
   ListMembersParams,
+  ListShareTransfersParams,
   LoginInput,
   Member,
   MemberHistory,
@@ -46,11 +47,16 @@ import type {
   OnboardingStatus,
   Payment,
   PaymentInput,
+  PreviewShareTransferParams,
   ReversalInput,
   Settings,
   SettingsInput,
   Settlement,
   SettlementInput,
+  ShareTransfer,
+  ShareTransferInput,
+  ShareTransferPreview,
+  TransferSettlementInput,
   User
 } from './api.schemas';
 
@@ -897,6 +903,293 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getUpsertCycleMemberMutationOptions(options));
+    }
+
+export const getPreviewShareTransferUrl = (params: PreviewShareTransferParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/share-transfers/preview?${stringifiedParams}` : `/api/share-transfers/preview`
+}
+
+export const previewShareTransfer = async (params: PreviewShareTransferParams, options?: Parameters<typeof customFetch>[1]): Promise<ShareTransferPreview> => {
+
+  return customFetch<ShareTransferPreview>(getPreviewShareTransferUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getPreviewShareTransferQueryKey = (params?: PreviewShareTransferParams,) => {
+    return [
+    `/api/share-transfers/preview`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getPreviewShareTransferQueryOptions = <TData = Awaited<ReturnType<typeof previewShareTransfer>>, TError = ErrorType<unknown>>(params: PreviewShareTransferParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof previewShareTransfer>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getPreviewShareTransferQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof previewShareTransfer>>> = ({ signal }) => previewShareTransfer(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof previewShareTransfer>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type PreviewShareTransferQueryResult = NonNullable<Awaited<ReturnType<typeof previewShareTransfer>>>
+export type PreviewShareTransferQueryError = ErrorType<unknown>
+
+
+
+export function usePreviewShareTransfer<TData = Awaited<ReturnType<typeof previewShareTransfer>>, TError = ErrorType<unknown>>(
+ params: PreviewShareTransferParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof previewShareTransfer>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getPreviewShareTransferQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListShareTransfersUrl = (params?: ListShareTransfersParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/share-transfers?${stringifiedParams}` : `/api/share-transfers`
+}
+
+export const listShareTransfers = async (params?: ListShareTransfersParams, options?: Parameters<typeof customFetch>[1]): Promise<ShareTransfer[]> => {
+
+  return customFetch<ShareTransfer[]>(getListShareTransfersUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListShareTransfersQueryKey = (params?: ListShareTransfersParams,) => {
+    return [
+    `/api/share-transfers`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListShareTransfersQueryOptions = <TData = Awaited<ReturnType<typeof listShareTransfers>>, TError = ErrorType<unknown>>(params?: ListShareTransfersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listShareTransfers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListShareTransfersQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listShareTransfers>>> = ({ signal }) => listShareTransfers(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listShareTransfers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListShareTransfersQueryResult = NonNullable<Awaited<ReturnType<typeof listShareTransfers>>>
+export type ListShareTransfersQueryError = ErrorType<unknown>
+
+
+
+export function useListShareTransfers<TData = Awaited<ReturnType<typeof listShareTransfers>>, TError = ErrorType<unknown>>(
+ params?: ListShareTransfersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listShareTransfers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListShareTransfersQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateShareTransferUrl = () => {
+
+
+
+
+  return `/api/share-transfers`
+}
+
+export const createShareTransfer = async (shareTransferInput: ShareTransferInput, options?: Parameters<typeof customFetch>[1]): Promise<ShareTransfer> => {
+
+  return customFetch<ShareTransfer>(getCreateShareTransferUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(shareTransferInput)
+  }
+);}
+
+
+
+
+
+export const getCreateShareTransferMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createShareTransfer>>, TError,{data: BodyType<ShareTransferInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createShareTransfer>>, TError,{data: BodyType<ShareTransferInput>}, TContext> => {
+
+const mutationKey = ['createShareTransfer'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createShareTransfer>>, {data: BodyType<ShareTransferInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createShareTransfer(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateShareTransferMutationResult = NonNullable<Awaited<ReturnType<typeof createShareTransfer>>>
+    export type CreateShareTransferMutationBody = BodyType<ShareTransferInput>
+    export type CreateShareTransferMutationError = ErrorType<unknown>
+
+    export const useCreateShareTransfer = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createShareTransfer>>, TError,{data: BodyType<ShareTransferInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createShareTransfer>>,
+        TError,
+        {data: BodyType<ShareTransferInput>},
+        TContext
+      > => {
+      return useMutation(getCreateShareTransferMutationOptions(options));
+    }
+
+export const getCreateTransferSettlementUrl = (id: number,) => {
+
+
+
+
+  return `/api/share-transfers/${id}/settlement`
+}
+
+export const createTransferSettlement = async (id: number,
+    transferSettlementInput: TransferSettlementInput, options?: Parameters<typeof customFetch>[1]): Promise<ShareTransfer> => {
+
+  return customFetch<ShareTransfer>(getCreateTransferSettlementUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(transferSettlementInput)
+  }
+);}
+
+
+
+
+
+export const getCreateTransferSettlementMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTransferSettlement>>, TError,{id: number;data: BodyType<TransferSettlementInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createTransferSettlement>>, TError,{id: number;data: BodyType<TransferSettlementInput>}, TContext> => {
+
+const mutationKey = ['createTransferSettlement'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTransferSettlement>>, {id: number;data: BodyType<TransferSettlementInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createTransferSettlement(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateTransferSettlementMutationResult = NonNullable<Awaited<ReturnType<typeof createTransferSettlement>>>
+    export type CreateTransferSettlementMutationBody = BodyType<TransferSettlementInput>
+    export type CreateTransferSettlementMutationError = ErrorType<unknown>
+
+    export const useCreateTransferSettlement = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTransferSettlement>>, TError,{id: number;data: BodyType<TransferSettlementInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createTransferSettlement>>,
+        TError,
+        {id: number;data: BodyType<TransferSettlementInput>},
+        TContext
+      > => {
+      return useMutation(getCreateTransferSettlementMutationOptions(options));
     }
 
 export const getListMembersUrl = (params?: ListMembersParams,) => {

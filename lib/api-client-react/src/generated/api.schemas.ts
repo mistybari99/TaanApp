@@ -199,6 +199,74 @@ export interface CycleMemberInput {
   shares: number;
 }
 
+export interface ShareTransferPreview {
+  cycleId: number;
+  fromMemberId: number;
+  fromMemberCode?: string;
+  fromMemberName?: string;
+  currentShares: number;
+  transferableShares: number;
+  requestedShares: number;
+  remainingShares: number;
+  accumulatedContribution: number;
+  transferredContribution: number;
+  isWinner: boolean;
+}
+
+export interface ShareTransfer {
+  id: number;
+  transferId: string;
+  cycleId: number;
+  cycleNumber: number;
+  cycleName: string;
+  transferDate: string;
+  fromMemberId: number;
+  fromMemberCode: string;
+  fromMemberName: string;
+  toMemberId: number;
+  toMemberCode: string;
+  toMemberName: string;
+  shares: number;
+  accumulatedValue: number;
+  notes: string;
+  overrideWinner: boolean;
+  createdBy: number;
+  createdByName: string;
+  createdAt: string;
+  settlementId?: number | null;
+  settlementAmount?: number | null;
+  settlementStatus?: string | null;
+  settlementApprovedBy?: number | null;
+  settlementApprovedByName?: string | null;
+  settlementApprovedAt?: string | null;
+  settlementNotes?: string | null;
+}
+
+export interface ShareTransferInput {
+  cycleId: number;
+  fromMemberId: number;
+  toMemberId: number;
+  /** @minimum 1 */
+  quantity: number;
+  transferDate?: string;
+  notes?: string;
+  overrideWinner?: boolean;
+  overrideConfirmation?: boolean;
+  /** @minimum 0 */
+  settlementAmount?: number;
+  settlementNotes?: string;
+  /** @minLength 8 */
+  idempotencyKey?: string;
+}
+
+export interface TransferSettlementInput {
+  /** @minimum 0 */
+  amount: number;
+  notes?: string;
+  /** @minLength 8 */
+  idempotencyKey?: string;
+}
+
 export interface Draw {
   id: number;
   cycleId: number;
@@ -268,6 +336,7 @@ export interface MemberHistory {
   cycles: MemberCycleSummary[];
   payments: Payment[];
   draws: MemberDrawHistory[];
+  transfers: ShareTransfer[];
 }
 
 export interface MemberInput {
@@ -404,6 +473,20 @@ export interface SettingsInput {
   expectedMembers?: number;
   defaultDailyPerShare?: number;
 }
+
+export type PreviewShareTransferParams = {
+cycleId: number;
+fromMemberId: number;
+/**
+ * @minimum 1
+ */
+quantity: number;
+};
+
+export type ListShareTransfersParams = {
+cycleId?: number;
+memberId?: number;
+};
 
 export type ListMembersParams = {
 search?: string;

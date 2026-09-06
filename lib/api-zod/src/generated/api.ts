@@ -255,6 +255,163 @@ export const UpsertCycleMemberResponse = zod.object({
 })
 
 
+
+
+
+export const PreviewShareTransferQueryParams = zod.object({
+  "cycleId": zod.coerce.number().int(),
+  "fromMemberId": zod.coerce.number().int(),
+  "quantity": zod.coerce.number().int().min(1)
+})
+
+export const PreviewShareTransferResponse = zod.object({
+  "cycleId": zod.number().int(),
+  "fromMemberId": zod.number().int(),
+  "fromMemberCode": zod.string().optional(),
+  "fromMemberName": zod.string().optional(),
+  "currentShares": zod.number().int(),
+  "transferableShares": zod.number().int(),
+  "requestedShares": zod.number().int(),
+  "remainingShares": zod.number().int(),
+  "accumulatedContribution": zod.number(),
+  "transferredContribution": zod.number(),
+  "isWinner": zod.boolean()
+})
+
+
+export const ListShareTransfersQueryParams = zod.object({
+  "cycleId": zod.coerce.number().int().optional(),
+  "memberId": zod.coerce.number().int().optional()
+})
+
+export const ListShareTransfersResponseItem = zod.object({
+  "id": zod.number().int(),
+  "transferId": zod.string(),
+  "cycleId": zod.number().int(),
+  "cycleNumber": zod.number().int(),
+  "cycleName": zod.string(),
+  "transferDate": zod.string(),
+  "fromMemberId": zod.number().int(),
+  "fromMemberCode": zod.string(),
+  "fromMemberName": zod.string(),
+  "toMemberId": zod.number().int(),
+  "toMemberCode": zod.string(),
+  "toMemberName": zod.string(),
+  "shares": zod.number().int(),
+  "accumulatedValue": zod.number(),
+  "notes": zod.string(),
+  "overrideWinner": zod.boolean(),
+  "createdBy": zod.number().int(),
+  "createdByName": zod.string(),
+  "createdAt": zod.string(),
+  "settlementId": zod.number().int().nullish(),
+  "settlementAmount": zod.number().nullish(),
+  "settlementStatus": zod.string().nullish(),
+  "settlementApprovedBy": zod.number().int().nullish(),
+  "settlementApprovedByName": zod.string().nullish(),
+  "settlementApprovedAt": zod.string().nullish(),
+  "settlementNotes": zod.string().nullish()
+})
+export const ListShareTransfersResponse = zod.array(ListShareTransfersResponseItem)
+
+
+
+export const createShareTransferBodySettlementAmountMin = 0;
+
+export const createShareTransferBodyIdempotencyKeyMin = 8;
+
+
+
+export const CreateShareTransferBody = zod.object({
+  "cycleId": zod.number().int(),
+  "fromMemberId": zod.number().int(),
+  "toMemberId": zod.number().int(),
+  "quantity": zod.number().int().min(1),
+  "transferDate": zod.string().optional(),
+  "notes": zod.string().optional(),
+  "overrideWinner": zod.boolean().optional(),
+  "overrideConfirmation": zod.boolean().optional(),
+  "settlementAmount": zod.number().min(createShareTransferBodySettlementAmountMin).optional(),
+  "settlementNotes": zod.string().optional(),
+  "idempotencyKey": zod.string().min(createShareTransferBodyIdempotencyKeyMin).optional()
+})
+
+export const CreateShareTransferResponse = zod.object({
+  "id": zod.number().int(),
+  "transferId": zod.string(),
+  "cycleId": zod.number().int(),
+  "cycleNumber": zod.number().int(),
+  "cycleName": zod.string(),
+  "transferDate": zod.string(),
+  "fromMemberId": zod.number().int(),
+  "fromMemberCode": zod.string(),
+  "fromMemberName": zod.string(),
+  "toMemberId": zod.number().int(),
+  "toMemberCode": zod.string(),
+  "toMemberName": zod.string(),
+  "shares": zod.number().int(),
+  "accumulatedValue": zod.number(),
+  "notes": zod.string(),
+  "overrideWinner": zod.boolean(),
+  "createdBy": zod.number().int(),
+  "createdByName": zod.string(),
+  "createdAt": zod.string(),
+  "settlementId": zod.number().int().nullish(),
+  "settlementAmount": zod.number().nullish(),
+  "settlementStatus": zod.string().nullish(),
+  "settlementApprovedBy": zod.number().int().nullish(),
+  "settlementApprovedByName": zod.string().nullish(),
+  "settlementApprovedAt": zod.string().nullish(),
+  "settlementNotes": zod.string().nullish()
+})
+
+
+export const CreateTransferSettlementParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const createTransferSettlementBodyAmountMin = 0;
+
+export const createTransferSettlementBodyIdempotencyKeyMin = 8;
+
+
+
+export const CreateTransferSettlementBody = zod.object({
+  "amount": zod.number().min(createTransferSettlementBodyAmountMin),
+  "notes": zod.string().optional(),
+  "idempotencyKey": zod.string().min(createTransferSettlementBodyIdempotencyKeyMin).optional()
+})
+
+export const CreateTransferSettlementResponse = zod.object({
+  "id": zod.number().int(),
+  "transferId": zod.string(),
+  "cycleId": zod.number().int(),
+  "cycleNumber": zod.number().int(),
+  "cycleName": zod.string(),
+  "transferDate": zod.string(),
+  "fromMemberId": zod.number().int(),
+  "fromMemberCode": zod.string(),
+  "fromMemberName": zod.string(),
+  "toMemberId": zod.number().int(),
+  "toMemberCode": zod.string(),
+  "toMemberName": zod.string(),
+  "shares": zod.number().int(),
+  "accumulatedValue": zod.number(),
+  "notes": zod.string(),
+  "overrideWinner": zod.boolean(),
+  "createdBy": zod.number().int(),
+  "createdByName": zod.string(),
+  "createdAt": zod.string(),
+  "settlementId": zod.number().int().nullish(),
+  "settlementAmount": zod.number().nullish(),
+  "settlementStatus": zod.string().nullish(),
+  "settlementApprovedBy": zod.number().int().nullish(),
+  "settlementApprovedByName": zod.string().nullish(),
+  "settlementApprovedAt": zod.string().nullish(),
+  "settlementNotes": zod.string().nullish()
+})
+
+
 export const ListMembersQueryParams = zod.object({
   "search": zod.coerce.string().optional()
 })
@@ -425,6 +582,34 @@ export const GetMemberHistoryResponse = zod.object({
   "winningAmount": zod.number(),
   "status": zod.string(),
   "notes": zod.string().optional()
+})),
+  "transfers": zod.array(zod.object({
+  "id": zod.number().int(),
+  "transferId": zod.string(),
+  "cycleId": zod.number().int(),
+  "cycleNumber": zod.number().int(),
+  "cycleName": zod.string(),
+  "transferDate": zod.string(),
+  "fromMemberId": zod.number().int(),
+  "fromMemberCode": zod.string(),
+  "fromMemberName": zod.string(),
+  "toMemberId": zod.number().int(),
+  "toMemberCode": zod.string(),
+  "toMemberName": zod.string(),
+  "shares": zod.number().int(),
+  "accumulatedValue": zod.number(),
+  "notes": zod.string(),
+  "overrideWinner": zod.boolean(),
+  "createdBy": zod.number().int(),
+  "createdByName": zod.string(),
+  "createdAt": zod.string(),
+  "settlementId": zod.number().int().nullish(),
+  "settlementAmount": zod.number().nullish(),
+  "settlementStatus": zod.string().nullish(),
+  "settlementApprovedBy": zod.number().int().nullish(),
+  "settlementApprovedByName": zod.string().nullish(),
+  "settlementApprovedAt": zod.string().nullish(),
+  "settlementNotes": zod.string().nullish()
 }))
 })
 

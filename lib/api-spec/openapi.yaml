@@ -87,6 +87,40 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/CycleMemberInput" } } }
       responses:
         "201": { description: Added, content: { application/json: { schema: { $ref: "#/components/schemas/CycleMember" } } } }
+  /share-transfers/preview:
+    get:
+      operationId: previewShareTransfer
+      parameters:
+        - { name: cycleId, in: query, required: true, schema: { type: integer } }
+        - { name: fromMemberId, in: query, required: true, schema: { type: integer } }
+        - { name: quantity, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200": { description: Transfer preview, content: { application/json: { schema: { $ref: "#/components/schemas/ShareTransferPreview" } } } }
+  /share-transfers:
+    get:
+      operationId: listShareTransfers
+      parameters:
+        - { name: cycleId, in: query, schema: { type: integer } }
+        - { name: memberId, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: Share transfers, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ShareTransfer" } } } } }
+    post:
+      operationId: createShareTransfer
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ShareTransferInput" } } }
+      responses:
+        "201": { description: Transfer created, content: { application/json: { schema: { $ref: "#/components/schemas/ShareTransfer" } } } }
+  /share-transfers/{id}/settlement:
+    post:
+      operationId: createTransferSettlement
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TransferSettlementInput" } } }
+      responses:
+        "201": { description: Settlement approved, content: { application/json: { schema: { $ref: "#/components/schemas/ShareTransfer" } } } }
   /members:
     get:
       operationId: listMembers
@@ -357,6 +391,73 @@ components:
       properties:
         memberId: { type: integer }
         shares: { type: integer, minimum: 1 }
+    ShareTransferPreview:
+      type: object
+      required: [cycleId, fromMemberId, currentShares, transferableShares, requestedShares, remainingShares, accumulatedContribution, transferredContribution, isWinner]
+      properties:
+        cycleId: { type: integer }
+        fromMemberId: { type: integer }
+        fromMemberCode: { type: string }
+        fromMemberName: { type: string }
+        currentShares: { type: integer }
+        transferableShares: { type: integer }
+        requestedShares: { type: integer }
+        remainingShares: { type: integer }
+        accumulatedContribution: { type: number }
+        transferredContribution: { type: number }
+        isWinner: { type: boolean }
+    ShareTransfer:
+      type: object
+      required: [id, transferId, cycleId, cycleNumber, cycleName, transferDate, fromMemberId, fromMemberCode, fromMemberName, toMemberId, toMemberCode, toMemberName, shares, accumulatedValue, notes, overrideWinner, createdBy, createdByName, createdAt]
+      properties:
+        id: { type: integer }
+        transferId: { type: string }
+        cycleId: { type: integer }
+        cycleNumber: { type: integer }
+        cycleName: { type: string }
+        transferDate: { type: string }
+        fromMemberId: { type: integer }
+        fromMemberCode: { type: string }
+        fromMemberName: { type: string }
+        toMemberId: { type: integer }
+        toMemberCode: { type: string }
+        toMemberName: { type: string }
+        shares: { type: integer }
+        accumulatedValue: { type: number }
+        notes: { type: string }
+        overrideWinner: { type: boolean }
+        createdBy: { type: integer }
+        createdByName: { type: string }
+        createdAt: { type: string }
+        settlementId: { type: integer, nullable: true }
+        settlementAmount: { type: number, nullable: true }
+        settlementStatus: { type: string, nullable: true }
+        settlementApprovedBy: { type: integer, nullable: true }
+        settlementApprovedByName: { type: string, nullable: true }
+        settlementApprovedAt: { type: string, nullable: true }
+        settlementNotes: { type: string, nullable: true }
+    ShareTransferInput:
+      type: object
+      required: [cycleId, fromMemberId, toMemberId, quantity]
+      properties:
+        cycleId: { type: integer }
+        fromMemberId: { type: integer }
+        toMemberId: { type: integer }
+        quantity: { type: integer, minimum: 1 }
+        transferDate: { type: string }
+        notes: { type: string }
+        overrideWinner: { type: boolean }
+        overrideConfirmation: { type: boolean }
+        settlementAmount: { type: number, minimum: 0 }
+        settlementNotes: { type: string }
+        idempotencyKey: { type: string, minLength: 8 }
+    TransferSettlementInput:
+      type: object
+      required: [amount]
+      properties:
+        amount: { type: number, minimum: 0 }
+        notes: { type: string }
+        idempotencyKey: { type: string, minLength: 8 }
     Draw:
       type: object
       required: [id, cycleId, cycleNumber, drawNumber, drawDate, winnerMemberId, winnerMemberCode, winnerName, winningAmount, status]
@@ -386,12 +487,13 @@ components:
         notes: { type: string }
     MemberHistory:
       type: object
-      required: [member, cycles, payments, draws]
+      required: [member, cycles, payments, draws, transfers]
       properties:
         member: { $ref: "#/components/schemas/Member" }
         cycles: { type: array, items: { $ref: "#/components/schemas/MemberCycleSummary" } }
         payments: { type: array, items: { $ref: "#/components/schemas/Payment" } }
         draws: { type: array, items: { $ref: "#/components/schemas/MemberDrawHistory" } }
+        transfers: { type: array, items: { $ref: "#/components/schemas/ShareTransfer" } }
     MemberCycleSummary:
       type: object
       required: [cycleId, cycleNumber, name, startDate, status, shares, dailyContribution, totalCollected]

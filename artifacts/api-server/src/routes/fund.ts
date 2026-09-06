@@ -23,8 +23,28 @@ const cookies = (req: Request) => Object.fromEntries((req.headers.cookie ?? "").
 const money = (value: unknown) => Number(value ?? 0);
 const isIsoDate = (value: unknown): value is string => /^\d{4}-\d{2}-\d{2}$/.test(String(value ?? ""));
 const todayIso = () => new Date().toISOString().slice(0, 10);
+const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 const audit = async (actorId: number, action: string, detail: string, entityType?: string, entityId?: string) =>
   pool.query("INSERT INTO fund_audit(actor_id,action,detail,entity_type,entity_id) VALUES($1,$2,$3,$4,$5)", [actorId, action, detail, entityType ?? null, entityId ?? null]);
+
+const transferSelect = `
+  SELECT t.id,t.transfer_id AS "transferId",t.cycle_id AS "cycleId",c.cycle_number AS "cycleNumber",c.name AS "cycleName",
+    t.transfer_date::text AS "transferDate",
+    t.from_member_id AS "fromMemberId",fm.member_id AS "fromMemberCode",fm.name AS "fromMemberName",
+    t.to_member_id AS "toMemberId",tm.member_id AS "toMemberCode",tm.name AS "toMemberName",
+    t.share_quantity AS shares,t.accumulated_value::float AS "accumulatedValue",t.notes,t.override_winner AS "overrideWinner",
+    t.created_by AS "createdBy",cu.name AS "createdByName",t.created_at AS "createdAt",
+    s.id AS "settlementId",s.amount::float AS "settlementAmount",s.status AS "settlementStatus",
+    s.approved_by AS "settlementApprovedBy",au.name AS "settlementApprovedByName",
+    s.approved_at AS "settlementApprovedAt",s.notes AS "settlementNotes"
+  FROM fund_share_transfers t
+    JOIN fund_cycles c ON c.id=t.cycle_id
+    JOIN fund_members fm ON fm.id=t.from_member_id
+    JOIN fund_members tm ON tm.id=t.to_member_id
+    JOIN fund_users cu ON cu.id=t.created_by
+    LEFT JOIN fund_transfer_settlements s ON s.transfer_id=t.id
+    LEFT JOIN fund_users au ON au.id=s.approved_by
+`;
 
 async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
   const token = cookies(req)[COOKIE];
@@ -244,7 +264,7 @@ router.get("/members/:id/history", requireAuth, async (req: AuthedRequest, res) 
   const member = await pool.query(`SELECT id,member_id AS "memberId",name,mobile,address,shares,daily_amount::float AS "dailyAmount",
     joining_date::text AS "joiningDate",created_at AS "createdAt",notes,status FROM fund_members WHERE id=$1`, [id]);
   if (!member.rows[0]) return res.status(404).json({ error: "Member not found" });
-  const [cycles, payments, draws] = await Promise.all([
+  const [cycles, payments, draws, transfers] = await Promise.all([
     pool.query(`SELECT c.id AS "cycleId",c.cycle_number AS "cycleNumber",c.name,c.start_date::text AS "startDate",c.end_date::text AS "endDate",
       c.status,cm.shares,cm.daily_contribution::float AS "dailyContribution",
       COALESCE(SUM(p.amount) FILTER(WHERE p.status='POSTED'),0)::float AS "totalCollected"
@@ -257,8 +277,9 @@ router.get("/members/:id/history", requireAuth, async (req: AuthedRequest, res) 
     pool.query(`SELECT d.id,d.cycle_id AS "cycleId",c.cycle_number AS "cycleNumber",d.draw_number AS "drawNumber",
       d.draw_date::text AS "drawDate",d.winning_amount::float AS "winningAmount",d.status,d.notes
       FROM fund_draws d JOIN fund_cycles c ON c.id=d.cycle_id WHERE d.winner_member_id=$1 ORDER BY d.draw_date DESC`, [id]),
+    pool.query(`${transferSelect} WHERE t.from_member_id=$1 OR t.to_member_id=$1 ORDER BY t.transfer_date DESC,t.created_at DESC`, [id]),
   ]);
-  return res.json({ member: member.rows[0], cycles: cycles.rows, payments: payments.rows, draws: draws.rows });
+  return res.json({ member: member.rows[0], cycles: cycles.rows, payments: payments.rows, draws: draws.rows, transfers: transfers.rows });
 });
 
 router.get("/cycles", requireAuth, async (_req, res) => {
@@ -340,6 +361,244 @@ router.post("/cycles/:id/members", requireAuth, ownerOnly, async (req: AuthedReq
     RETURNING id,cycle_id AS "cycleId",member_id AS "memberId",shares,daily_contribution::float AS "dailyContribution"`,
     [cycleId,memberId,shares,shares * money(cycle.rows[0].per_share)]);
   await audit(req.user!.id, "CYCLE_MEMBER_UPDATED", `Updated member ${memberId} in cycle ${cycleId}`, "cycle_member", String(result.rows[0].id));
+  return res.status(201).json(result.rows[0]);
+});
+
+router.get("/share-transfers/preview", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const cycleId = Number(req.query.cycleId);
+  const fromMemberId = Number(req.query.fromMemberId);
+  const quantity = Number(req.query.quantity);
+  if (!cycleId || !fromMemberId || !Number.isInteger(quantity) || quantity < 1) {
+    return res.status(400).json({ error: "Cycle, source member, and a positive whole-number quantity are required" });
+  }
+  const cycle = await pool.query("SELECT id,status,tracking_start_date::text AS tracking_start_date,daily_per_share::float AS daily_per_share FROM fund_cycles WHERE id=$1", [cycleId]);
+  if (!cycle.rows[0]) return res.status(404).json({ error: "Cycle not found" });
+  if (cycle.rows[0].status !== "ACTIVE") return res.status(409).json({ error: "Completed cycles are locked" });
+  if (!cycle.rows[0].tracking_start_date || todayIso() < String(cycle.rows[0].tracking_start_date)) {
+    return res.status(409).json({ error: "Owner must open digital tracking before transferring shares" });
+  }
+  const membership = await pool.query(
+    `SELECT cm.shares,m.member_id AS "memberCode",m.name
+       FROM fund_cycle_members cm JOIN fund_members m ON m.id=cm.member_id
+      WHERE cm.cycle_id=$1 AND cm.member_id=$2`,
+    [cycleId, fromMemberId],
+  );
+  if (!membership.rows[0]) return res.status(400).json({ error: "Source member is not enrolled in this cycle" });
+  const currentShares = Number(membership.rows[0].shares);
+  if (quantity > currentShares) return res.status(400).json({ error: "Transfer quantity cannot exceed the source member's available shares", currentShares });
+  const totals = await pool.query(
+    `SELECT
+       COALESCE((SELECT SUM(amount) FROM fund_payments WHERE cycle_id=$1 AND member_id=$2 AND status='POSTED'),0)::float AS own_paid,
+       COALESCE((SELECT SUM(accumulated_value) FROM fund_share_transfers WHERE cycle_id=$1 AND to_member_id=$2),0)::float AS incoming_value,
+       COALESCE((SELECT SUM(accumulated_value) FROM fund_share_transfers WHERE cycle_id=$1 AND from_member_id=$2),0)::float AS outgoing_value`,
+    [cycleId, fromMemberId],
+  );
+  const row = totals.rows[0];
+  const accumulatedContribution = roundMoney(Math.max(0, money(row.own_paid) + money(row.incoming_value) - money(row.outgoing_value)));
+  const transferredContribution = roundMoney(currentShares > 0 ? accumulatedContribution * quantity / currentShares : 0);
+  const winner = await pool.query(
+    "SELECT EXISTS(SELECT 1 FROM fund_draws WHERE cycle_id=$1 AND winner_member_id=$2 AND status <> 'VOID') AS is_winner",
+    [cycleId, fromMemberId],
+  );
+  return res.json({
+    cycleId,
+    fromMemberId,
+    fromMemberCode: membership.rows[0].memberCode,
+    fromMemberName: membership.rows[0].name,
+    currentShares,
+    transferableShares: currentShares,
+    requestedShares: quantity,
+    remainingShares: currentShares - quantity,
+    accumulatedContribution,
+    transferredContribution,
+    isWinner: Boolean(winner.rows[0]?.is_winner),
+  });
+});
+
+router.get("/share-transfers", requireAuth, async (req: AuthedRequest, res) => {
+  const params: unknown[] = [];
+  const clauses: string[] = [];
+  if (req.query.cycleId) { params.push(Number(req.query.cycleId)); clauses.push(`t.cycle_id=$${params.length}`); }
+  if (req.query.memberId) {
+    params.push(Number(req.query.memberId));
+    clauses.push(`(t.from_member_id=$${params.length} OR t.to_member_id=$${params.length})`);
+  }
+  const result = await pool.query(`${transferSelect} ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""} ORDER BY t.transfer_date DESC,t.created_at DESC`, params);
+  return res.json(result.rows);
+});
+
+router.post("/share-transfers", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const b = req.body;
+  const cycleId = Number(b.cycleId);
+  const fromMemberId = Number(b.fromMemberId);
+  const toMemberId = Number(b.toMemberId);
+  const quantity = Number(b.quantity ?? b.shares);
+  const transferDate = isIsoDate(b.transferDate) ? String(b.transferDate) : todayIso();
+  const idempotencyKey = String(b.idempotencyKey ?? "").trim() || null;
+  const overrideWinner = b.overrideWinner === true;
+  const settlementAmount = b.settlementAmount === undefined || b.settlementAmount === null || b.settlementAmount === ""
+    ? null
+    : Number(b.settlementAmount);
+  if (!cycleId || !fromMemberId || !toMemberId || fromMemberId === toMemberId || !Number.isInteger(quantity) || quantity < 1) {
+    return res.status(400).json({ error: "Cycle, different source/receiver members, and a positive whole-number quantity are required" });
+  }
+  if (settlementAmount !== null && (!Number.isFinite(settlementAmount) || settlementAmount < 0)) {
+    return res.status(400).json({ error: "Settlement amount must be zero or greater" });
+  }
+  if (overrideWinner && b.overrideConfirmation !== true) {
+    return res.status(400).json({ error: "Confirm the Owner-only winner override explicitly before saving" });
+  }
+  if (idempotencyKey) {
+    const replay = await pool.query(`${transferSelect} WHERE t.created_by=$1 AND t.idempotency_key=$2`, [req.user!.id, idempotencyKey]);
+    if (replay.rows[0]) return res.status(200).json(replay.rows[0]);
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const cycle = await client.query(
+      "SELECT id,status,tracking_start_date::text AS tracking_start_date,daily_per_share::float AS daily_per_share FROM fund_cycles WHERE id=$1 FOR UPDATE",
+      [cycleId],
+    );
+    if (!cycle.rows[0]) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Cycle not found" });
+    }
+    if (cycle.rows[0].status !== "ACTIVE") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Completed cycles are locked" });
+    }
+    if (!cycle.rows[0].tracking_start_date || todayIso() < String(cycle.rows[0].tracking_start_date)) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Owner must open digital tracking before transferring shares" });
+    }
+    if (transferDate < String(cycle.rows[0].tracking_start_date) || transferDate > todayIso()) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Transfer date must be on or after tracking start and not in the future" });
+    }
+    const people = await client.query(
+      "SELECT id,name,status FROM fund_members WHERE id IN ($1,$2) FOR SHARE",
+      [fromMemberId, toMemberId],
+    );
+    const sourcePerson = people.rows.find((person) => Number(person.id) === fromMemberId);
+    const receiverPerson = people.rows.find((person) => Number(person.id) === toMemberId);
+    if (!sourcePerson || !receiverPerson) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Source or receiver member not found" });
+    }
+    if (sourcePerson.status !== "active" || receiverPerson.status !== "active") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Both source and receiver members must be active" });
+    }
+    const memberships = await client.query(
+      `SELECT cm.member_id,cm.shares
+         FROM fund_cycle_members cm
+        WHERE cm.cycle_id=$1 AND cm.member_id IN ($2,$3)
+        ORDER BY cm.member_id
+        FOR UPDATE`,
+      [cycleId, fromMemberId, toMemberId],
+    );
+    const sourceMembership = memberships.rows.find((membership) => Number(membership.member_id) === fromMemberId);
+    if (!sourceMembership) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Source member is not enrolled in this cycle" });
+    }
+    const sourceShares = Number(sourceMembership.shares);
+    if (quantity > sourceShares) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Transfer quantity cannot exceed the source member's available shares", currentShares: sourceShares });
+    }
+    const winner = await client.query(
+      "SELECT EXISTS(SELECT 1 FROM fund_draws WHERE cycle_id=$1 AND winner_member_id=$2 AND status <> 'VOID') AS is_winner",
+      [cycleId, fromMemberId],
+    );
+    if (winner.rows[0]?.is_winner && !overrideWinner) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "This member has already won a draw. Use the explicit Owner override to transfer these shares.", winnerTransferBlocked: true });
+    }
+    const totals = await client.query(
+      `SELECT
+         COALESCE((SELECT SUM(amount) FROM fund_payments WHERE cycle_id=$1 AND member_id=$2 AND status='POSTED'),0)::float AS own_paid,
+         COALESCE((SELECT SUM(accumulated_value) FROM fund_share_transfers WHERE cycle_id=$1 AND to_member_id=$2),0)::float AS incoming_value,
+         COALESCE((SELECT SUM(accumulated_value) FROM fund_share_transfers WHERE cycle_id=$1 AND from_member_id=$2),0)::float AS outgoing_value`,
+      [cycleId, fromMemberId],
+    );
+    const total = totals.rows[0];
+    const accumulatedValue = roundMoney(Math.max(0, money(total.own_paid) + money(total.incoming_value) - money(total.outgoing_value)));
+    const transferredValue = roundMoney(accumulatedValue * quantity / sourceShares);
+    const transferId = `IRF-TR-${todayIso().replaceAll("-", "")}-${randomBytes(4).toString("hex").toUpperCase()}`;
+    const transfer = await client.query(
+      `INSERT INTO fund_share_transfers(transfer_id,cycle_id,from_member_id,to_member_id,share_quantity,accumulated_value,transfer_date,notes,override_winner,created_by,idempotency_key)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       RETURNING id`,
+      [transferId,cycleId,fromMemberId,toMemberId,quantity,transferredValue,transferDate,String(b.notes ?? ""),overrideWinner,req.user!.id,idempotencyKey],
+    );
+    await client.query(
+      `UPDATE fund_cycle_members
+          SET shares=shares-$3::int,daily_contribution=(shares-$3::int)*$4::numeric
+        WHERE cycle_id=$1 AND member_id=$2`,
+      [cycleId,fromMemberId,quantity,money(cycle.rows[0].daily_per_share)],
+    );
+    await client.query(
+      `INSERT INTO fund_cycle_members(cycle_id,member_id,shares,daily_contribution)
+       VALUES($1::int,$2::int,$3::int,$3::int*$4::numeric)
+       ON CONFLICT(cycle_id,member_id) DO UPDATE SET
+         shares=fund_cycle_members.shares+EXCLUDED.shares,
+         daily_contribution=(fund_cycle_members.shares+EXCLUDED.shares)*$4::numeric`,
+      [cycleId,toMemberId,quantity,money(cycle.rows[0].daily_per_share)],
+    );
+    if (settlementAmount !== null) {
+      await client.query(
+        `INSERT INTO fund_transfer_settlements(transfer_id,cycle_id,amount,status,approved_by,approved_at,notes,idempotency_key)
+         VALUES($1,$2,$3,'APPROVED',$4,now(),$5,$6)`,
+        [transfer.rows[0].id,cycleId,settlementAmount,req.user!.id,String(b.settlementNotes ?? b.settlementNote ?? ""),idempotencyKey ? `${idempotencyKey}:settlement` : null],
+      );
+    }
+    await client.query(
+      "INSERT INTO fund_audit(actor_id,action,detail,entity_type,entity_id) VALUES($1,$2,$3,'share_transfer',$4)",
+      [req.user!.id,overrideWinner ? "SHARE_TRANSFER_OVERRIDE" : "SHARE_TRANSFER_CREATED",
+        `${transferId}: ${quantity} shares from member ${fromMemberId} to ${toMemberId}; accumulated value BDT ${transferredValue}`,
+        String(transfer.rows[0].id)],
+    );
+    await client.query("COMMIT");
+    const result = await pool.query(`${transferSelect} WHERE t.id=$1`, [transfer.rows[0].id]);
+    return res.status(201).json(result.rows[0]);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    req.log.error({ error }, "Share transfer failed");
+    return res.status(409).json({ error: "Share transfer could not be saved; no records were changed" });
+  } finally {
+    client.release();
+  }
+});
+
+router.post("/share-transfers/:id/settlement", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const transferId = Number(req.params.id);
+  const amount = Number(req.body.amount);
+  const idempotencyKey = String(req.body.idempotencyKey ?? "").trim() || null;
+  if (!transferId || !Number.isFinite(amount) || amount < 0) return res.status(400).json({ error: "A settlement amount of zero or greater is required" });
+  if (idempotencyKey) {
+    const replay = await pool.query(`${transferSelect} JOIN fund_transfer_settlements existing_settlement ON existing_settlement.transfer_id=t.id WHERE existing_settlement.approved_by=$1 AND existing_settlement.idempotency_key=$2`, [req.user!.id, idempotencyKey]);
+    if (replay.rows[0]) return res.status(200).json(replay.rows[0]);
+  }
+  const transfer = await pool.query(
+    `SELECT t.id,t.cycle_id,c.status,c.tracking_start_date::text AS tracking_start_date
+       FROM fund_share_transfers t JOIN fund_cycles c ON c.id=t.cycle_id
+      WHERE t.id=$1`,
+    [transferId],
+  );
+  if (!transfer.rows[0]) return res.status(404).json({ error: "Share transfer not found" });
+  if (transfer.rows[0].status !== "ACTIVE") return res.status(409).json({ error: "Completed cycles are locked" });
+  if (!transfer.rows[0].tracking_start_date || todayIso() < String(transfer.rows[0].tracking_start_date)) return res.status(409).json({ error: "Owner must open digital tracking before recording transfer settlement" });
+  const existing = await pool.query("SELECT id FROM fund_transfer_settlements WHERE transfer_id=$1", [transferId]);
+  if (existing.rows[0]) return res.status(409).json({ error: "A settlement is already recorded for this transfer" });
+  const settlement = await pool.query(
+    `INSERT INTO fund_transfer_settlements(transfer_id,cycle_id,amount,status,approved_by,approved_at,notes,idempotency_key)
+     VALUES($1,$2,$3,'APPROVED',$4,now(),$5,$6) RETURNING id`,
+    [transferId,transfer.rows[0].cycle_id,amount,req.user!.id,String(req.body.notes ?? ""),idempotencyKey],
+  );
+  await audit(req.user!.id, "TRANSFER_SETTLEMENT_APPROVED", `Transfer ${transferId}: BDT ${amount}`, "transfer_settlement", String(settlement.rows[0].id));
+  const result = await pool.query(`${transferSelect} WHERE t.id=$1`, [transferId]);
   return res.status(201).json(result.rows[0]);
 });
 

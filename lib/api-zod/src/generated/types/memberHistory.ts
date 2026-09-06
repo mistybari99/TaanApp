@@ -9,10 +9,12 @@ import type { Member } from './member';
 import type { MemberCycleSummary } from './memberCycleSummary';
 import type { MemberDrawHistory } from './memberDrawHistory';
 import type { Payment } from './payment';
+import type { ShareTransfer } from './shareTransfer';
 
 export interface MemberHistory {
   member: Member;
   cycles: MemberCycleSummary[];
   payments: Payment[];
   draws: MemberDrawHistory[];
+  transfers: ShareTransfer[];
 }
