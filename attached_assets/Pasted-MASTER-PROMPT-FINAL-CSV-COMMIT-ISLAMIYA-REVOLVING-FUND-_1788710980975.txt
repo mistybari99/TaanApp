@@ -1,0 +1,165 @@
+MASTER PROMPT — FINAL CSV COMMIT
+
+ISLAMIYA REVOLVING FUND
+CYCLE #01 — FINAL CURRENT MEMBER IMPORT
+
+Use the uploaded FINAL CSV as the only source of truth for the current Cycle #01 member list.
+
+IMPORTANT:
+- Do NOT use the previous/incorrect CSV.
+- Do NOT merge this with any previous CSV.
+- Do NOT create Cycle #02.
+- Do NOT import any historical paper-book dues/payments/draws/settlements.
+- Do NOT create any payment, due, draw, settlement, transfer, or financial transaction from this CSV import.
+- Do NOT modify or delete any genuine historical financial records.
+
+CSV expected result:
+- Members: 37
+- Total shares: 108
+- Daily contribution: ৳100/share/day
+- Expected daily collection: ৳10,800
+- Mobile: currently missing/blank for all rows
+
+FINAL MEMBER ORDER:
+1. MD ALAMIN — 25
+2. মহাজন — 3
+3. বাসা — 2
+4. তামিম — 1
+5. সিমা আপু — 2
+6. রিমা আপু — 2
+7. শিমুল — 6
+8. ফুলমিয়া — 5
+9. বিপ্লব (বাজার) — 15
+10. শাহিন (বাজার) — 1
+11. ইয়ামিন (বাজার) — 1
+12. বিশ্ব (দুধ) — 3
+13. সমরেশ (দুধ) — 1
+14. তৌহিদ (দুধ) — 1
+15. সজল (দুধ) — 1
+16. বাসুদেব — 2
+17. মুসফিক — 2
+18. বাবু পান — 3
+19. হানিফ মামা — 2
+20. আলী (ফল) — 2
+21. মোহিদ (রুটি) — 2
+22. কুরবান ফল — 2
+23. আলআমিন (হোটেল) — 2
+24. ফ্যান্সি — 1
+25. সোহাগ (নেহারি) — 1
+26. সাব্বির (ফুসকা) — 1
+27. ইয়াসিন — 1
+28. সোলেমান — 1
+29. জসিম (কসমেটিক) — 1
+30. দর্জি কাকা — 1
+31. রুহুল — 5
+32. হাসান ভাই — 2
+33. দোলোয়ার — 2
+34. শাহী (২য় তলা) — 2
+35. মনিকা — 1
+36. সাব্বির — 2
+37. সুখি — 1
+
+IMPORT RULES:
+
+1. First perform a FINAL DRY-RUN validation.
+2. Verify:
+   - exactly 37 rows
+   - total shares exactly 108
+   - no malformed rows
+   - no duplicate identity
+   - no ambiguous identity
+   - no accidental duplicate member
+3. Treat "বিপ্লব (বাজার)" as ONE member with 15 shares.
+4. Do NOT recreate the two old separate "বিপ্লব (বাজার)" rows.
+5. Mobile may remain NULL/blank for this initial import.
+6. Preserve the current Member ID generation system.
+7. Each imported member must be permanently created in the member master.
+8. Create exactly one Cycle #01 membership for each imported member.
+9. Cycle-specific shares must match the CSV exactly.
+10. Do not create Cycle #02.
+11. Do not generate payments or dues from the import.
+12. Do not change tracking start date.
+13. Do not start live collection automatically.
+
+IMPORTANT DATA MODEL RULE:
+
+Permanent Member Profile:
+- Member ID
+- Name
+- Mobile
+- NID
+- Business Name
+- Note
+
+Cycle Membership:
+- Cycle
+- Shares
+- Cycle-specific participation/status
+- Share history
+
+The CSV import should populate only the available Name + Shares information.
+
+Mobile, NID, Business Name and Note can be added later from the Members screen.
+
+AFTER COMMIT:
+
+Run a database verification and report:
+
+- Cycle #01 participant count
+- Cycle #01 total shares
+- Expected daily collection
+- Member count
+- Payments count
+- Due entries count
+- Draw count
+- Settlement count
+- Transfer count
+- Transfer settlement count
+- Cycle #02 existence
+- Tracking start status
+
+EXPECTED FINAL STATE:
+
+Cycle #01:
+ACTIVE
+
+Members:
+37
+
+Cycle #01 shares:
+108
+
+Expected daily collection:
+৳10,800
+
+Payments:
+0
+
+Due entries:
+0
+
+Draws:
+0
+
+Settlements:
+0
+
+Transfers:
+0
+
+Transfer settlements:
+0
+
+Cycle #02:
+DOES NOT EXIST
+
+Tracking start:
+NULL
+
+Finally, show a concise COMMIT RESULT.
+
+If any validation result differs from the expected values above, STOP before committing and report the mismatch. Do not partially import.
+
+If everything matches, commit the CSV transaction atomically.
+
+STOP after successful verification.
