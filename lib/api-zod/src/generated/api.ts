@@ -76,6 +76,11 @@ export const InitializeFundResponse = zod.object({
 export const GetDashboardResponse = zod.object({
   "trackingReady": zod.boolean(),
   "trackingStartDate": zod.string().nullable(),
+  "isFridayClosingDay": zod.boolean(),
+  "isSaturdayOpeningDay": zod.boolean(),
+  "currentDrawDate": zod.string().nullable(),
+  "currentPeriodStart": zod.string().nullable(),
+  "currentPeriodEnd": zod.string().nullable(),
   "totalMembers": zod.number().int(),
   "todayTarget": zod.number(),
   "currentCollectionDue": zod.number(),

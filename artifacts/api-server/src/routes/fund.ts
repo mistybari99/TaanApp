@@ -22,7 +22,16 @@ const passwordMatches = (password: string, stored: string) => {
 const cookies = (req: Request) => Object.fromEntries((req.headers.cookie ?? "").split(";").filter(Boolean).map((v) => v.trim().split("=")));
 const money = (value: unknown) => Number(value ?? 0);
 const isIsoDate = (value: unknown): value is string => /^\d{4}-\d{2}-\d{2}$/.test(String(value ?? ""));
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const todayIso = () => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Dhaka",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+};
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 export const allocatePayment = (amount: number, previousDue: number) => {
   const safeAmount = Math.max(0, roundMoney(amount));
@@ -169,6 +178,16 @@ const tanConfigForCycle = async (queryable: Queryable, cycleId: number, forUpdat
 
 const tanPeriodIsLive = (period: TanPeriodRow | null, date = todayIso()) =>
   Boolean(period && period.periodStatus !== "COMPLETED" && date >= period.periodStart && date <= period.periodEnd);
+
+export const collectionCalendarState = (
+  date: string,
+  hasActiveCycle: boolean,
+  hasTan: boolean,
+  period: Pick<TanPeriodRow, "periodStart" | "drawDate"> | null,
+) => ({
+  isFridayClosingDay: Boolean(hasActiveCycle && isFriday(date) && (!hasTan || period?.drawDate === date)),
+  isSaturdayOpeningDay: Boolean(hasActiveCycle && isSaturday(date) && (!hasTan || period?.periodStart === date)),
+});
 
 const tanPreviousPeriodsComplete = async (queryable: Queryable, period: TanPeriodRow) => {
   const result = await queryable.query(
@@ -965,8 +984,8 @@ router.get("/cycles/:id/members", requireAuth, async (req: AuthedRequest, res) =
   const result = await pool.query(`SELECT cm.id,cm.cycle_id AS "cycleId",m.id AS "memberId",COALESCE(m.public_member_id,m.member_id) AS "memberCode",m.name,m.mobile,m.business_name AS "businessName",
     m.status,cm.shares,cm.daily_contribution::float AS "dailyContribution",
     COALESCE(SUM(p.amount) FILTER(WHERE p.status='POSTED'),0)::float AS "totalCollected",
-     CASE WHEN c.status='ACTIVE' AND c.tracking_start_date IS NOT NULL AND CURRENT_DATE >= c.tracking_start_date
-      THEN GREATEST(cm.daily_contribution-COALESCE(SUM(p.amount) FILTER(WHERE p.collection_date=CURRENT_DATE AND p.status='POSTED'),0),0)
+     CASE WHEN c.status='ACTIVE' AND c.tracking_start_date IS NOT NULL AND '${todayIso()}'::date >= c.tracking_start_date
+      THEN GREATEST(cm.daily_contribution-COALESCE(SUM(p.amount) FILTER(WHERE p.collection_date='${todayIso()}'::date AND p.status='POSTED'),0),0)
       ELSE 0 END::float AS "todayDue"
      ,GREATEST(COALESCE((SELECT SUM(de.amount) FROM fund_due_entries de WHERE de.cycle_id=c.id AND de.member_id=cm.member_id),0)
        - COALESCE((SELECT SUM(pp.previous_due_applied) FROM fund_payments pp WHERE pp.cycle_id=c.id AND pp.member_id=cm.member_id AND pp.status='POSTED'),0),0)::float AS "previousDue"
@@ -1887,8 +1906,7 @@ router.patch("/settings",requireAuth,ownerOnly,async(req:AuthedRequest,res)=>{co
     const activeTan = activeCycleId ? await tanConfigForCycle(pool, activeCycleId) : null;
      const activeTanPeriod = activeTan ? await tanPeriodForDate(pool, activeCycleId, businessDate) : null;
      const periodSummary = {
-       isFridayClosingDay: Boolean(activeTanPeriod && isFriday(businessDate) && activeTanPeriod.drawDate === businessDate),
-       isSaturdayOpeningDay: Boolean(activeTanPeriod && isSaturday(businessDate) && activeTanPeriod.periodStart === businessDate),
+       ...collectionCalendarState(businessDate, activeCycleId > 0, Boolean(activeTan), activeTanPeriod),
        currentDrawDate: activeTanPeriod?.drawDate ?? null,
        currentPeriodStart: activeTanPeriod?.periodStart ?? null,
        currentPeriodEnd: activeTanPeriod?.periodEnd ?? null,
@@ -1906,12 +1924,12 @@ router.patch("/settings",requireAuth,ownerOnly,async(req:AuthedRequest,res)=>{co
           FROM fund_members m JOIN fund_cycle_members cm ON cm.member_id=m.id AND cm.cycle_id=${activeCycleId}
           WHERE m.status='active' AND (m.assigned_collector_id=$1 OR m.assigned_collector_id IS NULL)`,[req.user!.id]),
         pool.query(`SELECT COALESCE(SUM(amount),0)::float amount,COUNT(*)::int count FROM fund_payments p
-          WHERE collector_id=$1 AND cycle_id=${activeCycleId} AND collection_date=CURRENT_DATE AND status='POSTED'`,[req.user!.id]),
-        pool.query(`SELECT COALESCE(SUM(amount),0)::float amount FROM fund_settlements WHERE collector_id=$1 AND cycle_id=${activeCycleId} AND created_at::date=CURRENT_DATE`,[req.user!.id]),
+          WHERE collector_id=$1 AND cycle_id=${activeCycleId} AND collection_date='${businessDate}'::date AND status='POSTED'`,[req.user!.id]),
+        pool.query(`SELECT COALESCE(SUM(amount),0)::float amount FROM fund_settlements WHERE collector_id=$1 AND cycle_id=${activeCycleId} AND created_at::date='${businessDate}'::date`,[req.user!.id]),
         pool.query(`SELECT m.id,COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name,m.mobile,m.address,m.business_name AS "businessName",cm.shares,cm.daily_contribution::float AS "dailyAmount",
           m.joining_date::text AS "joiningDate",m.status,COALESCE(SUM(p.amount),0)::float AS "todayPaid"
           FROM fund_members m JOIN fund_cycle_members cm ON cm.member_id=m.id AND cm.cycle_id=${activeCycleId}
-          LEFT JOIN fund_payments p ON p.member_id=m.id AND p.cycle_id=${activeCycleId} AND p.collection_date=CURRENT_DATE AND p.status='POSTED'
+          LEFT JOIN fund_payments p ON p.member_id=m.id AND p.cycle_id=${activeCycleId} AND p.collection_date='${businessDate}'::date AND p.status='POSTED'
           WHERE ${readySql} AND m.status='active' AND (m.assigned_collector_id=$1 OR m.assigned_collector_id IS NULL)
           GROUP BY m.id,cm.id HAVING COALESCE(SUM(p.amount),0)<cm.daily_contribution
           ORDER BY m.member_id LIMIT 20`,[req.user!.id]),
@@ -1937,18 +1955,18 @@ router.patch("/settings",requireAuth,ownerOnly,async(req:AuthedRequest,res)=>{co
        const dueMembers = activeTan
          ? tanCollectorRows.filter((member) => money(member.totalDue) > 0).slice(0, 20)
          : due.rows.map(m => ({...m,todayDue:Math.max(0,money(m.dailyAmount)-money(m.todayPaid)),totalDue:Math.max(0,money(m.dailyAmount)-money(m.todayPaid))+money(m.previousDue)}));
-       return res.json({trackingReady,trackingStartDate,totalMembers:members.rows[0].count,todayTarget:target,currentCollectionDue,collected,due:currentCollectionDue,previousDue,totalDue,transferValue:money(reconciliation.rows[0]?.transferValue),transferSettlementValue:money(reconciliation.rows[0]?.transferSettlementValue),drawCount:Number(reconciliation.rows[0]?.drawCount ?? 0),collectorCash:collected,officeDeposits:deposits,unsettledCash:collected-deposits,paymentCount:payments.rows[0].count,performances:[{name:req.user!.name,collected,payments:payments.rows[0].count,cash:collected-deposits}],dueMembers,recentPayments:recent.rows,audit:[]});
+        return res.json({trackingReady,trackingStartDate,...periodSummary,totalMembers:members.rows[0].count,todayTarget:target,currentCollectionDue,collected,due:currentCollectionDue,previousDue,totalDue,transferValue:money(reconciliation.rows[0]?.transferValue),transferSettlementValue:money(reconciliation.rows[0]?.transferSettlementValue),drawCount:Number(reconciliation.rows[0]?.drawCount ?? 0),collectorCash:collected,officeDeposits:deposits,unsettledCash:collected-deposits,paymentCount:payments.rows[0].count,performances:[{name:req.user!.name,collected,payments:payments.rows[0].count,cash:collected-deposits}],dueMembers,recentPayments:recent.rows,audit:[]});
    }
     const [members,payments,settlements,perf,due,recent,audits,reconciliation]=await Promise.all([
       pool.query(`SELECT COUNT(*)::int count,COALESCE(SUM(CASE WHEN ${readySql} THEN cm.daily_contribution ELSE 0 END),0)::float target
         FROM fund_members m JOIN fund_cycle_members cm ON cm.member_id=m.id AND cm.cycle_id=${activeCycleId} WHERE m.status='active'`),
-      pool.query(`SELECT COALESCE(SUM(amount),0)::float amount,COUNT(*)::int count FROM fund_payments p WHERE p.cycle_id=${activeCycleId} AND collection_date=CURRENT_DATE AND status='POSTED'`),
-      pool.query(`SELECT COALESCE(SUM(amount),0)::float amount FROM fund_settlements WHERE cycle_id=${activeCycleId} AND created_at::date=CURRENT_DATE`),
-      pool.query(`SELECT u.name,COALESCE(SUM(p.amount),0)::float collected,COUNT(p.id)::int payments,(COALESCE(SUM(p.amount),0)-COALESCE((SELECT SUM(s.amount) FROM fund_settlements s WHERE s.collector_id=u.id AND s.cycle_id=${activeCycleId} AND s.created_at::date=CURRENT_DATE),0))::float cash FROM fund_users u LEFT JOIN fund_payments p ON p.collector_id=u.id AND p.cycle_id=${activeCycleId} AND p.collection_date=CURRENT_DATE AND p.status='POSTED' WHERE u.role='COLLECTOR' GROUP BY u.id ORDER BY collected DESC`),
+      pool.query(`SELECT COALESCE(SUM(amount),0)::float amount,COUNT(*)::int count FROM fund_payments p WHERE p.cycle_id=${activeCycleId} AND collection_date='${businessDate}'::date AND status='POSTED'`),
+      pool.query(`SELECT COALESCE(SUM(amount),0)::float amount FROM fund_settlements WHERE cycle_id=${activeCycleId} AND created_at::date='${businessDate}'::date`),
+      pool.query(`SELECT u.name,COALESCE(SUM(p.amount),0)::float collected,COUNT(p.id)::int payments,(COALESCE(SUM(p.amount),0)-COALESCE((SELECT SUM(s.amount) FROM fund_settlements s WHERE s.collector_id=u.id AND s.cycle_id=${activeCycleId} AND s.created_at::date='${businessDate}'::date),0))::float cash FROM fund_users u LEFT JOIN fund_payments p ON p.collector_id=u.id AND p.cycle_id=${activeCycleId} AND p.collection_date='${businessDate}'::date AND p.status='POSTED' WHERE u.role='COLLECTOR' GROUP BY u.id ORDER BY collected DESC`),
       pool.query(`SELECT m.id,COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name,m.mobile,m.address,m.business_name AS "businessName",cm.shares,cm.daily_contribution::float AS "dailyAmount",m.joining_date::text AS "joiningDate",m.status,COALESCE(SUM(p.amount),0)::float AS "todayPaid",
          GREATEST(COALESCE((SELECT SUM(de.amount) FROM fund_due_entries de WHERE de.cycle_id=cm.cycle_id AND de.member_id=cm.member_id),0)-COALESCE((SELECT SUM(pp.previous_due_applied) FROM fund_payments pp WHERE pp.cycle_id=cm.cycle_id AND pp.member_id=cm.member_id AND pp.status='POSTED'),0),0)::float AS "previousDue"
         FROM fund_members m JOIN fund_cycle_members cm ON cm.member_id=m.id AND cm.cycle_id=${activeCycleId}
-        LEFT JOIN fund_payments p ON p.member_id=m.id AND p.cycle_id=${activeCycleId} AND p.collection_date=CURRENT_DATE AND p.status='POSTED'
+        LEFT JOIN fund_payments p ON p.member_id=m.id AND p.cycle_id=${activeCycleId} AND p.collection_date='${businessDate}'::date AND p.status='POSTED'
         WHERE ${readySql} AND m.status='active' GROUP BY m.id,cm.id
         HAVING COALESCE(SUM(p.amount),0)<cm.daily_contribution ORDER BY m.member_id LIMIT 20`),
       pool.query(`SELECT p.id,p.receipt_id AS "receiptId",COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name AS "memberName",p.amount::float,u.name AS "collectorName",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id WHERE p.cycle_id=${activeCycleId} ORDER BY p.created_at DESC LIMIT 8`),
@@ -1975,7 +1993,7 @@ router.patch("/settings",requireAuth,ownerOnly,async(req:AuthedRequest,res)=>{co
   const dueMembers = activeTan
     ? tanOwnerRows.filter((member) => money(member.totalDue) > 0).slice(0, 20)
     : due.rows.map(m=>{const todayDue=Math.max(0,money(m.dailyAmount)-money(m.todayPaid)); return {...m,todayDue,totalDue:todayDue+money(m.previousDue)}});
-  return res.json({trackingReady,trackingStartDate,totalMembers:members.rows[0].count,todayTarget:target,currentCollectionDue,collected,due:currentCollectionDue,previousDue,totalDue,transferValue:money(reconciliation.rows[0]?.transferValue),transferSettlementValue:money(reconciliation.rows[0]?.transferSettlementValue),drawCount:Number(reconciliation.rows[0]?.drawCount ?? 0),collectorCash:collected,officeDeposits:deposits,unsettledCash:collected-deposits,paymentCount:payments.rows[0].count,performances:perf.rows,dueMembers,recentPayments:recent.rows,audit:audits});
+  return res.json({trackingReady,trackingStartDate,...periodSummary,totalMembers:members.rows[0].count,todayTarget:target,currentCollectionDue,collected,due:currentCollectionDue,previousDue,totalDue,transferValue:money(reconciliation.rows[0]?.transferValue),transferSettlementValue:money(reconciliation.rows[0]?.transferSettlementValue),drawCount:Number(reconciliation.rows[0]?.drawCount ?? 0),collectorCash:collected,officeDeposits:deposits,unsettledCash:collected-deposits,paymentCount:payments.rows[0].count,performances:perf.rows,dueMembers,recentPayments:recent.rows,audit:audits});
 });
 const csvCell = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
 const sendCsv = (res: Response, filename: string, headers: string[], rows: unknown[][]) => {

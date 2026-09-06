@@ -783,10 +783,15 @@ components:
       properties: { name: { type: string }, collected: { type: number }, payments: { type: integer }, cash: { type: number } }
     Dashboard:
       type: object
-      required: [trackingReady, trackingStartDate, totalMembers, todayTarget, currentCollectionDue, collected, due, collectorCash, officeDeposits, unsettledCash, paymentCount, performances, dueMembers, recentPayments, audit, previousDue, totalDue, transferValue, transferSettlementValue, drawCount]
+      required: [trackingReady, trackingStartDate, isFridayClosingDay, isSaturdayOpeningDay, currentDrawDate, currentPeriodStart, currentPeriodEnd, totalMembers, todayTarget, currentCollectionDue, collected, due, collectorCash, officeDeposits, unsettledCash, paymentCount, performances, dueMembers, recentPayments, audit, previousDue, totalDue, transferValue, transferSettlementValue, drawCount]
       properties:
         trackingReady: { type: boolean }
         trackingStartDate: { type: string, nullable: true }
+        isFridayClosingDay: { type: boolean }
+        isSaturdayOpeningDay: { type: boolean }
+        currentDrawDate: { type: string, nullable: true }
+        currentPeriodStart: { type: string, nullable: true }
+        currentPeriodEnd: { type: string, nullable: true }
         totalMembers: { type: integer }
         todayTarget: { type: number }
         currentCollectionDue: { type: number }

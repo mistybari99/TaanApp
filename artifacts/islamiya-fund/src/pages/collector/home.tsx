@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { toast } from "sonner"
 import { formatCurrency } from "@/lib/utils"
-import { Search, UserCheck, CheckCircle2, Target, AlertCircle } from "lucide-react"
+import { Search, UserCheck, CheckCircle2, AlertCircle } from "lucide-react"
 import { useSync } from "@/contexts/sync-context"
 import { ReceiptDialog, ReceiptRef } from "@/components/receipt"
 
@@ -27,7 +27,7 @@ export default function CollectorHome() {
   const { data: tanData } = useGetTan((activeCycle?.id ?? 0) as number, {
     query: { enabled: Boolean(activeCycle?.id), queryKey: getGetTanQueryKey((activeCycle?.id ?? 0) as number) },
   })
-  const { data: cycleMembers } = useListCycleMembers((activeCycle?.id ?? 0) as number, { query: { enabled: Boolean(activeCycle?.id), queryKey: getListCycleMembersQueryKey((activeCycle?.id ?? 0) as number) } })
+  const { data: cycleMembers, isLoading: isCycleMembersLoading } = useListCycleMembers((activeCycle?.id ?? 0) as number, { query: { enabled: Boolean(activeCycle?.id), queryKey: getListCycleMembersQueryKey((activeCycle?.id ?? 0) as number) } })
   const { data: dashboard, refetch: refetchDashboard } = useGetDashboard({ query: { queryKey: getGetDashboardQueryKey(), refetchInterval: 15000 } })
   
   const { isOnline, addToQueue } = useSync()
@@ -45,15 +45,16 @@ export default function CollectorHome() {
     todayPaid: Math.max(0, member.dailyContribution - member.todayDue),
     currentPeriodDue: member.currentPeriodDue ?? member.todayDue,
     previousDue: member.previousDue ?? 0,
-    totalDue: (member.previousDue ?? 0) + member.todayDue,
+    totalDue: (member.previousDue ?? 0) + (member.currentPeriodDue ?? member.todayDue),
   })), [cycleMembers])
   const memberOptions = activeCycle ? cycleMemberOptions : members
   const visibleMembers = useMemo(() => memberOptions?.filter((member) => {
     if (!search.trim()) return true
     const term = search.toLowerCase()
-    return member.name.toLowerCase().includes(term) || member.memberId.toLowerCase().includes(term)
+    return member.name.toLowerCase().includes(term) || member.memberId.toLowerCase().includes(term) || (member.mobile ?? "").toLowerCase().includes(term)
   }), [memberOptions, search])
   const selectedMember = useMemo(() => memberOptions?.find(m => m.id === selectedMemberId), [memberOptions, selectedMemberId])
+  const membersLoading = activeCycle ? isCycleMembersLoading : isLoading
 
   useEffect(() => {
     const onSynced = (event: Event) => {
@@ -78,7 +79,8 @@ export default function CollectorHome() {
     setSelectedMemberId(id)
     const member = memberOptions?.find(m => m.id === id)
     if (member) {
-      setAmount(member.dailyAmount.toString())
+      const totalDue = member.totalDue ?? ((member.previousDue ?? 0) + (member.currentPeriodDue ?? 0))
+      setAmount((totalDue > 0 ? totalDue : member.dailyAmount ?? 0).toString())
       if (member.todayPaid > 0) {
         setIsDuplicateConfirm(true)
       } else {
@@ -147,6 +149,37 @@ export default function CollectorHome() {
   return (
     <div className="space-y-4 max-w-md mx-auto">
       <ReceiptDialog ref={receiptRef} />
+      {dashboard?.isFridayClosingDay && (
+        <Card className="border-2 border-red-500 bg-red-50 text-red-950 shadow-sm" role="alert">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-6 w-6 shrink-0 text-red-600" />
+              <div className="space-y-1">
+                <p className="text-base font-extrabold tracking-wide text-red-700">🔴 FRIDAY COLLECTION CLOSING</p>
+                <p className="font-semibold">আজকের মধ্যে সকল সম্ভব collection complete করুন।</p>
+                <p className="text-sm">Friday is the Collection Closing &amp; Draw Day.</p>
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs font-semibold">
+              <div className="rounded-md bg-red-100 p-2 text-red-800">
+                <div>🔴 Outstanding Members</div>
+                <div className="mt-1 text-lg">{dashboard.dueMembers.length}</div>
+              </div>
+              <div className="rounded-md bg-red-100 p-2 text-red-800">
+                <div>🔴 Previous Due</div>
+                <div className="mt-1 text-lg">{formatCurrency(dashboard.previousDue)}</div>
+              </div>
+              <div className="rounded-md bg-red-100 p-2 text-red-800">
+                <div>🔴 Total Due</div>
+                <div className="mt-1 text-lg">{formatCurrency(dashboard.totalDue)}</div>
+              </div>
+            </div>
+            <p className="mt-3 text-sm font-semibold text-red-800">
+              Current Collection Due: {formatCurrency(dashboard.currentCollectionDue)}
+            </p>
+          </CardContent>
+        </Card>
+      )}
       {tanData?.tan && (
         <Card className={tanData.activePeriod ? "border-primary/30 bg-primary/5" : "border-amber-300 bg-amber-50"}>
           <CardContent className="p-3">
@@ -206,9 +239,14 @@ export default function CollectorHome() {
         </Card>
       </div>
       {activeCycle && <div className={`rounded-lg border px-4 py-3 text-sm ${dashboard?.trackingReady ? "border-primary/20 bg-primary/5" : "border-amber-300 bg-amber-50 text-amber-900"}`}>
-        <span className="font-semibold">{activeCycle.name}</span>
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-semibold">{activeCycle.name}</span>
+          <span className="text-xs font-semibold text-muted-foreground">Current Draw-Date</span>
+        </div>
         <span className="text-muted-foreground"> · ৳{activeCycle.dailyPerShare}/শেয়ার/দিন · শুক্রবার ড্র</span>
-        {new Date().getDay() === 5 && <p className="mt-1 font-medium text-amber-800">আজ শুক্রবার — draw record করার আগে Owner-এর draw workflow সম্পন্ন করুন।</p>}
+        {dashboard?.currentDrawDate && <p className="mt-1 font-medium">Draw-Date: {dashboard.currentPeriodStart} → {dashboard.currentPeriodEnd} · Draw {dashboard.currentDrawDate}</p>}
+        {dashboard?.isFridayClosingDay && <p className="mt-1 font-bold text-red-700">আজ শুক্রবার — Collection Closing Day এবং Draw Day।</p>}
+        {dashboard?.isSaturdayOpeningDay && <p className="mt-1 font-medium text-primary">নতুন Saturday–Friday Draw-Date automatically OPEN হয়েছে।</p>}
         {!dashboard?.trackingReady && <p className="mt-1 font-medium">Owner এখনো digital collection শুরুর তারিখ নিশ্চিত করেননি; collection বন্ধ আছে।</p>}
       </div>}
 
@@ -228,32 +266,42 @@ export default function CollectorHome() {
             <p className="text-sm font-medium text-muted-foreground px-1">
               {search.length > 0 ? "ফলাফল (Results)" : "সাম্প্রতিক বকেয়া (Recent Due)"}
             </p>
-            {isLoading ? (
+            {membersLoading ? (
               <div className="text-center py-8 text-muted-foreground">অপেক্ষা করুন...</div>
-            ) : members?.length === 0 ? (
+            ) : memberOptions?.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">কোন সদস্য পাওয়া যায়নি</div>
             ) : (
-              visibleMembers?.slice(0, 10).map((member) => (
-                <Card 
-                  key={member.id} 
-                  className={`cursor-pointer transition-colors active:scale-[0.98] ${member.todayPaid > 0 ? 'opacity-70 bg-muted/50' : 'hover:border-primary'}`}
-                  onClick={() => handleSelect(member.id)}
-                >
-                  <CardContent className="p-4 flex justify-between items-center">
-                    <div>
-                      <div className="font-bold text-base flex items-center gap-2">
-                        {member.name} 
-                        {member.todayPaid > 0 && <CheckCircle2 className="w-4 h-4 text-green-600" />}
+              visibleMembers?.slice(0, 10).map((member) => {
+                const previousDue = member.previousDue ?? 0
+                const currentPeriodDue = member.currentPeriodDue ?? 0
+                const totalDue = member.totalDue ?? previousDue + currentPeriodDue
+                return (
+                  <Card
+                    key={member.id}
+                    className={`cursor-pointer transition-colors active:scale-[0.98] ${member.todayPaid > 0 ? 'opacity-70 bg-muted/50' : 'hover:border-primary'}`}
+                    onClick={() => handleSelect(member.id)}
+                  >
+                    <CardContent className="p-4 flex justify-between items-center">
+                      <div>
+                        <div className="font-bold text-base flex items-center gap-2">
+                          {member.name}
+                          {member.todayPaid > 0 && <CheckCircle2 className="w-4 h-4 text-green-600" />}
+                        </div>
+                        <div className="text-sm text-muted-foreground">ID: {member.memberId}{member.mobile ? ` · ${member.mobile}` : ""}</div>
+                        <div className="mt-2 flex flex-wrap gap-1 text-[11px] font-semibold">
+                          {previousDue > 0 && <span className="rounded bg-red-100 px-2 py-0.5 text-red-700">🔴 Previous Due</span>}
+                          {currentPeriodDue > 0 && <span className="rounded bg-amber-100 px-2 py-0.5 text-amber-800">Current Due</span>}
+                        </div>
                       </div>
-                      <div className="text-sm text-muted-foreground">ID: {member.memberId}</div>
-                    </div>
-                    <div className="text-right">
-                       <div className="text-primary font-bold">{formatCurrency(member.totalDue ?? member.dailyAmount)}</div>
-                       <div className="text-xs text-muted-foreground">মোট বকেয়া</div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
+                      <div className="text-right">
+                         <div className="text-primary font-bold">{formatCurrency(totalDue || member.dailyAmount || 0)}</div>
+                         <div className="text-xs text-muted-foreground">Total Due</div>
+                         <div className="mt-1 text-[11px] text-muted-foreground">P {formatCurrency(previousDue)} · C {formatCurrency(currentPeriodDue)}</div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })
             )}
           </div>
         </div>

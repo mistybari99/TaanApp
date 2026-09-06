@@ -602,6 +602,11 @@ export interface CollectorPerformance {
 export interface Dashboard {
   trackingReady: boolean;
   trackingStartDate: string | null;
+  isFridayClosingDay: boolean;
+  isSaturdayOpeningDay: boolean;
+  currentDrawDate: string | null;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
   totalMembers: number;
   todayTarget: number;
   currentCollectionDue: number;

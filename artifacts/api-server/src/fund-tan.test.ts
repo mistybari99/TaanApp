@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import app from "./app";
-import { allocatePayment, calculateShareTransfer } from "./routes/fund";
+import { allocatePayment, calculateShareTransfer, collectionCalendarState } from "./routes/fund";
 import { pool } from "@workspace/db";
 
 const prefix = `SYN-TAN-${process.pid}-${Date.now()}`;
@@ -23,6 +23,21 @@ test("payment allocation always clears Previous Due before Current Collection", 
   assert.deepEqual(allocatePayment(100, 300), { previousDueApplied: 100, currentPeriodApplied: 0 });
   assert.deepEqual(allocatePayment(700, 300), { previousDueApplied: 300, currentPeriodApplied: 400 });
   assert.deepEqual(allocatePayment(500, 900), { previousDueApplied: 500, currentPeriodApplied: 0 });
+});
+
+test("collection calendar closes on Friday and opens the next period on Saturday", () => {
+  assert.deepEqual(
+    collectionCalendarState("2026-09-11", true, true, { periodStart: "2026-09-05", drawDate: "2026-09-11" }),
+    { isFridayClosingDay: true, isSaturdayOpeningDay: false },
+  );
+  assert.deepEqual(
+    collectionCalendarState("2026-09-12", true, true, { periodStart: "2026-09-12", drawDate: "2026-09-18" }),
+    { isFridayClosingDay: false, isSaturdayOpeningDay: true },
+  );
+  assert.deepEqual(
+    collectionCalendarState("2026-09-11", true, false, null),
+    { isFridayClosingDay: true, isSaturdayOpeningDay: false },
+  );
 });
 
 test("share transfer math supports partial, full, repeated and multi-receiver transfers", () => {
