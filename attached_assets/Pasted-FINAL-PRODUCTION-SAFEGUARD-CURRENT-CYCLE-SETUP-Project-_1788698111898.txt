@@ -1,0 +1,418 @@
+FINAL PRODUCTION SAFEGUARD + CURRENT CYCLE SETUP
+
+Project: ISLAMIYA Revolving Fund
+
+IMPORTANT:
+We have already implemented the cycle-based fund system and cleaned all demo/test financial data.
+
+Do NOT rebuild the application.
+Do NOT redesign the UI.
+Do NOT change the existing technology stack.
+Do NOT delete genuine data.
+Do NOT create unnecessary features.
+
+Inspect the existing implementation first and make only the minimum changes necessary.
+
+==================================================
+1. MEMBER MASTER DATABASE
+==================================================
+
+Members must be permanent master records.
+
+Each member should have:
+
+- Permanent Member ID (system-generated and unique)
+- Name
+- Mobile Number (optional but supported)
+- Status: Active / Inactive
+- Notes
+- Created date
+
+IMPORTANT:
+
+Member ID must NOT be the mobile number.
+
+Member ID must remain permanent even if:
+- name changes
+- mobile number changes
+- member leaves a cycle
+- member joins a future cycle
+
+A member with historical records must never be permanently deleted.
+
+If a member leaves:
+→ mark inactive or simply remove them from the new cycle.
+→ preserve all historical records.
+
+If a new person joins:
+→ create a new permanent Member ID.
+
+==================================================
+2. CYCLE-BASED MEMBERSHIP
+==================================================
+
+The Member Master List and Cycle Membership MUST remain separate.
+
+A member can participate in:
+- Cycle #01
+- Cycle #02
+- Cycle #03
+etc.
+
+Each cycle membership must independently store:
+
+- Cycle ID
+- Member ID
+- Number of shares
+- Daily contribution
+
+Share count is ALWAYS cycle-specific.
+
+Example:
+
+Member: শিমুল
+Member ID: IRF-0001
+
+Cycle #01:
+6 shares
+
+Cycle #02:
+3 shares
+
+Cycle #03:
+8 shares
+
+These must remain three separate historical records.
+
+Changing shares in Cycle #02 must NEVER change Cycle #01.
+
+==================================================
+3. FUTURE CYCLE WORKFLOW
+==================================================
+
+The owner must NOT be required to create a CSV every time a new cycle starts.
+
+For a new cycle, the owner should be able to:
+
+1. Create New Cycle
+2. Select existing members from the permanent Member List
+3. Add new members if necessary
+4. Assign/edit shares for each selected member
+5. Save the cycle
+6. Start collection
+
+Example:
+
+Cycle #01:
+108 total shares
+
+Cycle #02:
+Could be 90, 108, 125, 150, etc.
+
+There must be NO hard-coded maximum of 108 shares or 108 members.
+
+A new cycle may have:
+- fewer members
+- more members
+- different members
+- different share counts
+- different total shares
+
+The new cycle must be completely independent.
+
+CSV import should remain available as an OPTIONAL bulk-import tool, but it must NOT be required for normal future cycle creation.
+
+==================================================
+4. CURRENT CYCLE #01
+==================================================
+
+Use the already-created:
+
+ISLAMIYA Revolving Fund — Current Tan
+Cycle #01
+
+Start date:
+28/03/2026
+
+Contribution:
+৳100 per share per day
+
+Draw:
+Weekly Friday
+
+Status:
+ACTIVE
+
+Do NOT create Cycle #02 now.
+
+==================================================
+5. CURRENT CYCLE OPENING POINT
+==================================================
+
+We are NOT migrating the old historical collection records of this current Tan.
+
+Only the remaining/current period will be tracked digitally.
+
+Therefore Cycle #01 must have a clear:
+
+TRACKING START / OPENING POINT
+
+The system must NOT automatically calculate historical dues from 28/03/2026 up to the current date.
+
+Old physical-book history is not being migrated.
+
+From the tracking start point onward:
+
+- collections are recorded
+- payments are recorded
+- collector identity is recorded
+- notes can be recorded
+- due/balance is calculated
+- Friday draws are recorded
+
+Do NOT import old payments or old dues.
+
+==================================================
+6. SHARE EDITING
+==================================================
+
+Owner must be able to edit shares for members in an ACTIVE/NEW cycle.
+
+UI should support approximately:
+
+Cycle → Members → Edit Shares
+
+When shares change:
+
+Daily contribution =
+shares × ৳100
+
+The new share value applies to the cycle going forward.
+
+IMPORTANT:
+
+Do not modify historical completed-cycle share records.
+
+Do not retroactively alter previously recorded collection/payment records.
+
+==================================================
+7. CURRENT 31-MEMBER CSV
+==================================================
+
+The current CSV will be uploaded after this instruction.
+
+CSV format:
+
+name,shares
+
+The CSV represents the CURRENT participants of Cycle #01.
+
+Import it into Cycle #01 ONLY.
+
+Before committing:
+
+Show a complete preview:
+
+No. | Member Name | Shares | Daily Contribution
+
+Also show:
+
+- Total members
+- Total shares
+- Expected daily collection
+
+DO NOT commit the CSV until the Owner explicitly approves the preview.
+
+Do not create duplicate permanent members unnecessarily.
+
+If a matching member already exists:
+→ reuse the existing Member ID.
+
+If no match exists:
+→ create a new permanent Member ID.
+
+Assign CSV shares to Cycle #01 only.
+
+Do NOT modify historical cycle shares.
+
+==================================================
+8. COLLECTION
+==================================================
+
+Collection must always be linked to:
+
+- Cycle
+- Member
+- Date
+- Amount
+- Collector
+- Notes
+
+Support flexible payments.
+
+Example:
+A member owes 3 days and pays ৳300 at once.
+
+The system must allow this without forcing three separate transactions.
+
+Every payment must remain attributable to the collector.
+
+==================================================
+9. FRIDAY DRAW
+==================================================
+
+Every Friday draw must be permanently recorded.
+
+Each draw:
+
+- Draw ID
+- Cycle ID
+- Draw number
+- Draw date
+- Winner Member ID
+- Winner name
+- Winning amount
+- Notes
+
+Draw history must never be mixed between cycles.
+
+A member may win in one cycle and have a completely separate history in another cycle.
+
+==================================================
+10. MEMBER HISTORY
+==================================================
+
+Opening a member profile must show:
+
+- Member information
+- Permanent Member ID
+- Mobile number
+- Current status
+- Cycle participation
+- Shares per cycle
+- Collection history
+- Payment history
+- Draw/winner history
+
+Example:
+
+শিমুল
+IRF-0001
+Mobile: 01XXXXXXXXX
+
+Cycle #01:
+6 shares
+Collection history
+Draw history
+
+Cycle #02:
+3 shares
+Collection history
+Draw history
+
+Previous-cycle records must never be overwritten.
+
+==================================================
+11. CYCLE COMPLETION / NEW CYCLE BREAK POINT
+==================================================
+
+There must be a clean lifecycle:
+
+Cycle #01 ACTIVE
+        ↓
+Final Friday Draw
+        ↓
+Cycle #01 COMPLETED
+        ↓
+Create Cycle #02
+        ↓
+Select members
+        ↓
+Assign new shares
+        ↓
+Start new collection
+
+Only ONE cycle may be ACTIVE at a time.
+
+When a cycle is COMPLETED:
+
+- Freeze its financial history
+- Freeze its draw history
+- Preserve all member participation records
+- Preserve all payments
+- Preserve all collector records
+
+Starting a new cycle must NOT carry old dues/payments into it automatically.
+
+==================================================
+12. DATA ISOLATION
+==================================================
+
+All of the following must be scoped by Cycle ID:
+
+- Participants
+- Shares
+- Daily contribution
+- Due
+- Payments
+- Collections
+- Collector records
+- Settlements
+- Draws
+- Winners
+- Reports/totals
+
+Cycle #01 and Cycle #02 must NEVER accidentally mix.
+
+==================================================
+13. DEMO DATA
+==================================================
+
+The previous demo/test data cleanup has already been completed.
+
+Do not recreate demo members or test financial records.
+
+==================================================
+14. IMPLEMENTATION SAFETY
+==================================================
+
+Preserve the existing working application.
+
+Do not:
+- rewrite the database unnecessarily
+- redesign the UI
+- remove existing features
+- delete genuine history
+- create Cycle #02
+- import the CSV automatically without preview
+
+Only make changes necessary to satisfy the requirements above.
+
+==================================================
+15. VERIFICATION
+==================================================
+
+Before asking for CSV approval, verify:
+
+1. Cycle #01 exists and is ACTIVE.
+2. No Cycle #02 exists.
+3. Member master records are permanent.
+4. Mobile number field exists separately from Member ID.
+5. Cycle-specific shares work.
+6. Future cycles can have completely different members and total shares.
+7. Existing members can be reused without creating duplicates.
+8. New members can be added without CSV.
+9. Previous cycle history will remain isolated.
+10. Only one cycle can be ACTIVE.
+11. Historical dues are NOT automatically calculated for this current cycle.
+12. Current 31-member CSV can be previewed safely.
+
+Run typecheck, build, relevant API tests and browser verification.
+
+FINAL STEP:
+
+Do NOT import or commit the CSV yet.
+
+First confirm that the system is ready and provide the CSV upload/preview location.
+
+After that I will upload the real current 31-member CSV.
