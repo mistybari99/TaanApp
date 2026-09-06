@@ -10,8 +10,12 @@ import OnboardingPage from "@/pages/onboarding"
 import OwnerDashboard from "@/pages/owner/dashboard"
 import CollectorHome from "@/pages/collector/home"
 import MembersPage from "@/pages/members"
+import CollectorsPage from "@/pages/collectors"
 import PaymentsPage from "@/pages/payments"
 import SettlementsPage from "@/pages/settlements"
+import ReportsPage from "@/pages/reports"
+import SettingsPage from "@/pages/settings"
+import StatusPage from "@/pages/status"
 import NotFound from "@/pages/not-found"
 
 export function Router() {
@@ -45,8 +49,12 @@ export function Router() {
                 <Route path="/owner" component={OwnerDashboard} />
                 <Route path="/collector" component={CollectorHome} />
                 <Route path="/members" component={MembersPage} />
+                <Route path="/collectors" component={CollectorsPage} />
                 <Route path="/payments" component={PaymentsPage} />
                 <Route path="/settlements" component={SettlementsPage} />
+                <Route path="/reports" component={ReportsPage} />
+                <Route path="/settings" component={SettingsPage} />
+                <Route path="/status" component={StatusPage} />
                 <Route component={NotFound} />
               </Switch>
             </RoutedErrorBoundary>
