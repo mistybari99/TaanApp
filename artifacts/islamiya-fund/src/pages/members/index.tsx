@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
-import { useListMembers, useCreateMember, useImportMembers, useListCycles, useUpdateMember, useGetCurrentUser } from "@workspace/api-client-react"
+import { useQueryClient } from "@tanstack/react-query"
+import { getGetDashboardQueryKey, getListCycleMembersQueryKey, getListMembersQueryKey, useListMembers, useCreateMember, useCreateDueEntry, useImportMembers, useListCycles, useUpdateMember, useGetCurrentUser } from "@workspace/api-client-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -7,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 import { formatCurrency } from "@/lib/utils"
-import { Search, UserPlus, Upload, Download, AlertTriangle } from "lucide-react"
+import { Search, UserPlus, Upload, Download, AlertTriangle, WalletCards } from "lucide-react"
 import { downloadCsvTemplate, parseCsv } from "@/lib/csv"
 import { Link } from "wouter"
 
@@ -20,8 +21,10 @@ export default function MembersPage() {
   const { data: cycles } = useListCycles()
   const { data: user } = useGetCurrentUser()
   const createMember = useCreateMember()
+  const createDueEntry = useCreateDueEntry()
   const importMembers = useImportMembers()
   const updateMember = useUpdateMember()
+  const queryClient = useQueryClient()
 
   const [newMember, setNewMember] = useState({
     memberId: "",
@@ -39,6 +42,18 @@ export default function MembersPage() {
   const [importPreview, setImportPreview] = useState<{valid: number, imported: number, errors: any[], memberCount: number, totalShares: number, expectedDailyCollection: number, previewToken: string} | null>(null)
   const [importCycleId, setImportCycleId] = useState("")
   const importCycle = cycles?.find((cycle) => cycle.id === Number(importCycleId))
+  const activeCycles = cycles?.filter((cycle) => cycle.status === "ACTIVE") ?? []
+  const [isDueEntryOpen, setIsDueEntryOpen] = useState(false)
+  const [isDueConfirmationOpen, setIsDueConfirmationOpen] = useState(false)
+  const [dueEntry, setDueEntry] = useState({
+    cycleId: "",
+    memberId: "",
+    amount: "",
+    reason: "",
+    dueDate: new Date().toISOString().slice(0, 10),
+  })
+  const selectedDueCycle = activeCycles.find((cycle) => cycle.id === Number(dueEntry.cycleId))
+  const selectedDueMember = members?.find((member) => member.id === Number(dueEntry.memberId))
 
   useEffect(() => {
     if (!importCycleId) {
@@ -64,6 +79,68 @@ export default function MembersPage() {
       onError: (err: any) => {
         toast.error(err.message || "ব্যর্থ হয়েছে")
       }
+    })
+  }
+
+  const resetDueEntry = () => {
+    const activeCycle = activeCycles[0]
+    setDueEntry({
+      cycleId: activeCycle ? String(activeCycle.id) : "",
+      memberId: "",
+      amount: "",
+      reason: "",
+      dueDate: new Date().toISOString().slice(0, 10),
+    })
+    setIsDueConfirmationOpen(false)
+  }
+
+  const openDueEntry = () => {
+    resetDueEntry()
+    setIsDueEntryOpen(true)
+  }
+
+  const reviewDueEntry = () => {
+    const amount = Number(dueEntry.amount)
+    if (!dueEntry.cycleId || !dueEntry.memberId) {
+      toast.error("সদস্য ও active cycle নির্বাচন করুন (Select member and cycle)")
+      return
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("সঠিক positive amount দিন (Enter a positive amount)")
+      return
+    }
+    if (!dueEntry.reason.trim()) {
+      toast.error("Reason / Note লিখুন (Reason is required)")
+      return
+    }
+    setIsDueConfirmationOpen(true)
+  }
+
+  const saveDueEntry = () => {
+    const cycleId = Number(dueEntry.cycleId)
+    const memberId = Number(dueEntry.memberId)
+    const amount = Number(dueEntry.amount)
+    createDueEntry.mutate({
+      data: {
+        cycleId,
+        memberId,
+        amount,
+        dueDate: dueEntry.dueDate,
+        reason: dueEntry.reason.trim(),
+        idempotencyKey: crypto.randomUUID(),
+      },
+    }, {
+      onSuccess: () => {
+        toast.success("আগের বকেয়া সংরক্ষণ করা হয়েছে (Previous Due saved)")
+        queryClient.invalidateQueries({ queryKey: getListMembersQueryKey() })
+        queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() })
+        queryClient.invalidateQueries({ queryKey: getListCycleMembersQueryKey(cycleId) })
+        setIsDueEntryOpen(false)
+        resetDueEntry()
+      },
+      onError: (error: any) => {
+        toast.error(error?.message || "আগের বকেয়া সংরক্ষণ করা যায়নি (Could not save due)")
+      },
     })
   }
 
@@ -106,6 +183,11 @@ export default function MembersPage() {
         </div>
         
         <div className="flex w-full sm:w-auto gap-2">
+          {user?.role === "OWNER" && (
+            <Button variant="secondary" className="flex-1 sm:flex-none gap-2" onClick={openDueEntry}>
+              <WalletCards className="w-4 h-4" /> Due Entry
+            </Button>
+          )}
           <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" className="flex-1 sm:flex-none gap-2">
@@ -207,6 +289,113 @@ export default function MembersPage() {
             </DialogContent>
           </Dialog>
 
+          {user?.role === "OWNER" && (
+            <Dialog open={isDueEntryOpen} onOpenChange={(open) => {
+              setIsDueEntryOpen(open)
+              if (!open) resetDueEntry()
+            }}>
+              <DialogContent className="sm:max-w-[500px]">
+                <DialogHeader>
+                  <DialogTitle>আগের বকেয়া — Previous Due</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="dueCycle">চক্র / সময়কাল (Cycle / Period)</Label>
+                    <select
+                      id="dueCycle"
+                      className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                      value={dueEntry.cycleId}
+                      onChange={(event) => setDueEntry({ ...dueEntry, cycleId: event.target.value })}
+                    >
+                      <option value="">active cycle নির্বাচন করুন</option>
+                      {activeCycles.map((cycle) => (
+                        <option key={cycle.id} value={cycle.id}>{cycle.name} · Cycle #{cycle.cycleNumber}</option>
+                      ))}
+                    </select>
+                    {activeCycles.length === 0 && <p className="text-xs text-destructive">কোনো active cycle পাওয়া যায়নি।</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="dueMember">সদস্য (Member)</Label>
+                    <select
+                      id="dueMember"
+                      className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                      value={dueEntry.memberId}
+                      onChange={(event) => setDueEntry({ ...dueEntry, memberId: event.target.value })}
+                    >
+                      <option value="">সদস্য নির্বাচন করুন</option>
+                      {members?.map((member) => (
+                        <option key={member.id} value={member.id}>{member.name} · {member.memberId}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="dueAmount">Amount (৳)</Label>
+                    <Input
+                      id="dueAmount"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      inputMode="decimal"
+                      placeholder="e.g. 500"
+                      value={dueEntry.amount}
+                      onChange={(event) => setDueEntry({ ...dueEntry, amount: event.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="dueReason">Reason / Note</Label>
+                    <textarea
+                      id="dueReason"
+                      className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                      placeholder="বকেয়ার কারণ লিখুন (Required)"
+                      value={dueEntry.reason}
+                      onChange={(event) => setDueEntry({ ...dueEntry, reason: event.target.value })}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Entry date: {dueEntry.dueDate}. Owner-এর নাম ও save time audit-এ স্বয়ংক্রিয়ভাবে record হবে।
+                  </p>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsDueEntryOpen(false)}>Cancel</Button>
+                  <Button onClick={reviewDueEntry} disabled={createDueEntry.isPending || activeCycles.length === 0}>
+                    Review Due
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+
+          {user?.role === "OWNER" && (
+            <Dialog open={isDueConfirmationOpen} onOpenChange={setIsDueConfirmationOpen}>
+              <DialogContent className="sm:max-w-[450px]">
+                <DialogHeader>
+                  <DialogTitle>নিশ্চিত করুন (Confirm Due Entry)</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3 py-4">
+                  <div className="rounded-lg bg-muted/50 p-4 space-y-2 text-sm">
+                    <div className="flex justify-between gap-4"><span className="text-muted-foreground">Member</span><span className="font-semibold text-right">{selectedDueMember?.name} · {selectedDueMember?.memberId}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-muted-foreground">Cycle / Period</span><span className="font-semibold text-right">{selectedDueCycle?.name}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-muted-foreground">Amount</span><span className="font-semibold text-primary">{formatCurrency(Number(dueEntry.amount))}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-muted-foreground">Date</span><span className="font-semibold">{dueEntry.dueDate}</span></div>
+                  </div>
+                  <div className="rounded-lg border p-3 text-sm">
+                    <p className="text-muted-foreground">Reason / Note</p>
+                    <p className="mt-1 font-medium whitespace-pre-wrap">{dueEntry.reason.trim()}</p>
+                  </div>
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3">
+                    Save করার পর এই Previous Due collector-এর Total Due-তে carry forward হবে।
+                  </p>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsDueConfirmationOpen(false)}>Cancel</Button>
+                  <Button onClick={saveDueEntry} disabled={createDueEntry.isPending}>
+                    {createDueEntry.isPending ? "Saving..." : "Save Due"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>
               <Button className="flex-1 sm:flex-none gap-2">
@@ -280,15 +469,17 @@ export default function MembersPage() {
               <TableHead>নাম (Name)</TableHead>
               <TableHead>মোবাইল (Mobile)</TableHead>
               <TableHead className="text-right">দৈনিক জমা (Daily)</TableHead>
+              <TableHead className="text-right">আগের বকেয়া (Previous)</TableHead>
+              <TableHead className="text-right">মোট বকেয়া (Total)</TableHead>
               <TableHead className="text-right">আজকের বকেয়া (Due)</TableHead>
               <TableHead>স্ট্যাটাস</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">লোড হচ্ছে (Loading...)</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">লোড হচ্ছে (Loading...)</TableCell></TableRow>
             ) : members?.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">কোন তথ্য নেই</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">কোন তথ্য নেই</TableCell></TableRow>
             ) : (
               members?.map((member) => (
                 <TableRow key={member.id}>
@@ -296,6 +487,8 @@ export default function MembersPage() {
                   <TableCell><Link href={`/members/${member.id}/history`} className="font-medium hover:text-primary hover:underline">{member.name}</Link>{member.notes && <div className="text-xs text-muted-foreground">{member.notes}</div>}</TableCell>
                   <TableCell>{member.mobile}</TableCell>
                   <TableCell className="text-right">{formatCurrency(member.dailyAmount)}</TableCell>
+                  <TableCell className="text-right font-medium text-amber-900">{formatCurrency(member.previousDue ?? 0)}</TableCell>
+                  <TableCell className="text-right font-bold text-destructive">{formatCurrency(member.totalDue ?? member.todayDue)}</TableCell>
                   <TableCell className="text-right font-bold text-destructive">{formatCurrency(member.todayDue)}</TableCell>
                   <TableCell>
                     <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${member.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
