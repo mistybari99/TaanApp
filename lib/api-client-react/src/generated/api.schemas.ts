@@ -77,7 +77,8 @@ export interface Member {
   id: number;
   memberId: string;
   name: string;
-  mobile: string;
+  mobile?: string | null;
+  businessName?: string;
   nid?: string | null;
   address?: string;
   shares: number;
@@ -104,6 +105,7 @@ export const MemberUpdateStatus = {
 export interface MemberUpdate {
   name?: string;
   mobile?: string;
+  businessName?: string;
   nid?: string;
   address?: string;
   status?: MemberUpdateStatus;
@@ -417,7 +419,7 @@ export interface MemberCycleSummary {
 export interface Payment {
   id: number;
   receiptId: string;
-  memberId: number;
+  memberId: string;
   cycleId?: number | null;
   collectionDate?: string;
   shares?: number;
@@ -452,24 +454,27 @@ export interface MemberHistory {
 }
 
 export interface MemberInput {
-  memberId: string;
+  memberId?: string;
   name: string;
   mobile: string;
+  businessName?: string;
   nid?: string;
   address?: string;
+  notes?: string;
   shares: number;
   dailyAmount: number;
   joiningDate: string;
   status: string;
-  notes?: string;
 }
 
 export interface MemberImportRow {
   memberId?: string;
   name: string;
   mobile?: string;
+  businessName?: string;
   nid?: string;
   address?: string;
+  notes?: string;
   shares: number;
   dailyAmount?: number;
   joiningDate?: string;
@@ -577,7 +582,7 @@ export interface AuditEntry {
   detail: string;
   entityType?: string | null;
   entityId?: string | null;
-  memberId?: number | null;
+  memberId?: string | null;
   cycleId?: number | null;
   relatedTransactionId?: string | null;
   reason?: string | null;

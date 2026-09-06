@@ -73,7 +73,7 @@ test("audit API returns structured before/after fields without breaking legacy r
     const structured = rows.find((row) => row.action === "SYNTHETIC_STRUCTURED");
     const legacy = rows.find((row) => row.action === "SYNTHETIC_LEGACY");
     assert.ok(structured);
-    assert.equal(structured.memberId, memberId);
+    assert.equal(structured.memberId, `${prefix}-MEMBER`);
     assert.equal(structured.cycleId, cycleId);
     assert.equal(structured.relatedTransactionId, `${prefix}-TX`);
     assert.equal(structured.reason, "synthetic reason");

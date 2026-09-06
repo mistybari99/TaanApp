@@ -10,6 +10,7 @@ import type { MemberUpdateStatus } from './memberUpdateStatus';
 export interface MemberUpdate {
   name?: string;
   mobile?: string;
+  businessName?: string;
   nid?: string;
   address?: string;
   status?: MemberUpdateStatus;

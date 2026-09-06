@@ -9,7 +9,7 @@
 export interface Payment {
   id: number;
   receiptId: string;
-  memberId: number;
+  memberId: string;
   cycleId?: number | null;
   collectionDate?: string;
   shares?: number;

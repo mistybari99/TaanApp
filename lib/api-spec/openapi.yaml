@@ -334,12 +334,13 @@ components:
         password: { type: string, minLength: 8 }
     Member:
       type: object
-      required: [id, memberId, name, mobile, shares, dailyAmount, joiningDate, status, todayPaid, todayDue]
+      required: [id, memberId, name, shares, dailyAmount, joiningDate, status, todayPaid, todayDue]
       properties:
         id: { type: integer }
         memberId: { type: string }
         name: { type: string }
-        mobile: { type: string }
+        mobile: { type: string, nullable: true }
+        businessName: { type: string }
         nid: { type: string, nullable: true }
         address: { type: string }
         shares: { type: integer }
@@ -358,6 +359,7 @@ components:
       properties:
         name: { type: string }
         mobile: { type: string }
+        businessName: { type: string }
         nid: { type: string }
         address: { type: string }
         status: { type: string, enum: [active, inactive] }
@@ -629,18 +631,19 @@ components:
         notes: { type: string }
     MemberInput:
       type: object
-      required: [memberId, name, mobile, shares, dailyAmount, joiningDate, status]
+      required: [name, mobile, shares, dailyAmount, joiningDate, status]
       properties:
         memberId: { type: string }
         name: { type: string }
         mobile: { type: string }
+        businessName: { type: string }
         nid: { type: string }
         address: { type: string }
+        notes: { type: string }
         shares: { type: integer }
         dailyAmount: { type: number }
         joiningDate: { type: string }
         status: { type: string }
-        notes: { type: string }
     MemberImportRow:
       type: object
       required: [name, shares]
@@ -648,8 +651,10 @@ components:
         memberId: { type: string }
         name: { type: string }
         mobile: { type: string }
+        businessName: { type: string }
         nid: { type: string }
         address: { type: string }
+        notes: { type: string }
         shares: { type: integer }
         dailyAmount: { type: number }
         joiningDate: { type: string }
@@ -710,7 +715,7 @@ components:
       properties:
         id: { type: integer }
         receiptId: { type: string }
-        memberId: { type: integer }
+        memberId: { type: string }
         cycleId: { type: integer, nullable: true }
         collectionDate: { type: string }
         shares: { type: integer }
@@ -764,7 +769,7 @@ components:
         detail: { type: string }
         entityType: { type: string, nullable: true }
         entityId: { type: string, nullable: true }
-        memberId: { type: integer, nullable: true }
+        memberId: { type: string, nullable: true }
         cycleId: { type: integer, nullable: true }
         relatedTransactionId: { type: string, nullable: true }
         reason: { type: string, nullable: true }

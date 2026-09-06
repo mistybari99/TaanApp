@@ -4,6 +4,23 @@ ALTER TABLE fund_members ALTER COLUMN mobile DROP NOT NULL;
 ALTER TABLE fund_members ADD COLUMN IF NOT EXISTS notes text NOT NULL DEFAULT '';
 ALTER TABLE fund_members ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
 ALTER TABLE fund_members ADD COLUMN IF NOT EXISTS nid text;
+ALTER TABLE fund_members ADD COLUMN IF NOT EXISTS business_name text NOT NULL DEFAULT '';
+ALTER TABLE fund_members ADD COLUMN IF NOT EXISTS public_member_id text;
+WITH existing_public_ids AS (
+  SELECT COALESCE(MAX(substring(public_member_id FROM 5)::int), 0) AS max_id
+  FROM fund_members
+  WHERE public_member_id ~ '^IRF-[0-9]+$'
+), missing_public_ids AS (
+  SELECT id, ROW_NUMBER() OVER (ORDER BY id) + existing_public_ids.max_id AS next_id
+  FROM fund_members CROSS JOIN existing_public_ids
+  WHERE public_member_id IS NULL
+)
+UPDATE fund_members AS members
+SET public_member_id = 'IRF-' || LPAD(missing_public_ids.next_id::text, 3, '0')
+FROM missing_public_ids
+WHERE members.id = missing_public_ids.id;
+CREATE UNIQUE INDEX IF NOT EXISTS fund_members_public_member_id_idx
+  ON fund_members(public_member_id) WHERE public_member_id IS NOT NULL;
 ALTER TABLE fund_audit ADD COLUMN IF NOT EXISTS member_id integer;
 ALTER TABLE fund_audit ADD COLUMN IF NOT EXISTS cycle_id integer;
 ALTER TABLE fund_audit ADD COLUMN IF NOT EXISTS related_transaction_id text;

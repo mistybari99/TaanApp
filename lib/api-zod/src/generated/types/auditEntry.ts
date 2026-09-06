@@ -15,7 +15,7 @@ export interface AuditEntry {
   detail: string;
   entityType?: string | null;
   entityId?: string | null;
-  memberId?: number | null;
+  memberId?: string | null;
   cycleId?: number | null;
   relatedTransactionId?: string | null;
   reason?: string | null;

@@ -11,7 +11,8 @@ export interface Member {
   id: number;
   memberId: string;
   name: string;
-  mobile: string;
+  mobile?: string | null;
+  businessName?: string;
   nid?: string | null;
   address?: string;
   shares: number;

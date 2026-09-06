@@ -10,8 +10,10 @@ export interface MemberImportRow {
   memberId?: string;
   name: string;
   mobile?: string;
+  businessName?: string;
   nid?: string;
   address?: string;
+  notes?: string;
   shares: number;
   dailyAmount?: number;
   joiningDate?: string;

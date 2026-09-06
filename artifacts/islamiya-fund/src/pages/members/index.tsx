@@ -29,9 +29,9 @@ export default function MembersPage() {
   const queryClient = useQueryClient()
 
   const [newMember, setNewMember] = useState({
-    memberId: "",
     name: "",
     mobile: "",
+    businessName: "",
     address: "",
     nid: "",
     shares: 1,
@@ -81,7 +81,7 @@ export default function MembersPage() {
       onSuccess: () => {
         toast.success("সদস্য যোগ করা হয়েছে (Member added)")
         setIsAddOpen(false)
-         setNewMember({ memberId: "", name: "", mobile: "", address: "", nid: "", shares: 1, dailyAmount: 100, notes: "" })
+         setNewMember({ name: "", mobile: "", businessName: "", address: "", nid: "", shares: 1, dailyAmount: 100, notes: "" })
         refetch()
       },
       onError: (err: any) => {
@@ -235,7 +235,7 @@ export default function MembersPage() {
                 <div className="flex justify-between items-center bg-muted/50 p-4 rounded-lg">
                   <div>
                     <h4 className="font-semibold text-sm">সঠিক ফরম্যাট ব্যবহার করুন</h4>
-                    <p className="text-xs text-muted-foreground">ফরম্যাট: name,shares · Mobile optional</p>
+                    <p className="text-xs text-muted-foreground">ফরম্যাট: name,businessName,mobile,shares · Mobile optional</p>
                   </div>
                   <Button variant="secondary" size="sm" onClick={downloadCsvTemplate}>
                     <Download className="w-4 h-4 mr-2" /> টেমপ্লেট
@@ -272,12 +272,12 @@ export default function MembersPage() {
                     {importRows.length > 0 && (
                       <div className="max-h-48 overflow-y-auto border rounded-md mt-3">
                        <table className="w-full text-xs">
-                         <thead className="bg-muted/50 sticky top-0"><tr><th className="text-left p-2">No.</th><th className="text-left p-2">Member Name</th><th className="text-left p-2">Mobile</th><th className="text-left p-2">Match</th><th className="text-right p-2">Shares</th><th className="text-right p-2">Daily Contribution</th></tr></thead>
+                          <thead className="bg-muted/50 sticky top-0"><tr><th className="text-left p-2">No.</th><th className="text-left p-2">Member Name</th><th className="text-left p-2">Business Name</th><th className="text-left p-2">Mobile</th><th className="text-left p-2">Match</th><th className="text-right p-2">Shares</th><th className="text-right p-2">Daily Contribution</th></tr></thead>
                           <tbody>{importRows.map((row, index) => {
                             const shares = Number(row.shares) || 0
                             const daily = shares * (importCycle?.dailyPerShare ?? 100)
                            const previewRow = importPreview.previewRows?.find((item) => item.row === index + 2)
-                           return <tr key={`${row.name}-${index}`} className="border-t"><td className="p-2">{index + 1}</td><td className="p-2">{row.name || "—"}</td><td className="p-2">{previewRow?.mobileStatus === "missing" || !row.mobile ? "Missing / Not provided" : row.mobile}</td><td className="p-2">{previewRow?.existingMember ? `Existing: ${previewRow.existingMember.memberId}` : "New / no match"}</td><td className="p-2 text-right">{shares}</td><td className="p-2 text-right font-medium">{formatCurrency(daily)}</td></tr>
+                            return <tr key={`${row.name}-${index}`} className="border-t"><td className="p-2">{index + 1}</td><td className="p-2">{row.name || "—"}</td><td className="p-2">{row.businessName || "—"}</td><td className="p-2">{previewRow?.mobileStatus === "missing" || !row.mobile ? "Missing / Not provided" : row.mobile}</td><td className="p-2">{previewRow?.existingMember ? `Existing: ${previewRow.existingMember.memberId}` : "New / no match"}</td><td className="p-2 text-right">{shares}</td><td className="p-2 text-right font-medium">{formatCurrency(daily)}</td></tr>
                           })}</tbody>
                         </table>
                       </div>
@@ -475,10 +475,10 @@ export default function MembersPage() {
               <DialogHeader>
                 <DialogTitle>নতুন সদস্য যোগ করুন (Add Member)</DialogTitle>
               </DialogHeader>
-              <div className="grid gap-4 py-4">
+                <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="memberId" className="text-right">ID</Label>
-                  <Input id="memberId" value={newMember.memberId} onChange={e => setNewMember({...newMember, memberId: e.target.value})} className="col-span-3" />
+                  <Label className="text-right">ID</Label>
+                  <div className="col-span-3 rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">সিস্টেম স্বয়ংক্রিয়ভাবে IRF-### ID তৈরি করবে</div>
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="name" className="text-right">নাম (Name)</Label>
@@ -487,6 +487,10 @@ export default function MembersPage() {
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="mobile" className="text-right">মোবাইল (Mobile)</Label>
                   <Input id="mobile" value={newMember.mobile} onChange={e => setNewMember({...newMember, mobile: e.target.value})} className="col-span-3" />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="businessName" className="text-right">ব্যবসার নাম</Label>
+                  <Input id="businessName" value={newMember.businessName} onChange={e => setNewMember({...newMember, businessName: e.target.value})} className="col-span-3" />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="address" className="text-right">ঠিকানা (Address)</Label>
@@ -522,7 +526,7 @@ export default function MembersPage() {
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input 
-            placeholder="নাম বা Member ID দিয়ে খুঁজুন..."
+            placeholder="নাম, Member ID বা Mobile দিয়ে খুঁজুন..."
             className="pl-9"
             value={search}
             onChange={(e) => {
@@ -568,6 +572,7 @@ export default function MembersPage() {
             <TableRow>
               <TableHead className="w-[100px]">ID</TableHead>
               <TableHead>নাম (Name)</TableHead>
+              <TableHead>ব্যবসা (Business)</TableHead>
               <TableHead>মোবাইল (Mobile)</TableHead>
               <TableHead className="text-right">দৈনিক জমা (Daily)</TableHead>
               <TableHead className="text-right">আগের বকেয়া (Previous)</TableHead>
@@ -579,14 +584,15 @@ export default function MembersPage() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">লোড হচ্ছে (Loading...)</TableCell></TableRow>
+              <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">লোড হচ্ছে (Loading...)</TableCell></TableRow>
             ) : members?.length === 0 ? (
-              <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">কোন তথ্য নেই</TableCell></TableRow>
+              <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">কোন তথ্য নেই</TableCell></TableRow>
             ) : (
               members?.map((member) => (
                 <TableRow key={member.id}>
                   <TableCell className="font-medium">{member.memberId}</TableCell>
                   <TableCell><Link href={`/members/${member.id}/history`} className="font-medium hover:text-primary hover:underline">{member.name}</Link>{member.notes && <div className="text-xs text-muted-foreground">{member.notes}</div>}</TableCell>
+                  <TableCell>{member.businessName || "—"}</TableCell>
                   <TableCell>{member.mobile || <span className="text-amber-700">Missing / Not provided</span>}</TableCell>
                   <TableCell className="text-right">{formatCurrency(member.dailyAmount)}</TableCell>
                   <TableCell className="text-right font-medium text-amber-900">{formatCurrency(member.previousDue ?? 0)}</TableCell>
