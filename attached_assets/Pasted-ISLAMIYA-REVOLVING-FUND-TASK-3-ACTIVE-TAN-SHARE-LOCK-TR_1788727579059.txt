@@ -1,0 +1,104 @@
+ISLAMIYA REVOLVING FUND
+TASK 3 — ACTIVE TAN SHARE LOCK & TRANSFER LOGIC
+
+Existing share-transfer system-এর মূল business logic ঠিক করো।
+
+CORE RULE:
+
+একটি Tan Period শুরু হওয়ার সময় member/share structure LOCK হবে।
+
+যেমন:
+
+Total Shares = 108
+Member A = 25
+Member B = 15
+...
+Total = 108
+
+এই Tan Period শেষ না হওয়া পর্যন্ত কোনো member-এর share সরাসরি increase/decrease করা যাবে না।
+
+কারণ share change করলে:
+- Total collection পরিবর্তন হবে
+- Per Draw financial amount পরিবর্তন হবে
+- Total Draw-Date পরিবর্তন হতে পারে
+- পুরো Tan-এর accounting ভেঙে যেতে পারে
+
+তাই ACTIVE Tan-এ direct share edit BLOCK করতে হবে।
+
+কিন্তু member চাইলে তার share-এর অংশ বা পুরো share transfer করতে পারবে।
+
+TRANSFER RULE:
+
+যদি member-এর 5 shares থাকে:
+
+সে চাইলে:
+- 1 share transfer
+- 2 shares transfer
+- 3 shares transfer
+- 4 shares transfer
+- অথবা পুরো 5 shares transfer
+
+করতে পারবে।
+
+Fixed transfer quantity ব্যবহার করবে না।
+
+Receiver হতে পারে:
+1. Existing active Tan member
+2. নতুন member
+3. Coordinator/Owner নিজে, যদি business rules অনুযায়ী তিনি share গ্রহণ করেন
+
+Transfer-এর পরে:
+
+Source shares = previous shares - transferred shares
+Receiver shares = previous shares + transferred shares
+
+কিন্তু TOTAL TAN SHARES অপরিবর্তিত থাকবে।
+
+উদাহরণ:
+Source = 5
+Transfer = 2
+Receiver = 3
+
+Total = 5
+
+এখানে Tan-এর total share 108 থেকে 106 হবে না।
+Total Tan shares = 108-ই থাকবে।
+
+IMPORTANT:
+Transfer accumulated contribution value-এর সাথে সঠিকভাবে linked থাকবে।
+Existing payment history rewrite করা যাবে না।
+Transfer-এর আগে/পরে share এবং value audit করতে হবে।
+
+Draw winner:
+- Normal transfer restricted থাকবে।
+- প্রয়োজন হলে existing Owner override workflow ব্যবহার হবে।
+- Override audit হবে।
+
+Active Tan:
+DIRECT SHARE EDIT = BLOCKED
+SHARE TRANSFER = ALLOWED
+
+New Tan:
+Share structure নতুন করে set করা যাবে।
+
+Focused regression tests:
+- Partial transfer
+- Full transfer
+- Repeated transfer
+- Multiple receiver
+- New receiver
+- Total share invariant
+- Source cannot go negative
+- Active Tan direct share edit rejected
+- Completed Tan transfer rules
+- Draw winner restriction
+
+DO NOT:
+- Existing verified transfer accounting delete করো না।
+- Real CSV import করো না।
+- Cycle #02 create করো না।
+- Genuine data modify করো না।
+
+Typecheck + tests + build চালাও।
+
+STOP after this task.
