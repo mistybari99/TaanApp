@@ -1,0 +1,76 @@
+ISLAMIYA REVOLVING FUND
+TASK 1 — TAN PERIOD & DRAW-DATE CORE LOGIC
+
+বর্তমান সফটওয়্যারের existing financial logic নষ্ট না করে Tan-এর মূল business logic ঠিক করো।
+
+BUSINESS RULE:
+
+1. একটি সম্পূর্ণ Tan Period শুরু হলে সেই Period-এর জন্য:
+   - Total Shares
+   - Number of weekly draws
+   - Draws per week
+   - Total Draw-Dates
+   - Per-Draw Winner Amount
+   সব প্রথমেই calculate এবং LOCK হবে।
+
+2. উদাহরণ:
+   Total Shares = 108
+   Draws per week = 4
+   তাই Total Draw-Dates = 108 / 4 = 27
+   প্রতি সপ্তাহে 4 জন winner হবে।
+   Weekly collection = 108 × ৳100 = ৳10,800
+   Per winner = ৳10,800 / 4 = ৳2,700 per weekly collection unit
+   এবং business rule অনুযায়ী accumulated distribution হিসাব আলাদাভাবে preserve করতে হবে।
+
+IMPORTANT:
+বর্তমান production business calculation/ledger formula নিজে থেকে পরিবর্তন করবে না। Existing verified financial calculation অনুযায়ী exact draw payout preserve করবে।
+
+3. Draw-Date manually একেকটি করে create করতে হবে না।
+System automatically sequential Draw-Date তৈরি/prepare করবে:
+   Draw-Date 01
+   Draw-Date 02
+   Draw-Date 03
+   ...
+   Final Draw-Date
+
+4. একটি Draw-Date হলো:
+   শনিবার → শুক্রবার
+   অর্থাৎ Saturday-to-Friday = 1 Draw-Date collection period.
+
+5. শুক্রবার হলো সেই Draw-Date-এর COLLECTION CLOSING / DRAW DAY।
+
+6. শুক্রবারের Draw সম্পন্ন হওয়ার পর পরবর্তী Draw-Date automatically/open হবে:
+   শনিবার থেকে নতুন period-এর collection শুরু হবে।
+
+7. একটি Tan Period-এর Total Draw-Date সংখ্যা শুরুতেই fixed থাকবে এবং পুরো Tan শেষ না হওয়া পর্যন্ত LOCK থাকবে।
+
+8. Tan চলাকালীন:
+   - Total Shares change করা যাবে না।
+   - Draws-per-week change করা যাবে না।
+   - Total Draw-Date change করা যাবে না।
+   - Per-draw financial formula পরিবর্তন করা যাবে না।
+
+9. Member share কমাতে চাইলে Share Transfer system ব্যবহার করতে হবে।
+   Share বাড়ানো/কমানো সরাসরি active Tan membership edit করে করা যাবে না।
+
+10. পুরো Tan Period শেষ হলে নতুন Tan Period create করা যাবে।
+নতুন Tan-এ:
+   - নতুন member যোগ/বাদ যেতে পারে
+   - share সংখ্যা নতুন করে নির্ধারণ হতে পারে
+   - নতুন Draws-per-week নির্ধারণ হতে পারে
+   - নতুন Total Draw-Date automatically calculate হবে।
+
+DO NOT:
+- Cycle #02 create করো না।
+- Real financial data modify করো না।
+- Existing verified transfer logic delete/replace করো না।
+- Real CSV import করো না।
+- Existing audit history delete করো না।
+
+প্রথমে existing code/database logic inspect করো।
+তারপর minimal additive changes করো।
+Focused regression tests লিখো।
+Typecheck + relevant tests + build চালাও।
+
+STOP after this task.
+Final database clean রাখতে হবে।
