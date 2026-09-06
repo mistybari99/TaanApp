@@ -1,0 +1,638 @@
+FINAL MASTER TASK — IRF COLLECTION SOFTWARE
+===========================================
+
+IMPORTANT:
+Do NOT publish the app yet.
+Do NOT consume the Replit free publishing slot.
+Do NOT upgrade my Replit plan.
+Do NOT purchase or introduce any custom domain.
+Do NOT introduce any paid hosting, paid database, paid API, Firebase paid service, SMS API, WhatsApp API, or other paid service.
+
+I have already spent money on Replit Agent usage, so keep further work efficient and focused.
+
+OBJECTIVE
+---------
+Finish the EXISTING IRF Collection Software and make it a complete, stable, realistic MVP.
+
+Do NOT rebuild the project from scratch.
+
+Do NOT remove, disable, simplify, hide, or replace any existing feature or screen.
+
+Keep all existing functionality:
+- Owner
+- Collector
+- Members
+- Payments
+- Settlements
+- Reports
+- Settings
+- Status
+- Onboarding
+- PWA
+- Offline queue
+- Audit trail
+- Existing dashboard
+- Existing authentication
+- Existing payment workflow
+
+Your job is to FINISH, CONNECT, TEST, FIX and POLISH what already exists.
+
+--------------------------------------------------
+1. GOOGLE SHEETS + GOOGLE DRIVE AS CENTRAL STORAGE
+--------------------------------------------------
+
+I do NOT want to pay for a separate database or hosting.
+
+Use my Google account's:
+- Google Drive
+- Google Sheets
+- Google Apps Script
+
+as the central data/storage layer where practical.
+
+Architecture:
+
+Collector Mobile App
+        ↓
+Existing IRF App
+        ↓
+Existing Backend/API
+        ↓
+Google Apps Script API
+        ↓
+Google Sheets
+        ↓
+Google Drive
+
+The Owner should be able to keep the central data in their own Google Drive.
+
+Do NOT give Collector users direct access to the Google Sheet.
+
+Collectors must access data only through the IRF application.
+
+IMPORTANT SECURITY:
+- Never expose Google credentials in frontend code.
+- Never put private keys in client-side JavaScript.
+- Never expose Apps Script secrets to collectors.
+- Keep sensitive configuration server-side.
+- Use Replit Secrets/environment variables where necessary.
+- Use secure authentication between the app backend and Google Apps Script.
+
+--------------------------------------------------
+2. GOOGLE SHEET STRUCTURE
+--------------------------------------------------
+
+Create/document the following Google Spreadsheet structure.
+
+Sheet: Members
+
+Columns:
+member_id
+member_name
+phone
+total_shares
+daily_amount
+join_date
+status
+collector_id
+notes
+
+
+Sheet: Payments
+
+Columns:
+payment_id
+receipt_id
+member_id
+member_name
+payment_date
+payment_time
+amount
+shares
+collector_id
+collector_name
+payment_method
+status
+idempotency_key
+created_at
+synced_at
+
+
+Sheet: Collectors
+
+Columns:
+collector_id
+name
+phone
+username
+status
+created_at
+
+
+Sheet: Settlements
+
+Columns:
+settlement_id
+collector_id
+collector_name
+settlement_date
+collected_amount
+deposited_amount
+difference
+status
+notes
+created_at
+
+
+Sheet: Audit_Log
+
+Columns:
+audit_id
+timestamp
+user_id
+role
+action
+entity_type
+entity_id
+old_value
+new_value
+device_info
+notes
+
+
+Sheet: Settings
+
+Store:
+association_name
+daily_share_amount
+receipt_prefix
+timezone
+other required configuration
+
+Do not hard-code the demo members into the final production workflow.
+
+--------------------------------------------------
+3. REAL MEMBER IMPORT
+--------------------------------------------------
+
+Keep the existing CSV member import feature.
+
+It must support importing the real 108 members.
+
+Before import:
+- show preview
+- validate columns
+- detect duplicate member IDs
+- detect missing required fields
+- show errors clearly
+- allow confirmation before writing
+
+After confirmation:
+- write members to Google Sheets
+- do not create duplicate members
+
+Do not permanently hard-code the sample/demo member list.
+
+--------------------------------------------------
+4. PAYMENT SYSTEM
+--------------------------------------------------
+
+Keep the existing payment flow.
+
+Collector should be able to:
+
+1. Search Member
+2. Open Member
+3. See:
+   - Member ID
+   - Name
+   - Phone
+   - Share count
+   - Daily expected payment
+   - Today's paid amount
+   - Today's due
+4. Enter payment
+5. Confirm member
+6. Submit payment
+7. Receive unique receipt
+8. See payment history
+
+Every successful payment must be recorded centrally.
+
+--------------------------------------------------
+5. DUPLICATE PAYMENT PROTECTION
+--------------------------------------------------
+
+This is critical.
+
+Use an idempotency key/payment key.
+
+If a Collector:
+- taps submit twice
+- loses internet during submission
+- retries
+- refreshes
+- reconnects
+- submits the same queued payment
+
+the system must NOT create duplicate payments.
+
+One real payment = one transaction = one receipt.
+
+--------------------------------------------------
+6. OFFLINE COLLECTION
+--------------------------------------------------
+
+Keep the existing offline queue.
+
+When internet is unavailable:
+
+- Allow Collector to enter payment.
+- Save it locally as Pending.
+- Clearly show "Pending Sync".
+- Do not falsely show it as server-confirmed.
+- When internet returns, automatically retry.
+- Server verifies idempotency.
+- Sync successful payment exactly once.
+- Update local record to Synced.
+- Generate/use the correct unique receipt.
+- Never duplicate payment during retry.
+
+--------------------------------------------------
+7. MEMBER CONFIRMATION
+--------------------------------------------------
+
+Keep the existing Member Confirmation functionality.
+
+Do NOT claim that normal browser HTML can directly access arbitrary phone fingerprint sensors.
+
+If current implementation uses a confirmation/PIN/device verification method, keep it working.
+
+If biometric/fingerprint hardware integration is not technically available in the current browser/device environment, clearly mark it as future-compatible rather than pretending it is a real fingerprint verification.
+
+The final system must never falsely claim that a fingerprint was captured if it was not.
+
+--------------------------------------------------
+8. OWNER DASHBOARD
+--------------------------------------------------
+
+Keep the existing Owner Dashboard.
+
+Connect it to the central data.
+
+Show at minimum:
+
+Today's:
+- Expected collection
+- Actual collection
+- Total due
+- Number of payments
+- Collector-wise collection
+- Pending/offline payments
+- Collector cash
+- Office deposits
+- Unsettled cash
+
+Also show:
+- Recent payments
+- Due members
+- Settlement status
+
+The dashboard must calculate from actual central data, not demo/static values.
+
+--------------------------------------------------
+9. COLLECTOR DASHBOARD
+--------------------------------------------------
+
+Keep the existing Collector interface.
+
+Show:
+
+- Today's target
+- Today's collected
+- Today's remaining
+- Collector cash
+- Pending sync count
+- Recent payments
+- Due members
+
+Collector should only see their permitted data.
+
+--------------------------------------------------
+10. SETTLEMENT
+--------------------------------------------------
+
+Keep the existing settlement workflow.
+
+Collector can submit:
+
+- collected amount
+- deposited amount
+- settlement
+
+System calculates:
+
+Collected
+minus
+Deposited
+=
+Unsettled Cash
+
+Every settlement must be centrally recorded.
+
+Owner can see:
+- Collector
+- Date
+- Collection
+- Deposit
+- Difference
+- Settlement status
+
+--------------------------------------------------
+11. AUDIT LOG
+--------------------------------------------------
+
+Keep the existing audit system.
+
+Important actions should create audit records:
+
+- payment created
+- payment reversed
+- settlement created
+- member imported
+- member changed
+- collector created
+- collector disabled
+- login/security events where appropriate
+
+Do not silently delete financial transactions.
+
+If a payment needs correction:
+use reversal/correction with audit trail.
+
+--------------------------------------------------
+12. REPORTS
+--------------------------------------------------
+
+Keep existing Reports.
+
+Reports must use central data.
+
+Provide:
+
+- Daily Collection
+- Weekly Collection
+- Monthly Collection
+- Member Statement
+- Due List
+- Collector Collection
+- Settlement Report
+
+Provide export where already supported.
+
+At minimum:
+- CSV export
+
+If existing PDF export is already implemented, keep and fix it.
+
+Do NOT add paid reporting services.
+
+--------------------------------------------------
+13. OWNER / COLLECTOR LOGIN
+--------------------------------------------------
+
+Keep existing authentication and role permissions.
+
+Owner:
+- full access
+
+Collector:
+- collection-related access only
+
+Collector must NOT be able to:
+- change Owner settings
+- view other collectors' private information unnecessarily
+- access Google credentials
+- directly edit Google Sheets
+
+Keep demo accounts for development/testing only.
+
+Clearly mark them as DEMO.
+
+--------------------------------------------------
+14. PWA
+--------------------------------------------------
+
+Keep the existing PWA.
+
+Do not remove:
+- manifest
+- icons
+- install support
+- mobile layout
+
+Make sure it works correctly when eventually deployed over HTTPS.
+
+Do NOT publish now.
+
+Do NOT consume the free Replit publishing slot.
+
+--------------------------------------------------
+15. UI / UX
+--------------------------------------------------
+
+Do not redesign unnecessarily.
+
+Keep the current app-style mobile interface.
+
+Make it:
+- fast
+- clean
+- simple
+- realistic
+- easy for a non-technical Collector
+- large buttons
+- clear Bengali/English labels where already used
+- minimal unnecessary screens
+
+Do not add a huge number of new features.
+
+--------------------------------------------------
+16. DATA SAFETY
+--------------------------------------------------
+
+Financial records are important.
+
+Do not:
+- silently overwrite payments
+- silently delete transactions
+- create duplicate receipts
+- lose queued offline payments
+- expose private credentials
+
+If synchronization fails:
+show a clear Pending/Failed state.
+
+--------------------------------------------------
+17. GOOGLE APPS SCRIPT
+--------------------------------------------------
+
+Create the Apps Script integration required for:
+
+GET:
+- member search
+- member details
+- payment history
+- due
+- dashboard
+- collector data
+- settlement data
+- reports
+
+POST:
+- payment
+- settlement
+- member import
+- collector creation
+- member update
+- audit log
+
+Use proper validation.
+
+Prevent unauthorized direct access where possible.
+
+Document exactly how the Owner will deploy/configure the Apps Script.
+
+--------------------------------------------------
+18. COST REQUIREMENT
+--------------------------------------------------
+
+ABSOLUTELY NO NEW PAID SERVICE.
+
+Do not recommend:
+- paid Replit hosting
+- paid database
+- VPS
+- custom domain
+- Firebase paid plan
+- paid API
+- paid SMS
+- paid WhatsApp
+- paid automation service
+
+Use:
+- Google Drive
+- Google Sheets
+- Google Apps Script
+- existing Replit development environment
+
+where practical.
+
+--------------------------------------------------
+19. TEST EVERYTHING BEFORE FINISHING
+--------------------------------------------------
+
+Before declaring completion, test:
+
+1. App startup
+2. Frontend typecheck
+3. Backend typecheck
+4. Login
+5. Owner permissions
+6. Collector permissions
+7. Member search
+8. Member details
+9. Due calculation
+10. Payment creation
+11. Unique receipt
+12. Duplicate payment prevention
+13. Offline payment
+14. Reconnect sync
+15. Owner dashboard
+16. Collector dashboard
+17. Settlement
+18. Audit trail
+19. CSV import
+20. Reports
+21. CSV export
+22. PWA manifest
+23. Mobile layout
+24. Google Sheets connection
+25. Google Apps Script API
+26. Error handling
+
+Fix all errors found.
+
+Do not stop after detecting an error.
+Fix it and test again.
+
+--------------------------------------------------
+20. FINAL OUTPUT
+--------------------------------------------------
+
+When development is complete, DO NOT publish.
+
+Give me a concise final report containing only:
+
+1. What was completed
+2. What was tested
+3. Google Sheet setup steps
+4. Google Apps Script setup steps
+5. Required Replit Secrets
+6. Apps Script Web App URL configuration location
+7. How Owner connects their Google account
+8. How to import the 108 members
+9. Demo login credentials
+10. Any remaining limitation
+
+IMPORTANT:
+Do NOT ask me to buy anything.
+
+Do NOT publish.
+
+Do NOT upgrade.
+
+Do NOT consume the free publishing slot.
+
+Stop after the software is fully finished and tested, and wait for my approval before publishing.
+
+FINAL GOAL:
+
+A finished IRF Collection Software using:
+
+Existing Replit App
++
+Google Sheets
++
+Google Drive
++
+Google Apps Script
+
+with:
+Owner Dashboard
++
+Collector App
++
+Central Data
++
+Payment
++
+Due
++
+Receipt
++
+Settlement
++
+Audit
++
+Offline Sync
++
+Reports
++
+PWA
+
+without introducing any new paid service.
+
+DO NOT REMOVE EXISTING FEATURES.
+DO NOT PUBLISH.
+FINISH AND TEST THE SOFTWARE.
