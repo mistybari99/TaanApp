@@ -1,0 +1,806 @@
+FINAL MASTER UPDATE — ISLAMIYA REVOLVING FUND
+CYCLE + MEMBER + SHARE + COLLECTION + DRAW + SHARE TRANSFER SYSTEM
+
+IMPORTANT:
+The existing application is already working and has a cycle-based fund system.
+
+DO NOT rebuild the application from scratch.
+DO NOT redesign the UI.
+DO NOT change the existing technology stack unnecessarily.
+DO NOT delete genuine data.
+DO NOT create unnecessary features.
+DO NOT create Cycle #02 now.
+DO NOT import the real CSV yet.
+
+First inspect the existing implementation and database, then make only the minimum necessary changes to make the following system production-ready.
+
+==================================================
+1. PERMANENT MEMBER MASTER DATABASE
+==================================================
+
+Members must be permanent master records independent of any Fund Cycle.
+
+Each member must have:
+
+- Permanent Member ID
+- Name
+- Mobile Number
+- Status: Active / Inactive
+- Notes
+- Created date
+
+IMPORTANT:
+
+Member ID must be system-generated and permanent.
+
+Member ID must NOT be the mobile number.
+
+Mobile number must be stored as a separate editable field.
+
+Changing a member's:
+- name
+- mobile number
+- status
+
+must NOT change their Member ID or historical records.
+
+Never permanently delete a member who has historical financial/cycle records.
+
+==================================================
+2. CYCLE-BASED MEMBERSHIP
+==================================================
+
+Member Master List and Cycle Membership must remain separate.
+
+A member can participate in multiple cycles.
+
+Each cycle membership must independently store:
+
+- Cycle ID
+- Member ID
+- Shares
+- Daily contribution
+
+Shares are ALWAYS cycle-specific.
+
+Example:
+
+Member: শিমুল
+Member ID: IRF-0001
+
+Cycle #01:
+6 shares
+
+Cycle #02:
+3 shares
+
+Cycle #03:
+8 shares
+
+Changing shares in Cycle #02 must NEVER change Cycle #01.
+
+==================================================
+3. FUTURE CYCLE SYSTEM
+==================================================
+
+The owner must be able to create Cycle #02, #03, #04, etc. without any code/database changes.
+
+Only ONE cycle may be ACTIVE at a time.
+
+When creating a new cycle:
+
+1. Create new cycle
+2. Select existing members from the permanent Member Master List
+3. Add new members if necessary
+4. Assign shares individually
+5. Allow different share quantities from previous cycles
+6. Save
+7. Start collection
+
+CSV import is OPTIONAL and should only be a bulk-import convenience.
+
+CSV must NOT be required for every future cycle.
+
+A future cycle may have:
+
+- fewer members
+- more members
+- different members
+- different share counts
+- different total shares
+
+There must be NO hard-coded limit such as 108 members or 108 shares.
+
+==================================================
+4. CURRENT CYCLE #01
+==================================================
+
+Use the already-created cycle:
+
+ISLAMIYA Revolving Fund — Current Tan
+
+Cycle #01
+
+Start date:
+28/03/2026
+
+Contribution:
+৳100 per share per day
+
+Draw:
+Weekly Friday
+
+Status:
+ACTIVE
+
+There must NOT be a Cycle #02 created during this task.
+
+==================================================
+5. CURRENT CYCLE OPENING / TRACKING POINT
+==================================================
+
+The historical collection/payment records of this current Tan are NOT being migrated.
+
+Only the remaining/current period will be tracked digitally.
+
+Therefore the system must support a clear:
+
+TRACKING START / OPENING POINT
+
+Do NOT automatically calculate historical dues from 28/03/2026 to the current date.
+
+Old physical-book history is outside this digital migration.
+
+From the tracking start point onward:
+
+- Collection is recorded
+- Payment is recorded
+- Collector is recorded
+- Notes can be recorded
+- Current due is calculated
+- Friday Draw is recorded
+
+Do NOT import old payments or old dues.
+
+==================================================
+6. SHARE EDITING
+==================================================
+
+Owner must be able to edit a member's share quantity in an ACTIVE or NEW cycle.
+
+Example:
+
+শিমুল:
+6 shares → 5 shares
+
+or
+
+5 shares → 7 shares
+
+Daily contribution automatically becomes:
+
+Shares × ৳100
+
+IMPORTANT:
+
+Changing the share quantity must NOT alter historical completed-cycle records.
+
+Do not retroactively rewrite previously recorded financial transactions.
+
+==================================================
+7. SHARE TRANSFER — CRITICAL FEATURE
+==================================================
+
+The system MUST support flexible Share Transfer during an ACTIVE cycle.
+
+This is NOT a fixed-quantity transfer system.
+
+A member may transfer:
+
+- 1 share
+- 2 shares
+- 3 shares
+- any number of shares
+- the full number of shares
+
+as long as the quantity being transferred does not exceed the member's currently available transferable shares.
+
+==================================================
+8. FULL SHARE TRANSFER
+==================================================
+
+Example:
+
+শিমুল has 6 shares.
+
+He may transfer all 6 shares to another member.
+
+Result:
+
+শিমুল:
+6 → 0 shares
+
+Receiver:
+existing shares + 6
+
+The system must record the complete transfer history.
+
+==================================================
+9. PARTIAL SHARE TRANSFER
+==================================================
+
+Example:
+
+শিমুল has 6 shares.
+
+He may transfer:
+
+2 shares to রহিম
+
+Result:
+
+শিমুল:
+6 → 4
+
+রহিম:
+existing shares + 2
+
+Or:
+
+3 shares → another member
+
+Result:
+
+শিমুল:
+6 → 3
+
+Or:
+
+1 share → another member
+
+Result:
+
+শিমুল:
+6 → 5
+
+There must be NO fixed transfer quantity.
+
+==================================================
+10. MULTIPLE TRANSFERS
+==================================================
+
+A member may transfer shares multiple times during the same active cycle.
+
+Example:
+
+শিমুল = 6 shares
+
+Transfer #1:
+2 shares → রহিম
+
+Remaining:
+4 shares
+
+Transfer #2:
+1 share → করিম
+
+Remaining:
+3 shares
+
+Transfer #3:
+3 shares → সালাম
+
+Remaining:
+0 shares
+
+All transfers must remain permanently recorded.
+
+==================================================
+11. TRANSFER TO EXISTING OR NEW MEMBER
+==================================================
+
+A Share may be transferred:
+
+- to another existing participant of the same cycle
+- to an existing permanent member who was not previously participating in the cycle, if Owner chooses
+- to a newly added member
+
+If the receiver is a new person:
+
+Create a permanent Member record first, then add them to the active cycle.
+
+==================================================
+12. TRANSFERRED SHARE'S ACCUMULATED CONTRIBUTION
+==================================================
+
+This is CRITICAL.
+
+When a share is transferred during an active cycle, the accumulated contribution associated with the transferred share must follow the transferred share.
+
+The system must calculate the accumulated contribution attributable to the transferred quantity.
+
+Example:
+
+Member has 6 shares.
+
+2 shares are transferred.
+
+Those 2 shares have accumulated contributions up to the transfer date.
+
+The system must show:
+
+Transfer quantity:
+2 shares
+
+Accumulated contribution for transferred shares:
+৳XXXX
+
+Remaining shares:
+4
+
+Remaining accumulated contribution:
+৳XXXX
+
+The transferred shares must carry their appropriate accumulated contribution history to the receiver.
+
+Do NOT simply erase the original member's collection history.
+
+==================================================
+13. TRANSFER VALUE / SETTLEMENT
+==================================================
+
+Keep these two events separate:
+
+A. SHARE TRANSFER
+
+Who transferred how many shares to whom.
+
+B. TRANSFER SETTLEMENT
+
+How much money the receiver paid the previous holder for the accumulated contribution of those shares.
+
+Record separately:
+
+- Transfer ID
+- Cycle
+- Date/time
+- From member
+- To member
+- Share quantity
+- Accumulated contribution/value
+- Settlement amount
+- Settlement status
+- Approved by
+- Notes
+
+The Owner must be able to record the settlement amount separately.
+
+Do not assume the settlement amount is always identical to the accumulated contribution unless explicitly entered/confirmed by the Owner.
+
+==================================================
+14. TRANSFER HISTORY
+==================================================
+
+Create a simple Transfer History.
+
+Show:
+
+Date
+Cycle
+From Member
+To Member
+Shares
+Accumulated Value
+Settlement Amount
+Status
+
+Member history should also show:
+
+Outgoing transfers
+Incoming transfers
+
+==================================================
+15. SHARE BALANCE AFTER TRANSFER
+==================================================
+
+The system must always calculate the current effective share balance.
+
+Example:
+
+Original:
+6 shares
+
+Transfer:
+2 out
+
+Current:
+4 shares
+
+If later:
+1 incoming share
+
+Current:
+5 shares
+
+The system must never allow transfer quantity greater than the member's currently available shares.
+
+==================================================
+16. DRAW / WINNER RULE
+==================================================
+
+Friday Draw must remain cycle-based.
+
+Each draw stores:
+
+- Draw ID
+- Cycle ID
+- Draw number
+- Draw date
+- Winner Member ID
+- Winner name
+- Winning amount
+- Notes
+
+Draw history must remain permanent.
+
+==================================================
+17. WINNER TRANSFER RULE
+==================================================
+
+Normally, if a member has already received the Friday Draw/Tan payout, their shares should NOT be transferred through the normal transfer workflow.
+
+Therefore:
+
+If a member has already received a draw:
+
+- Normal Share Transfer should be blocked or restricted.
+- Show a clear warning.
+
+If an exceptional case is required:
+
+Provide an Owner-only SPECIAL / OVERRIDE TRANSFER option.
+
+Any override must require explicit confirmation and create an audit record.
+
+Do not automatically transfer a winner's shares.
+
+==================================================
+18. COLLECTION
+==================================================
+
+Every collection/payment must be linked to:
+
+- Cycle
+- Member
+- Date
+- Amount
+- Collector
+- Notes
+
+Support flexible payment.
+
+Example:
+
+3 days' contribution may be paid together as one ৳300 transaction.
+
+Do not force separate transactions for each day.
+
+Collector identity must always be recorded.
+
+==================================================
+19. COLLECTOR ACCOUNTABILITY
+==================================================
+
+Every payment must clearly identify:
+
+- Collector/staff
+- Collection date/time
+- Amount
+- Cycle
+- Member
+
+Maintain existing offline/idempotent behavior.
+
+Do not build an unnecessary HR system.
+
+==================================================
+20. MEMBER HISTORY
+==================================================
+
+Member profile should show:
+
+- Permanent Member ID
+- Name
+- Mobile
+- Status
+- Current cycle participation
+- Shares per cycle
+- Collection history
+- Payment history
+- Incoming transfers
+- Outgoing transfers
+- Friday Draw history
+
+Example:
+
+শিমুল
+IRF-0001
+Mobile: 01XXXXXXXXX
+
+Cycle #01:
+Started with 6 shares
+Transferred 2 shares to রহিম
+Remaining 4 shares
+
+Cycle #02:
+3 shares
+
+Previous cycle history must remain unchanged.
+
+==================================================
+21. CYCLE COMPLETION
+==================================================
+
+Cycle lifecycle:
+
+ACTIVE
+↓
+Final Friday Draw
+↓
+COMPLETED
+↓
+Create new cycle
+↓
+Select members
+↓
+Assign new shares
+↓
+Start new collection
+
+When a cycle becomes COMPLETED:
+
+- Freeze financial history
+- Freeze draw history
+- Preserve transfer history
+- Preserve member participation
+- Preserve share history
+- Preserve collector records
+
+Starting a new cycle must NOT carry old dues/payments automatically.
+
+==================================================
+22. DATA ISOLATION
+==================================================
+
+All financial and operational records must be scoped by Cycle ID:
+
+- Participants
+- Shares
+- Share transfers
+- Transfer settlements
+- Collections
+- Payments
+- Due
+- Collector records
+- Settlements
+- Draws
+- Winners
+- Reports/totals
+
+Cycle #01 and Cycle #02 must NEVER mix.
+
+==================================================
+23. CURRENT 31-MEMBER CSV
+==================================================
+
+The current 31-member CSV will be uploaded after this implementation is verified.
+
+CSV format:
+
+name,shares
+
+Do NOT import the CSV automatically during this task.
+
+The existing CSV import feature must support:
+
+- Preview
+- Name
+- Shares
+- Daily contribution
+- Total members
+- Total shares
+- Expected daily collection
+
+When eventually imported:
+
+- Match existing permanent members by Member ID if available.
+- If Member ID is unavailable, safely match by name/mobile where appropriate.
+- Avoid duplicate permanent member records.
+- Assign shares to Cycle #01 only.
+- Do not modify historical cycle shares.
+- Do not import old payment history.
+
+==================================================
+24. FUTURE CYCLE MEMBER SELECTION
+==================================================
+
+For future cycles, Owner should be able to select members directly from the permanent Member List.
+
+Example:
+
+Current Cycle:
+50 members / 108 shares
+
+Next Cycle:
+45 members / 120 shares
+
+Another Cycle:
+65 members / 95 shares
+
+All are valid.
+
+Some members may leave.
+Some members may join.
+Some members may change their share quantity.
+
+No CSV should be required for this normal workflow.
+
+==================================================
+25. AUDIT SAFETY
+==================================================
+
+Important financial actions should create audit records:
+
+- Cycle creation
+- Cycle completion
+- Share edit
+- Share transfer
+- Transfer settlement
+- Draw creation
+- Payment reversal
+- Other sensitive financial corrections
+
+Never silently modify financial history.
+
+==================================================
+26. UI REQUIREMENTS
+==================================================
+
+Keep the UI simple and consistent with the existing application.
+
+Suggested navigation:
+
+Dashboard
+Members
+Current Cycle
+Collection
+Share Transfers
+Friday Draw
+Draw History
+Member History
+Settings
+
+Do not create a huge dashboard.
+
+For Share Transfer, the workflow should be simple:
+
+Select Cycle
+→ Select From Member
+→ Show Current Shares
+→ Enter Transfer Quantity
+→ Select To Member
+→ Show Accumulated Value
+→ Enter/Confirm Settlement
+→ Owner Confirmation
+→ Save Transfer
+
+Before saving:
+
+Show a clear confirmation:
+
+From:
+Member A
+
+Shares:
+6
+
+Transfer:
+2 shares
+
+Remaining:
+4 shares
+
+To:
+Member B
+
+Accumulated Value:
+৳XXXX
+
+Settlement:
+৳XXXX
+
+Then require confirmation.
+
+==================================================
+27. DATA SAFETY
+==================================================
+
+Never:
+
+- delete genuine financial history
+- overwrite completed-cycle history
+- mix cycles
+- create duplicate payments
+- allow negative share balances
+- allow transfer greater than available shares
+- automatically transfer a winner
+- automatically carry old dues into a new cycle
+
+==================================================
+28. IMPLEMENTATION STRATEGY
+==================================================
+
+Before coding:
+
+1. Inspect existing database schema.
+2. Inspect existing Cycle implementation.
+3. Inspect Member implementation.
+4. Inspect Payment/Collection implementation.
+5. Inspect Draw implementation.
+6. Inspect current CSV import implementation.
+7. Reuse existing architecture.
+
+Only add what is missing.
+
+Do NOT rewrite working functionality unnecessarily.
+
+==================================================
+29. VERIFICATION
+==================================================
+
+After implementation verify:
+
+1. Permanent Member ID works.
+2. Mobile number is a separate field.
+3. Members can be Active/Inactive.
+4. Cycle membership is separate from Member Master.
+5. Shares are cycle-specific.
+6. Shares can be edited for an active/new cycle.
+7. Full share transfer works.
+8. Partial share transfer works.
+9. Multiple transfers work.
+10. Transfer quantity cannot exceed available shares.
+11. Accumulated contribution follows transferred shares correctly.
+12. Transfer settlement is separately recorded.
+13. Incoming/outgoing transfer history is visible.
+14. Winner transfer is restricted.
+15. Owner override exists for exceptional cases.
+16. Collection remains cycle-specific.
+17. Collector identity is recorded.
+18. Friday Draw remains cycle-specific.
+19. Member history shows all relevant records.
+20. Completed cycles remain frozen.
+21. New cycles can have different members and different total shares.
+22. CSV remains optional for future cycles.
+23. Only one cycle can be ACTIVE.
+24. No historical dues are automatically imported for Current Cycle #01.
+25. No Cycle #02 is created now.
+
+Run:
+
+- Frontend typecheck
+- API typecheck
+- Build
+- Relevant API tests
+- Database/schema validation
+- Browser verification
+
+FINAL INSTRUCTION:
+
+Do NOT import the real 31-member CSV yet.
+
+Do NOT create Cycle #02.
+
+First implement/verify the above system and report exactly what was already present versus what you changed.
+
+Then tell me where to upload the current 31-member CSV for preview.
