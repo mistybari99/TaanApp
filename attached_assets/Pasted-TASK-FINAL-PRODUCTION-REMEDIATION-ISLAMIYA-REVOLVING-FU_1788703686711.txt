@@ -1,0 +1,880 @@
+TASK: FINAL PRODUCTION REMEDIATION — ISLAMIYA REVOLVING FUND
+
+You are fixing the application after the A–Z Production-Readiness Audit dated 2026-09-06.
+
+The audit result was FAIL and real-money collection is BLOCKED until all Critical and High findings are remediated and verified.
+
+IMPORTANT:
+Do NOT import the real member CSV.
+Do NOT create Cycle #02.
+Do NOT create or modify genuine financial/member history.
+Do NOT start live collection.
+Do NOT publish/deploy a production money workflow as "ready" until the final re-audit passes.
+
+Cycle #01 must remain:
+- Name: ISLAMIYA Revolving Fund — Current Tan
+- Cycle number: #01
+- Start date: 28/03/2026
+- Contribution: ৳100 per share per day
+- Draw: Weekly on Friday
+- Status: ACTIVE
+- Tracking start: NULL unless temporarily used in clearly labeled synthetic testing
+
+==================================================
+1. DATABASE INTEGRITY & CYCLE ISOLATION
+==================================================
+
+Fix C1 and all related cycle-integrity weaknesses.
+
+Financial records must have valid cycle ownership.
+
+Review and safely migrate:
+- fund_payments
+- fund_settlements
+- fund_draws
+- share transfers
+- transfer settlements
+- other cycle-specific financial records
+
+Requirements:
+- Enforce proper foreign keys to fund_cycles where appropriate.
+- Prevent invalid cycle IDs.
+- Prevent orphan financial records.
+- Where cycle ownership is mandatory, do not allow NULL.
+- Enforce member/cycle ownership at the database level where financially relevant.
+- Use composite constraints/relationships where necessary so that a member referenced by a cycle-specific financial record actually belongs to that cycle.
+- Preserve existing genuine data.
+- Migration must be additive and safe.
+- Do NOT simply delete old records to satisfy constraints.
+
+Before migration, determine whether any existing records need safe backfill.
+If there are no genuine records, keep the database clean rather than inventing historical data.
+
+==================================================
+2. ATOMIC FINANCIAL TRANSACTIONS + AUDIT
+==================================================
+
+Fix C2.
+
+The following operations must be atomic database transactions:
+
+A. Payment posting
+B. Payment reversal
+C. Collector settlement
+D. Transfer settlement
+E. Draw recording
+F. Any other operation that changes financial state and creates an audit record
+
+A financial mutation and its corresponding audit record must succeed or fail together.
+
+Example:
+Payment POSTED + PAYMENT_POSTED audit
+must be inside the same transaction.
+
+Reversal must atomically:
+- validate original payment
+- mark original payment REVERSED
+- create exactly one compensating reversal record
+- create reversal audit record
+
+If any step fails:
+- rollback the entire operation.
+
+Never leave:
+- money state changed without audit
+- audit without corresponding financial state
+- reversed payment without reversal record
+- reversal record without valid original payment
+
+==================================================
+3. IDEMPOTENCY & CONCURRENCY
+==================================================
+
+Fix C3.
+
+Implement truly retry-safe financial operations.
+
+Payment:
+- client idempotency key must be unique
+- repeated request with same key must deterministically return the original payment
+- concurrent identical requests must not produce an error path that creates uncertainty
+- must never create duplicate financial records
+
+Collector settlement:
+- same requirements as payment
+
+Reversal:
+- add a unique constraint/index on reversed_payment_id where appropriate
+- concurrent reversal attempts must result in exactly one successful reversal
+- later retry must return the existing reversal rather than create another
+
+Draw:
+- add an appropriate idempotency key
+- prevent duplicate draw creation from double taps/retries
+- draw numbering must be concurrency-safe
+- do not use unsafe MAX(draw_number)+1 logic without transactional locking/sequence protection
+
+Test:
+- sequential retry
+- concurrent retry
+- network retry simulation
+- double-click simulation
+
+==================================================
+4. SHARE TRANSFER — BUSINESS RULE
+==================================================
+
+Preserve and strengthen the existing tested transfer logic.
+
+IMPORTANT BUSINESS RULE:
+
+A member can transfer:
+- all shares
+- part of their shares
+- any valid positive quantity up to currently available shares
+
+Example:
+A member has 6 shares.
+They may transfer:
+- 1
+- 2
+- 3
+- 4
+- 5
+- 6
+
+No fixed transfer quantity.
+
+Transfer must preserve:
+- source member remaining shares
+- receiver shares
+- accumulated value
+- transfer history
+- cycle membership
+- financial settlement records
+
+Receiver may:
+- already exist in the cycle
+- be a permanent member but not yet participating in this cycle
+- be a newly enrolled permanent member where the business workflow permits
+
+Transfer must not create negative shares.
+
+All transfer mutations must be transactional and concurrency-safe.
+
+==================================================
+5. TRANSFER ACCESS — CORRECT BUSINESS REQUIREMENT
+==================================================
+
+IMPORTANT CORRECTION TO AUDIT H1:
+
+Do NOT completely hide all transfer information from Collectors.
+
+Collectors need operational information to:
+- identify members
+- understand current share status where necessary
+- follow up on collection
+- answer basic member questions
+
+However, Collector must NOT receive unrestricted Owner-level transfer/audit information.
+
+Implement least-privilege access.
+
+Collector may see only information necessary for collection/member servicing.
+
+Owner may see:
+- complete transfer history
+- transfer financial details
+- settlements
+- Owner attribution
+- audit information
+- sensitive administrative details
+
+Collector must not be able to access unrestricted transfer API data merely because the frontend hides a page.
+
+Server-side authorization is mandatory.
+
+==================================================
+6. FRIDAY DRAW RULES
+==================================================
+
+Fix H2/H3.
+
+Business rule:
+- Draw happens weekly on Friday.
+- Friday is the configured Draw Day.
+- Draw date must be a Friday.
+- Future draw dates must be rejected.
+- Invalid draw status values must be rejected.
+- Winner must belong to the selected cycle at the time of draw.
+- Winner-cycle relationship must be protected at database/API level.
+- Prevent cross-cycle winner assignment.
+
+Draw numbering must be concurrency-safe.
+
+IMPORTANT:
+Friday Draw Day does NOT mean collection automatically closes on Friday.
+
+A member may still have outstanding dues after the draw.
+
+==================================================
+7. COLLECTION PERIOD VS DRAW — IMPORTANT BUSINESS LOGIC
+==================================================
+
+Treat these as separate concepts.
+
+Friday:
+- Draw takes place.
+- Collection status is reviewed.
+- Outstanding members are identified.
+- Collector follows up.
+
+Saturday:
+- New collection period begins after Friday's draw.
+
+However, previous unpaid amounts remain outstanding.
+
+Do NOT automatically erase, reset, or lose previous dues simply because a draw occurred.
+
+The system must support:
+
+Previous Due
++
+Current Period Due
+=
+Total Outstanding
+
+Example:
+
+Previous Due = ৳300
+Current Period Due = ৳700
+Total Outstanding = ৳1,000
+
+If member pays ৳500:
+Remaining outstanding = ৳500.
+
+Payments must remain historically attributable.
+
+Where appropriate, the system should record payment allocation between:
+- previous outstanding
+- current period obligation
+
+Do not silently rewrite historical collection records.
+
+==================================================
+8. LATE / PREVIOUS DUE ENTRY
+==================================================
+
+Provide a clear Owner/authorized workflow to record previously unpaid amounts.
+
+Requirements:
+- Previous dues can be carried forward.
+- Collector can see the amount needed for collection.
+- Owner can correct legitimate historical/late entries with audit.
+- Late payment must not be confused with a new member's current-period obligation.
+- Previous due must survive Friday Draw.
+- Previous due must survive transition into the next collection period.
+- Payment history must show date, amount, member, cycle/period, collector, receipt, and allocation where available.
+
+Do not import historical paper-book dues now unless explicitly instructed later.
+
+The feature must exist, but the current database must remain clean.
+
+==================================================
+9. SHARE CHANGES DURING AN ACTIVE CYCLE
+==================================================
+
+Fix H4.
+
+Business rule:
+A member's shares may change during a running Tan.
+
+Examples:
+- Member has 6 shares and reduces to 4.
+- 2 shares are transferred to another person.
+- A member may receive transferred shares.
+- A member may partially or fully transfer available shares.
+
+CRITICAL ACCOUNTING RULE:
+
+Past collected amounts must NEVER be recalculated simply because current shares changed.
+
+Example:
+Member had 6 shares for previous days and paid according to 6 shares.
+Later becomes 4 shares.
+
+The system must preserve:
+- historical shares
+- historical payment amount
+- historical collection date
+- historical obligation
+
+Future due must use the new effective share quantity.
+
+Implement an explicit effective-date/effective-period rule.
+
+Every share change must record:
+- old shares
+- new shares
+- effective date
+- reason
+- actor
+- related transfer if applicable
+- audit record
+
+Do not silently overwrite historical share state.
+
+==================================================
+10. PERMANENT MEMBER MASTER VS CYCLE MEMBERSHIP
+==================================================
+
+Maintain a clear separation.
+
+Permanent Member Master:
+- Member ID
+- Name
+- Mobile Number
+- Business Name
+- NID
+- Note
+- Active/Inactive
+- permanent profile/history
+
+Cycle Membership:
+- cycle
+- shares for that cycle
+- effective share history
+- cycle-specific participation
+- cycle balances
+- cycle payments
+- cycle transfers
+- cycle draw participation
+
+IMPORTANT:
+Shares are NOT permanently fixed at the Member Master level.
+
+A member can have:
+- 6 shares in Cycle #01
+- 4 shares in Cycle #02
+- 8 shares in Cycle #03
+
+The UI must clearly label:
+- "Member Master"
+- "Selected Cycle Shares"
+
+Do not let global legacy shares/daily_amount fields confuse collection staff.
+
+==================================================
+11. MEMBER MASTER FIELDS
+==================================================
+
+Add/maintain these fields:
+
+Member ID — required and permanent
+Name — required
+Mobile Number
+Business Name
+NID
+Note
+Active/Inactive
+
+For EXISTING/LEGACY members:
+- Mobile Number may currently be blank.
+- Owner/authorized staff must be able to add/update it later.
+
+For ALL NEW members created from now onward:
+- Mobile Number is REQUIRED.
+- Do not allow new member creation without a mobile number.
+
+Adding a mobile number to an existing member must:
+- not change Member ID
+- not alter history
+- not alter cycle participation
+- not alter payments
+- not alter transfers
+- not alter draws
+
+NID:
+- optional
+- sensitive
+- do not expose unnecessarily to Collectors
+- mask where appropriate
+
+Business Name:
+- optional
+
+Note:
+- optional
+
+==================================================
+12. CSV IMPORT SAFETY
+==================================================
+
+Fix M1/M2.
+
+CSV import must:
+- require an active selected cycle
+- preview before commit
+- require explicit confirmation
+- use preview token
+- remain transactional
+- never import historical payments automatically
+- never create a new cycle
+- never overwrite permanent member history incorrectly
+
+IMPORTANT:
+If matching by name/mobile results in more than one possible member:
+- DO NOT silently choose the first match.
+- Mark the row as AMBIGUOUS.
+- Require Owner resolution.
+
+Preview must clearly show:
+- New member
+- Existing member matched
+- Ambiguous match
+- Invalid row
+- Cycle shares
+- Expected daily collection
+
+Confirmation text must dynamically show the selected cycle name/number.
+
+Do NOT hardcode "Cycle #01".
+
+==================================================
+13. COLLECTOR COLLECTION WORKFLOW
+==================================================
+
+Collector is an operational collection user.
+
+Collector needs to see enough information to perform the job.
+
+Collection screen should show:
+
+- Member Name
+- Member ID
+- Mobile
+- Business Name if useful
+- Current Cycle Shares
+- Previous Due
+- Current Period Due
+- Total Outstanding
+- Last Payment
+- Collection Status
+- payment/receipt information necessary for collection
+
+Collector should be able to:
+- collect payment
+- record flexible amount
+- add collection note where permitted
+- see unpaid/partial members
+- follow up with members
+- update missing mobile number only if authorized by policy
+
+Collector must NOT see:
+- unnecessary NID data
+- Owner-only audit information
+- unrestricted administrative financial information
+
+All permissions must be server-side.
+
+==================================================
+14. RED FRIDAY COLLECTION ALERT
+==================================================
+
+Add a prominent operational reminder on collection pages.
+
+Bangla + English mixed language.
+
+Example:
+
+🔴 জরুরি Collection Alert
+
+"Friday is Draw Day — সব pending collection অবশ্যই follow-up করতে হবে."
+
+"আজ যাদের Due / Partial / Unpaid আছে, তাদের Reminder দিন এবং possible হলে Draw-এর আগে collection complete করুন."
+
+On Friday, make it more prominent:
+
+🔴 TODAY IS DRAW DAY
+সব Pending / Due Member-এর Collection Status অবশ্যই Review করুন।
+
+The alert is an operational accountability reminder.
+
+IMPORTANT:
+Do NOT make Friday an artificial hard payment deadline.
+
+Members may still pay after Friday.
+Previous Due must carry forward.
+
+This alert must NOT block legitimate late collection.
+
+==================================================
+15. DASHBOARD RECONCILIATION
+==================================================
+
+Improve dashboard.
+
+For the selected active cycle show, where applicable:
+
+- Total Members
+- Total Shares
+- Expected Current Collection
+- Previous Outstanding
+- Current Period Due
+- Total Outstanding
+- Posted Collection
+- Reversed Amount
+- Transfer totals where relevant
+- Draw status
+- Latest draw
+- Pending/partial members
+
+Clearly distinguish:
+- current-cycle values
+- historical values
+- permanent-member values
+
+Dashboard totals must reconcile with raw/database totals.
+
+==================================================
+16. SETTLEMENTS
+==================================================
+
+Collector settlement input must be strictly validated.
+
+API must reject:
+- non-numeric amounts
+- invalid amount formats
+- negative values
+- impossible values
+
+Return controlled HTTP 400 validation responses instead of database/server errors.
+
+Settlement + audit must be atomic.
+
+Transfer settlement must remain separate from accumulated value.
+
+Do not assume:
+accumulated value == settlement amount.
+
+An explicit settlement amount must remain explicit.
+
+==================================================
+17. TRANSFER SETTLEMENT / CANCELLATION
+==================================================
+
+Review transfer settlement workflow.
+
+If settlement is required operationally:
+- provide clear Owner workflow
+- maintain separate settlement record
+- preserve transfer history
+- prevent duplicate settlement
+
+If cancellation/reversal is supported:
+- make it explicit
+- require Owner authorization
+- preserve original history
+- create compensating records rather than deleting history
+
+Do NOT silently delete completed transfers.
+
+==================================================
+18. OFFLINE / MOBILE COLLECTION
+==================================================
+
+Preserve existing offline support for:
+- PAYMENT
+- SETTLEMENT
+
+But clearly label unsupported offline actions.
+
+Transfers, reversals, draws, cycle changes, member changes, and CSV import may remain online-only unless a complete safe offline design is implemented.
+
+Offline payments must have proper reconciliation:
+- temporary OFF-* reference
+- server receipt after sync
+- visible sync/reconciliation status
+- failed sync status
+- retry capability
+
+Do not make the user believe an offline transaction is permanently posted before server confirmation.
+
+==================================================
+19. AUDIT TRAIL
+==================================================
+
+Audit must capture meaningful before/after information for important mutations.
+
+For:
+- share changes
+- transfers
+- reversals
+- cycle updates
+- settings changes
+- member status changes
+- financial corrections
+
+Capture, where applicable:
+- actor
+- action
+- timestamp
+- entity
+- cycle
+- before values
+- after values
+- reason
+- related transaction ID
+
+Financial audit records must be created atomically with financial changes.
+
+==================================================
+20. SECURITY & AUTHORIZATION
+==================================================
+
+Review every financial and administrative API endpoint.
+
+Do not rely on frontend navigation hiding.
+
+Test:
+- unauthenticated access
+- Collector access
+- Owner access
+- unauthorized direct API requests
+- cross-cycle access
+- sensitive member information access
+- transfer access
+- draw access
+- CSV import access
+- reversal access
+- settlement access
+
+Collector should only have operational permissions.
+
+Owner has full administrative permissions.
+
+NID must be protected.
+
+==================================================
+21. AUTOMATED REGRESSION TEST SUITE
+==================================================
+
+This is mandatory before release.
+
+Create automated tests outside dependencies.
+
+At minimum cover:
+
+A. Cycle isolation
+B. Payment posting
+C. Payment duplicate retry
+D. Concurrent payment retry
+E. Payment reversal
+F. Concurrent reversal
+G. Settlement
+H. Concurrent settlement retry
+I. Draw creation
+J. Draw duplicate retry
+K. Friday validation
+L. Future-date rejection
+M. Winner cycle membership
+N. Partial share transfer
+O. Full share transfer
+P. Receiver enrollment
+Q. Transfer concurrency
+R. Transfer settlement
+S. Share change effective date
+T. Previous due carry-forward
+U. Current due calculation
+V. Payment allocation
+W. CSV existing-member matching
+X. CSV ambiguous matching
+Y. CSV transaction rollback
+Z. Collector authorization
+AA. Owner authorization
+AB. NID visibility restrictions
+AC. Audit atomicity
+AD. Cleanup invariant
+
+Run these against a fresh synthetic/test database.
+
+Do not use real member data.
+
+==================================================
+22. SYNTHETIC TEST DATA POLICY
+==================================================
+
+Synthetic records may be created only for testing.
+
+Use unmistakable identifiers such as:
+AUDIT-SYNTH-...
+
+After tests:
+- cleanup must happen inside a database transaction
+- remove all synthetic financial records
+- remove synthetic members/users if created only for testing
+- remove synthetic sessions
+- remove synthetic audit rows attributable to synthetic fixtures
+- restore Cycle #01 tracking start to NULL
+- ensure Cycle #02 does not exist
+
+Final database invariant must show:
+
+Cycle #01 ACTIVE = 1
+Cycle #02 = 0
+Permanent real members = 0
+Cycle memberships = 0
+Payments = 0
+Posted payments = 0
+Settlements = 0
+Draws = 0
+Transfers = 0
+Transfer settlements = 0
+Synthetic test records = 0
+Cycle #01 tracking start = NULL
+
+Do not delete genuine application Owner/Collector accounts merely for cleanup.
+
+==================================================
+23. UI LANGUAGE
+==================================================
+
+The application should use Bangla + English mixed terminology.
+
+Do not force full Bengali translation.
+
+Use clear operational labels such as:
+
+- সদস্য — Member
+- মেম্বার আইডি — Member ID
+- মোবাইল — Mobile
+- ব্যবসার নাম — Business Name
+- NID
+- শেয়ার — Shares
+- আগের বকেয়া — Previous Due
+- বর্তমান বকেয়া — Current Due
+- মোট বকেয়া — Total Outstanding
+- আজকের কালেকশন — Today’s Collection
+- Payment History
+- Share Transfer
+- Draw History
+- Reminder
+- Due
+- Partial
+- Paid
+- Save
+- Cancel
+- Update Mobile
+
+Use simple language suitable for staff.
+
+==================================================
+24. DATABASE / API / FRONTEND CONSISTENCY
+==================================================
+
+After changes:
+- update schema
+- update migrations
+- update API contracts
+- regenerate clients where required
+- update frontend types
+- ensure no stale global share logic remains where cycle-specific logic is required
+
+Do not break existing functionality.
+
+Do not rewrite the application unnecessarily.
+
+Prefer small, additive, production-safe changes.
+
+==================================================
+25. FINAL VERIFICATION REQUIREMENTS
+==================================================
+
+After implementation, perform:
+
+1. API typecheck
+2. Frontend typecheck
+3. Full workspace typecheck
+4. Full build
+5. Database migration verification
+6. Automated regression suite
+7. API smoke tests
+8. Permission tests
+9. Financial accounting tests
+10. Cycle isolation tests
+11. Concurrency/idempotency tests
+12. Authenticated browser verification
+13. Collector workflow verification
+14. Owner workflow verification
+15. CSV dry-run verification using synthetic data only
+16. Synthetic cleanup
+17. Final database invariant verification
+
+Do not report PASS merely because build/typecheck passes.
+
+==================================================
+26. FINAL AUDIT REPORT
+==================================================
+
+Produce a structured final report:
+
+- PASS
+- PASS WITH WARNINGS
+- FAIL
+
+For every finding:
+- severity
+- issue
+- evidence
+- fix
+- test performed
+- result
+
+Separate:
+- RELEASE BLOCKER
+- HIGH
+- MEDIUM
+- LOW
+- OPTIONAL FUTURE IMPROVEMENT
+
+Release recommendation must be explicit.
+
+REAL CSV IMPORT MUST REMAIN BLOCKED unless:
+- all Critical issues pass
+- all High issues pass
+- automated regression tests pass
+- financial invariants pass
+- authorization tests pass
+- synthetic cleanup passes
+- final database invariant passes
+
+==================================================
+27. FINAL PRODUCTION SAFETY RULE
+==================================================
+
+Do not import the real current member CSV during this task.
+
+Do not create Cycle #02.
+
+Do not start live collection.
+
+Do not alter genuine historical financial data.
+
+The only acceptable end state after this remediation is:
+
+A technically verified application,
+with correct Tan business/accounting logic,
+safe cycle isolation,
+safe payments,
+safe reversals,
+safe settlements,
+safe transfers,
+safe draws,
+proper previous-due carry-forward,
+proper share-change handling,
+proper Collector permissions,
+Bangla/English operational UI,
+automated regression coverage,
+and a clean Cycle #01 database ready for later real CSV import.
+
+When complete, clearly state whether the application is SAFE or NOT SAFE for real-money CSV import.
