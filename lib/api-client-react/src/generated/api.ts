@@ -21,6 +21,8 @@ import type {
 
 import type {
   AuditEntry,
+  BatchDueEntryInput,
+  BatchDueEntryResult,
   CollectorInput,
   CollectorUpdate,
   CycleMember,
@@ -1109,6 +1111,71 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getCreateDueEntryMutationOptions(options));
+    }
+
+export const getCreateDueEntriesUrl = () => {
+
+
+
+
+  return `/api/due-entries/batch`
+}
+
+export const createDueEntries = async (batchDueEntryInput: BatchDueEntryInput, options?: Parameters<typeof customFetch>[1]): Promise<BatchDueEntryResult> => {
+
+  return customFetch<BatchDueEntryResult>(getCreateDueEntriesUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(batchDueEntryInput)
+  }
+);}
+
+
+
+
+
+export const getCreateDueEntriesMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDueEntries>>, TError,{data: BodyType<BatchDueEntryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createDueEntries>>, TError,{data: BodyType<BatchDueEntryInput>}, TContext> => {
+
+const mutationKey = ['createDueEntries'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createDueEntries>>, {data: BodyType<BatchDueEntryInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createDueEntries(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateDueEntriesMutationResult = NonNullable<Awaited<ReturnType<typeof createDueEntries>>>
+    export type CreateDueEntriesMutationBody = BodyType<BatchDueEntryInput>
+    export type CreateDueEntriesMutationError = ErrorType<unknown>
+
+    export const useCreateDueEntries = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDueEntries>>, TError,{data: BodyType<BatchDueEntryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createDueEntries>>,
+        TError,
+        {data: BodyType<BatchDueEntryInput>},
+        TContext
+      > => {
+      return useMutation(getCreateDueEntriesMutationOptions(options));
     }
 
 export const getPreviewShareTransferUrl = (params: PreviewShareTransferParams,) => {

@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { getGetDashboardQueryKey, getListCycleMembersQueryKey, getListMembersQueryKey, useListMembers, useCreateMember, useCreateDueEntry, useImportMembers, useListCycles, useUpdateMember, useGetCurrentUser } from "@workspace/api-client-react"
+import { getGetDashboardQueryKey, getListCycleMembersQueryKey, getListMembersQueryKey, useListMembers, useCreateMember, useCreateDueEntries, useImportMembers, useListCycles, useUpdateMember, useGetCurrentUser } from "@workspace/api-client-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 import { formatCurrency } from "@/lib/utils"
-import { Search, UserPlus, Upload, Download, AlertTriangle, WalletCards, Pencil } from "lucide-react"
+import { Search, UserPlus, Upload, Download, AlertTriangle, WalletCards, Pencil, Check, X } from "lucide-react"
 import { downloadCsvTemplate, parseCsv } from "@/lib/csv"
 import { Link } from "wouter"
 
@@ -23,7 +23,7 @@ export default function MembersPage() {
   const { data: cycles } = useListCycles()
   const { data: user } = useGetCurrentUser()
   const createMember = useCreateMember()
-  const createDueEntry = useCreateDueEntry()
+  const createDueEntries = useCreateDueEntries()
   const importMembers = useImportMembers()
   const updateMember = useUpdateMember()
   const queryClient = useQueryClient()
@@ -51,13 +51,24 @@ export default function MembersPage() {
   const [isDueConfirmationOpen, setIsDueConfirmationOpen] = useState(false)
   const [dueEntry, setDueEntry] = useState({
     cycleId: "",
-    memberId: "",
+    memberIds: [] as number[],
     amount: "",
     reason: "",
     dueDate: new Date().toISOString().slice(0, 10),
   })
+  const [dueMemberSearch, setDueMemberSearch] = useState("")
   const selectedDueCycle = activeCycles.find((cycle) => cycle.id === Number(dueEntry.cycleId))
-  const selectedDueMember = members?.find((member) => member.id === Number(dueEntry.memberId))
+  const selectedDueMembers = useMemo(
+    () => (allMembers ?? []).filter((member) => dueEntry.memberIds.includes(member.id)),
+    [allMembers, dueEntry.memberIds],
+  )
+  const filteredDueMembers = useMemo(() => {
+    const term = dueMemberSearch.trim().toLowerCase()
+    if (!term) return allMembers ?? []
+    return (allMembers ?? []).filter((member) =>
+      `${member.memberId} ${member.name} ${member.mobile ?? ""}`.toLowerCase().includes(term),
+    )
+  }, [allMembers, dueMemberSearch])
 
   useEffect(() => {
     if (!importCycleId) {
@@ -119,11 +130,12 @@ export default function MembersPage() {
     const activeCycle = activeCycles[0]
     setDueEntry({
       cycleId: activeCycle ? String(activeCycle.id) : "",
-      memberId: "",
+      memberIds: [],
       amount: "",
       reason: "",
       dueDate: new Date().toISOString().slice(0, 10),
     })
+    setDueMemberSearch("")
     setIsDueConfirmationOpen(false)
   }
 
@@ -134,8 +146,8 @@ export default function MembersPage() {
 
   const reviewDueEntry = () => {
     const amount = Number(dueEntry.amount)
-    if (!dueEntry.cycleId || !dueEntry.memberId) {
-      toast.error("সদস্য ও active cycle নির্বাচন করুন (Select member and cycle)")
+    if (!dueEntry.cycleId || dueEntry.memberIds.length === 0) {
+      toast.error("কমপক্ষে একজন সদস্য ও active cycle নির্বাচন করুন (Select at least one member and cycle)")
       return
     }
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -151,12 +163,11 @@ export default function MembersPage() {
 
   const saveDueEntry = () => {
     const cycleId = Number(dueEntry.cycleId)
-    const memberId = Number(dueEntry.memberId)
     const amount = Number(dueEntry.amount)
-    createDueEntry.mutate({
+    createDueEntries.mutate({
       data: {
         cycleId,
-        memberId,
+        memberIds: dueEntry.memberIds,
         amount,
         dueDate: dueEntry.dueDate,
         reason: dueEntry.reason.trim(),
@@ -164,7 +175,7 @@ export default function MembersPage() {
       },
     }, {
       onSuccess: () => {
-        toast.success("আগের বকেয়া সংরক্ষণ করা হয়েছে (Previous Due saved)")
+        toast.success(`${dueEntry.memberIds.length} জন সদস্যের Previous Due সংরক্ষণ করা হয়েছে`)
         queryClient.invalidateQueries({ queryKey: getListMembersQueryKey() })
         queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() })
         queryClient.invalidateQueries({ queryKey: getListCycleMembersQueryKey(cycleId) })
@@ -172,9 +183,25 @@ export default function MembersPage() {
         resetDueEntry()
       },
       onError: (error: any) => {
-        toast.error(error?.message || "আগের বকেয়া সংরক্ষণ করা যায়নি (Could not save due)")
+        toast.error(error?.message || "কোনো Previous Due সংরক্ষণ করা হয়নি (No due entries were saved)")
       },
     })
+  }
+
+  const toggleDueMember = (memberId: number) => {
+    setDueEntry((current) => ({
+      ...current,
+      memberIds: current.memberIds.includes(memberId)
+        ? current.memberIds.filter((id) => id !== memberId)
+        : [...current.memberIds, memberId],
+    }))
+  }
+
+  const selectAllDueMembers = () => {
+    setDueEntry((current) => ({
+      ...current,
+      memberIds: Array.from(new Set((allMembers ?? []).filter((member) => member.status === "active").map((member) => member.id))),
+    }))
   }
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -384,18 +411,71 @@ export default function MembersPage() {
                     {activeCycles.length === 0 && <p className="text-xs text-destructive">কোনো active cycle পাওয়া যায়নি।</p>}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="dueMember">সদস্য (Member)</Label>
-                    <select
-                      id="dueMember"
-                      className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-                      value={dueEntry.memberId}
-                      onChange={(event) => setDueEntry({ ...dueEntry, memberId: event.target.value })}
-                    >
-                      <option value="">সদস্য নির্বাচন করুন</option>
-                      {members?.map((member) => (
-                        <option key={member.id} value={member.id}>{member.name} · {member.memberId}</option>
-                      ))}
-                    </select>
+                    <div className="flex items-center justify-between gap-3">
+                      <Label htmlFor="dueMemberSearch">সদস্য (Member)</Label>
+                      <span className="text-xs text-muted-foreground">{dueEntry.memberIds.length} selected</span>
+                    </div>
+                    {selectedDueMembers.length > 0 && (
+                      <div className="flex flex-wrap gap-2 rounded-md border bg-muted/30 p-2">
+                        {selectedDueMembers.map((member) => (
+                          <span key={member.id} className="inline-flex items-center gap-1 rounded-full border bg-background px-2.5 py-1 text-xs">
+                            <span className="font-medium">{member.memberId}</span>
+                            <span className="max-w-[160px] truncate">{member.name}</span>
+                            <button
+                              type="button"
+                              aria-label={`${member.memberId} remove`}
+                              className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                              onClick={() => toggleDueMember(member.id)}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="dueMemberSearch"
+                        value={dueMemberSearch}
+                        onChange={(event) => setDueMemberSearch(event.target.value)}
+                        placeholder="Member ID, নাম বা Mobile দিয়ে খুঁজুন"
+                        className="pl-9"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-muted-foreground">Bangla name original form-এ থাকবে · Search: ID / Name / Mobile</p>
+                      <div className="flex shrink-0 gap-2">
+                        <Button type="button" size="sm" variant="outline" onClick={selectAllDueMembers}>Select All</Button>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => setDueEntry((current) => ({ ...current, memberIds: [] }))} disabled={dueEntry.memberIds.length === 0}>Clear All</Button>
+                      </div>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto rounded-md border">
+                      {filteredDueMembers.filter((member) => member.status === "active").map((member) => {
+                        const selected = dueEntry.memberIds.includes(member.id)
+                        return (
+                          <button
+                            type="button"
+                            key={member.id}
+                            aria-pressed={selected}
+                            onClick={() => toggleDueMember(member.id)}
+                            className={`flex w-full items-center gap-3 border-b p-2.5 text-left last:border-b-0 ${selected ? "bg-primary/5" : "hover:bg-muted/50"}`}
+                          >
+                            <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${selected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40"}`}>
+                              {selected && <Check className="h-3.5 w-3.5" />}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium">{member.name}</span>
+                              <span className="block truncate text-xs text-muted-foreground">{member.memberId}{member.mobile ? ` · ${member.mobile}` : ""}</span>
+                            </span>
+                            {selected && <span className="text-xs font-medium text-primary">Selected</span>}
+                          </button>
+                        )
+                      })}
+                      {filteredDueMembers.filter((member) => member.status === "active").length === 0 && (
+                        <p className="p-4 text-center text-sm text-muted-foreground">কোনো active member পাওয়া যায়নি</p>
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="dueAmount">Amount (৳)</Label>
@@ -426,7 +506,7 @@ export default function MembersPage() {
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setIsDueEntryOpen(false)}>Cancel</Button>
-                  <Button onClick={reviewDueEntry} disabled={createDueEntry.isPending || activeCycles.length === 0}>
+                  <Button onClick={reviewDueEntry} disabled={createDueEntries.isPending || activeCycles.length === 0}>
                     Review Due
                   </Button>
                 </DialogFooter>
@@ -436,17 +516,29 @@ export default function MembersPage() {
 
           {user?.role === "OWNER" && (
             <Dialog open={isDueConfirmationOpen} onOpenChange={setIsDueConfirmationOpen}>
-              <DialogContent className="sm:max-w-[450px]">
+              <DialogContent className="sm:max-w-[500px]">
                 <DialogHeader>
                   <DialogTitle>নিশ্চিত করুন (Confirm Due Entry)</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-3 py-4">
-                  <div className="rounded-lg bg-muted/50 p-4 space-y-2 text-sm">
-                    <div className="flex justify-between gap-4"><span className="text-muted-foreground">Member</span><span className="font-semibold text-right">{selectedDueMember?.name} · {selectedDueMember?.memberId}</span></div>
+                    <div className="rounded-lg bg-muted/50 p-4 space-y-2 text-sm">
+                      <div className="flex justify-between gap-4"><span className="text-muted-foreground">Members</span><span className="font-semibold text-right">{selectedDueMembers.length} selected</span></div>
                     <div className="flex justify-between gap-4"><span className="text-muted-foreground">Cycle / Period</span><span className="font-semibold text-right">{selectedDueCycle?.name}</span></div>
-                    <div className="flex justify-between gap-4"><span className="text-muted-foreground">Amount</span><span className="font-semibold text-primary">{formatCurrency(Number(dueEntry.amount))}</span></div>
+                      <div className="flex justify-between gap-4"><span className="text-muted-foreground">Amount per member</span><span className="font-semibold text-primary">{formatCurrency(Number(dueEntry.amount))}</span></div>
+                      <div className="flex justify-between gap-4"><span className="text-muted-foreground">Total batch amount</span><span className="font-semibold text-primary">{formatCurrency(Number(dueEntry.amount) * selectedDueMembers.length)}</span></div>
                     <div className="flex justify-between gap-4"><span className="text-muted-foreground">Date</span><span className="font-semibold">{dueEntry.dueDate}</span></div>
                   </div>
+                    <div className="max-h-36 overflow-y-auto rounded-lg border p-3 text-sm">
+                      <p className="mb-2 text-muted-foreground">Selected members</p>
+                      <div className="space-y-1">
+                        {selectedDueMembers.map((member) => (
+                          <div key={member.id} className="flex items-center justify-between gap-3">
+                            <span className="truncate">{member.name}</span>
+                            <span className="shrink-0 font-mono text-xs text-muted-foreground">{member.memberId}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   <div className="rounded-lg border p-3 text-sm">
                     <p className="text-muted-foreground">Reason / Note</p>
                     <p className="mt-1 font-medium whitespace-pre-wrap">{dueEntry.reason.trim()}</p>
@@ -457,8 +549,8 @@ export default function MembersPage() {
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setIsDueConfirmationOpen(false)}>Cancel</Button>
-                  <Button onClick={saveDueEntry} disabled={createDueEntry.isPending}>
-                    {createDueEntry.isPending ? "Saving..." : "Save Due"}
+                  <Button onClick={saveDueEntry} disabled={createDueEntries.isPending}>
+                    {createDueEntries.isPending ? "Saving..." : "Confirm & Save Due"}
                   </Button>
                 </DialogFooter>
               </DialogContent>

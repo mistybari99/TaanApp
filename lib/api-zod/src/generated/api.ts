@@ -394,6 +394,38 @@ export const CreateDueEntryResponse = zod.void()
 
 
 
+export const createDueEntriesBodyAmountExclusiveMin = 0;
+
+
+export const createDueEntriesBodyIdempotencyKeyMin = 8;
+
+
+
+export const CreateDueEntriesBody = zod.object({
+  "cycleId": zod.number().int(),
+  "memberIds": zod.array(zod.number().int().min(1)).min(1),
+  "amount": zod.number().gt(createDueEntriesBodyAmountExclusiveMin),
+  "dueDate": zod.string(),
+  "reason": zod.string().min(1),
+  "idempotencyKey": zod.string().min(createDueEntriesBodyIdempotencyKeyMin).optional()
+})
+
+export const CreateDueEntriesResponse = zod.object({
+  "count": zod.number().int(),
+  "entries": zod.array(zod.object({
+  "id": zod.number().int(),
+  "cycleId": zod.number().int(),
+  "memberId": zod.number().int(),
+  "amount": zod.number(),
+  "dueDate": zod.string(),
+  "reason": zod.string(),
+  "createdAt": zod.string()
+}))
+})
+
+
+
+
 
 export const PreviewShareTransferQueryParams = zod.object({
   "cycleId": zod.coerce.number().int(),

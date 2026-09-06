@@ -1060,6 +1060,107 @@ router.post("/cycles/:id/members", requireAuth, ownerOnly, async (req: AuthedReq
   }
 });
 
+router.post("/due-entries/batch", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const cycleId = Number(req.body.cycleId);
+  const rawMemberIds = Array.isArray(req.body.memberIds) ? req.body.memberIds : [];
+  const memberIds = rawMemberIds.map((value: unknown) => Number(value));
+  const amount = Number(req.body.amount);
+  const dueDate = isIsoDate(req.body.dueDate) ? String(req.body.dueDate) : todayIso();
+  const reason = String(req.body.reason ?? "").trim();
+  const idempotencyKey = String(req.body.idempotencyKey ?? "").trim() || null;
+  const uniqueMemberIds = new Set(memberIds);
+  if (
+    !cycleId ||
+    memberIds.length === 0 ||
+    memberIds.some((memberId: number) => !Number.isInteger(memberId) || memberId < 1) ||
+    uniqueMemberIds.size !== memberIds.length ||
+    !Number.isFinite(amount) ||
+    amount <= 0 ||
+    dueDate > todayIso() ||
+    !reason
+  ) {
+    return res.status(400).json({ error: "Cycle, unique members, positive amount, non-future due date, and reason are required" });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const tan = await tanConfigForCycle(client, cycleId, true);
+    let tanPeriodId: number | null = null;
+    if (tan) {
+      const tanPeriod = await tanPeriodForDate(client, cycleId, dueDate, true);
+      if (!tanPeriod || !tanPeriodIsLive(tanPeriod, dueDate) || !(await tanPreviousPeriodsComplete(client, tanPeriod))) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "Previous due entries can only be recorded during the currently open TAN period" });
+      }
+      tanPeriodId = tanPeriod.periodId;
+    }
+    if (idempotencyKey) {
+      await transactionLock(client, `due-entry-batch:${cycleId}:${idempotencyKey}`);
+      const replay = await client.query(
+        `SELECT id,cycle_id AS "cycleId",member_id AS "memberId",amount::float,due_date::text AS "dueDate",reason,created_at AS "createdAt"
+         FROM fund_due_entries WHERE cycle_id=$1 AND idempotency_key=$2 ORDER BY id`,
+        [cycleId, idempotencyKey],
+      );
+      if (replay.rows.length > 0) {
+        const replayMemberIds = replay.rows.map((row) => Number(row.memberId));
+        const sameMembers = replayMemberIds.length === memberIds.length && replayMemberIds.every((memberId) => uniqueMemberIds.has(memberId));
+        const sameValues = replay.rows.every((row) =>
+          sameMoney(row.amount, amount) && String(row.dueDate) === dueDate && String(row.reason) === reason);
+        if (!sameMembers || !sameValues) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ error: "This batch idempotency key was already used for different due entries" });
+        }
+        await client.query("COMMIT");
+        return res.status(200).json({ count: replay.rows.length, entries: replay.rows });
+      }
+    }
+    const membership = await client.query(
+      `SELECT cm.member_id AS "memberId"
+       FROM fund_cycle_members cm
+       JOIN fund_cycles c ON c.id=cm.cycle_id
+       WHERE cm.cycle_id=$1 AND cm.member_id=ANY($2::int[]) AND c.status='ACTIVE'`,
+      [cycleId, memberIds],
+    );
+    const enrolled = new Set(membership.rows.map((row) => Number(row.memberId)));
+    if (enrolled.size !== memberIds.length) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Every selected member must be enrolled in the active cycle" });
+    }
+    const entries: any[] = [];
+    for (const memberId of memberIds) {
+      const dueBefore = await client.query(
+        `SELECT GREATEST(COALESCE((SELECT SUM(de.amount) FROM fund_due_entries de WHERE de.cycle_id=$1 AND de.member_id=$2),0)
+          - COALESCE((SELECT SUM(pp.previous_due_applied) FROM fund_payments pp WHERE pp.cycle_id=$1 AND pp.member_id=$2 AND pp.status='POSTED'),0),0)::float AS "previousDue"`,
+        [cycleId, memberId],
+      );
+      const previousDueBefore = money(dueBefore.rows[0]?.previousDue);
+      const entry = await client.query(
+        `INSERT INTO fund_due_entries(cycle_id,member_id,amount,due_date,reason,idempotency_key,created_by,tan_period_id)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+         RETURNING id,cycle_id AS "cycleId",member_id AS "memberId",amount::float,due_date::text AS "dueDate",reason,created_at AS "createdAt"`,
+        [cycleId, memberId, amount, dueDate, reason, idempotencyKey, req.user!.id, tanPeriodId],
+      );
+      entries.push(entry.rows[0]);
+      await auditOn(client, req.user!.id, "DUE_ENTRY_CREATED", `Member ${memberId}: BDT ${amount}; ${reason}`, "due_entry", String(entry.rows[0].id), {
+        memberId,
+        cycleId,
+        reason,
+        effectiveDate: dueDate,
+        beforeValue: { previousDue: previousDueBefore },
+        afterValue: { previousDue: roundMoney(previousDueBefore + amount), amount, dueDate },
+      });
+    }
+    await client.query("COMMIT");
+    return res.status(201).json({ count: entries.length, entries });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    req.log.error({ error }, "Batch due entry failed");
+    return res.status(409).json({ error: "Previous due entries could not be recorded; no records were changed" });
+  } finally {
+    client.release();
+  }
+});
+
 router.post("/due-entries", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
   const cycleId = Number(req.body.cycleId);
   const memberId = Number(req.body.memberId);

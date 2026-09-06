@@ -224,6 +224,37 @@ export interface DueEntryInput {
   idempotencyKey?: string;
 }
 
+export interface DueEntry {
+  id: number;
+  cycleId: number;
+  memberId: number;
+  amount: number;
+  dueDate: string;
+  reason: string;
+  createdAt: string;
+}
+
+export interface BatchDueEntryInput {
+  cycleId: number;
+  /**
+     * @minItems 1
+     * @items.minimum 1
+     */
+  memberIds: number[];
+  /** @exclusiveMinimum 0 */
+  amount: number;
+  dueDate: string;
+  /** @minLength 1 */
+  reason: string;
+  /** @minLength 8 */
+  idempotencyKey?: string;
+}
+
+export interface BatchDueEntryResult {
+  count: number;
+  entries: DueEntry[];
+}
+
 export interface ShareTransferPreview {
   cycleId: number;
   fromMemberId: number;

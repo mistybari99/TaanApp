@@ -112,6 +112,14 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/DueEntryInput" } } }
       responses:
         "201": { description: Previous due recorded }
+  /due-entries/batch:
+    post:
+      operationId: createDueEntries
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BatchDueEntryInput" } } }
+      responses:
+        "201": { description: Previous due recorded for all selected members, content: { application/json: { schema: { $ref: "#/components/schemas/BatchDueEntryResult" } } } }
   /share-transfers/preview:
     get:
       operationId: previewShareTransfer
@@ -438,6 +446,33 @@ components:
         dueDate: { type: string }
         reason: { type: string, minLength: 1 }
         idempotencyKey: { type: string, minLength: 8 }
+    DueEntry:
+      type: object
+      required: [id, cycleId, memberId, amount, dueDate, reason, createdAt]
+      properties:
+        id: { type: integer }
+        cycleId: { type: integer }
+        memberId: { type: integer }
+        amount: { type: number }
+        dueDate: { type: string }
+        reason: { type: string }
+        createdAt: { type: string }
+    BatchDueEntryInput:
+      type: object
+      required: [cycleId, memberIds, amount, dueDate, reason]
+      properties:
+        cycleId: { type: integer }
+        memberIds: { type: array, minItems: 1, uniqueItems: true, items: { type: integer, minimum: 1 } }
+        amount: { type: number, exclusiveMinimum: 0 }
+        dueDate: { type: string }
+        reason: { type: string, minLength: 1 }
+        idempotencyKey: { type: string, minLength: 8 }
+    BatchDueEntryResult:
+      type: object
+      required: [count, entries]
+      properties:
+        count: { type: integer }
+        entries: { type: array, items: { $ref: "#/components/schemas/DueEntry" } }
     ShareTransferPreview:
       type: object
       required: [cycleId, fromMemberId, currentShares, transferableShares, requestedShares, remainingShares, accumulatedContribution, transferredContribution, isWinner]

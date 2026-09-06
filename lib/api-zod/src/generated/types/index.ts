@@ -9,6 +9,8 @@
 export * from './auditEntry';
 export * from './auditEntryAfterValue';
 export * from './auditEntryBeforeValue';
+export * from './batchDueEntryInput';
+export * from './batchDueEntryResult';
 export * from './collectorInput';
 export * from './collectorPerformance';
 export * from './collectorUpdate';
@@ -17,6 +19,7 @@ export * from './cycleMemberInput';
 export * from './dashboard';
 export * from './draw';
 export * from './drawInput';
+export * from './dueEntry';
 export * from './dueEntryInput';
 export * from './exportReportParams';
 export * from './exportReportType';
