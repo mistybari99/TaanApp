@@ -1,0 +1,105 @@
+MASTER PROMPT — STRICT MEMBER & CIRCLE DATA RESET
+
+ISLAMIYA REVOLVING FUND
+
+STRICT INSTRUCTION — DO NOT MODIFY ANYTHING ELSE
+
+আমাদের সফটওয়্যারকে এখন সম্পূর্ণ FRESH MEMBER/CIRCLE STATE-এ নিতে হবে।
+
+বর্তমানে সফটওয়্যারে যে Member এবং Circle/Participant সম্পর্কিত পুরোনো, ভুল, test, imported বা বর্তমানে থাকা data আছে — সেগুলো সফটওয়্যার/database থেকে সম্পূর্ণ REMOVE করে দিতে হবে।
+
+এই কাজটি করার আগে existing database/schema এবং relationship carefully inspect করবে।
+
+REMOVE করতে হবে:
+1. বর্তমানে থাকা সব Member records
+2. Member-এর সাথে সম্পর্কিত Circle/Participant membership records
+3. পুরোনো Cycle/Circle participant assignments
+4. ভুল/পুরোনো member-share assignments
+5. Member list/search-এর পুরোনো data
+6. Previous CSV import থেকে তৈরি হওয়া member data
+7. Test/demo member data
+8. Member ID records যেগুলো পুরোনো dataset-এর অংশ
+9. Member-related orphan records, যদি সেগুলো নতুন fresh import-এর জন্য বাধা তৈরি করে
+
+IMPORTANT:
+
+এটা শুধু UI থেকে hide/filter করা যাবে না।
+
+DATABASE LEVEL থেকে সত্যিকার অর্থে REMOVE করতে হবে, যাতে:
+- Member search-এ পুরোনো নাম আর না আসে
+- Member dropdown-এ পুরোনো নাম আর না আসে
+- Cycle participant list-এ পুরোনো member না থাকে
+- Member count = 0 হয়
+- Member-related share assignment = 0 হয়
+- নতুন CSV import করলে একদম নতুন member হিসেবে clean import করা যায়
+
+কিন্তু নিচের জিনিসগুলো কোনোভাবেই delete/modify করবে না:
+
+- Application code
+- Database schema
+- Authentication / login system
+- Owner account
+- Collector/Worker accounts
+- Role & permission system
+- Existing financial architecture
+- Payment engine
+- Due engine
+- Draw engine
+- Share transfer engine
+- Reports architecture
+- Audit/security architecture
+- UI/navigation
+- Business logic
+- API structure
+
+FINANCIAL SAFETY:
+
+যদি genuine financial transaction/history-এর সাথে কোনো member record linked থাকে, blindly delete করবে না।
+
+প্রথমে dependency check করবে।
+
+যেহেতু আমাদের উদ্দেশ্য হলো নতুন Member/Circle dataset দিয়ে fresh setup করা, তাই বর্তমানে থাকা ভুল/test/imported member dataset এবং তার non-genuine setup data remove করবে।
+
+কোনো genuine historical financial record থাকলে সেটি preserve করবে এবং আমাকে আগে report করবে — নিজের সিদ্ধান্তে historical financial data delete করবে না।
+
+AFTER RESET:
+
+Verify করবে:
+
+Members = 0
+Circle/Participant memberships = 0
+Old member search results = 0
+Old member dropdown results = 0
+Old imported member data = 0
+
+তারপর software-কে এমন অবস্থায় রাখবে যাতে আমি নতুন CSV upload করতে পারি।
+
+DO NOT IMPORT ANY NEW CSV YET.
+
+DO NOT CREATE A NEW CYCLE YET.
+
+DO NOT CREATE ANY PAYMENT.
+
+DO NOT CREATE ANY DUE.
+
+DO NOT CREATE ANY DRAW.
+
+DO NOT CREATE ANY TRANSFER.
+
+এই task-এর একমাত্র উদ্দেশ্য:
+
+“বর্তমান Member + Circle/Participant dataset সম্পূর্ণ পরিষ্কার করে software/database-কে নতুন CSV import-এর জন্য FRESH অবস্থায় রাখা।”
+
+শেষে আমাকে অবশ্যই report করবে:
+
+- কতজন Member delete হয়েছে
+- কতটি share assignment delete হয়েছে
+- কতটি Circle/Participant record delete হয়েছে
+- কোনো financial record untouched রাখা হয়েছে কিনা
+- কোনো orphan record থাকলে কী ছিল
+- Final Member count
+- Final Circle/Participant count
+- Final state নতুন CSV import-এর জন্য READY কিনা
+
+STRICTLY FOLLOW THIS.
+DO NOT MAKE UNREQUESTED CHANGES.
