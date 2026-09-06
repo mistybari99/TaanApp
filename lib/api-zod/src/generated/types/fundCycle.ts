@@ -15,6 +15,7 @@ export interface FundCycle {
   name: string;
   startDate: string;
   endDate?: string | null;
+  trackingStartDate?: string | null;
   dailyPerShare: number;
   drawFrequency: FundCycleDrawFrequency;
   drawDay: FundCycleDrawDay;

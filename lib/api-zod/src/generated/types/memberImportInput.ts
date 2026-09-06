@@ -10,6 +10,8 @@ import type { MemberImportRow } from './memberImportRow';
 export interface MemberImportInput {
   dryRun: boolean;
   cycleId?: number;
+  confirmImport?: boolean;
+  previewToken?: string;
   /** @maxItems 500 */
   rows: MemberImportRow[];
 }

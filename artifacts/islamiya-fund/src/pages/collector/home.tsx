@@ -154,7 +154,11 @@ export default function CollectorHome() {
           </CardContent>
         </Card>
       </div>
-      {activeCycle && <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm"><span className="font-semibold">{activeCycle.name}</span><span className="text-muted-foreground"> · ৳{activeCycle.dailyPerShare}/শেয়ার/দিন · শুক্রবার ড্র</span></div>}
+      {activeCycle && <div className={`rounded-lg border px-4 py-3 text-sm ${dashboard?.trackingReady ? "border-primary/20 bg-primary/5" : "border-amber-300 bg-amber-50 text-amber-900"}`}>
+        <span className="font-semibold">{activeCycle.name}</span>
+        <span className="text-muted-foreground"> · ৳{activeCycle.dailyPerShare}/শেয়ার/দিন · শুক্রবার ড্র</span>
+        {!dashboard?.trackingReady && <p className="mt-1 font-medium">Owner এখনো digital collection শুরুর তারিখ নিশ্চিত করেননি; collection বন্ধ আছে।</p>}
+      </div>}
 
       {!selectedMemberId ? (
         <div className="space-y-4">
@@ -250,6 +254,7 @@ export default function CollectorHome() {
                 <Button 
                   className="w-full h-14 text-lg font-bold shadow-lg" 
                   onClick={() => setConfirmDialog(true)}
+                  disabled={!dashboard?.trackingReady}
                 >
                   সংগ্রহ করুন (Collect)
                 </Button>

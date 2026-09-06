@@ -35,7 +35,7 @@ export default function MembersPage() {
 
   // Import State
   const [importRows, setImportRows] = useState<any[]>([])
-  const [importPreview, setImportPreview] = useState<{valid: number, imported: number, errors: any[]} | null>(null)
+  const [importPreview, setImportPreview] = useState<{valid: number, imported: number, errors: any[], memberCount: number, totalShares: number, expectedDailyCollection: number, previewToken: string} | null>(null)
   const [importCycleId, setImportCycleId] = useState("")
   const importCycle = cycles?.find((cycle) => cycle.id === Number(importCycleId))
 
@@ -69,6 +69,11 @@ export default function MembersPage() {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!importCycleId) {
+      toast.error("আগে একটি active cycle নির্বাচন করুন")
+      e.target.value = ""
+      return
+    }
     try {
       const rows = await parseCsv(file);
       setImportRows(rows);
@@ -89,22 +94,6 @@ export default function MembersPage() {
     } catch (err) {
       toast.error("ফাইল পড়তে সমস্যা হয়েছে (Failed to read CSV)");
     }
-  }
-
-  const handleCommitImport = () => {
-    importMembers.mutate({
-      data: { dryRun: false, rows: importRows, cycleId: importCycleId ? Number(importCycleId) : undefined }
-    }, {
-      onSuccess: (data) => {
-        toast.success(`${data.imported} জন সদস্য সফলভাবে যোগ করা হয়েছে`);
-        setIsImportOpen(false);
-        setImportRows([]);
-        setImportPreview(null);
-        setImportCycleId("");
-        refetch();
-      },
-      onError: (err: any) => toast.error(err.message || "Import failed")
-    })
   }
 
   return (
@@ -130,7 +119,7 @@ export default function MembersPage() {
                 <div className="flex justify-between items-center bg-muted/50 p-4 rounded-lg">
                   <div>
                     <h4 className="font-semibold text-sm">সঠিক ফরম্যাট ব্যবহার করুন</h4>
-                    <p className="text-xs text-muted-foreground">টেমপ্লেট ডাউনলোড করে পূরণ করুন</p>
+                   <p className="text-xs text-muted-foreground">বর্তমান ফরম্যাট: name,shares</p>
                   </div>
                   <Button variant="secondary" size="sm" onClick={downloadCsvTemplate}>
                     <Download className="w-4 h-4 mr-2" /> টেমপ্লেট
@@ -142,12 +131,12 @@ export default function MembersPage() {
                   <Input type="file" accept=".csv" onChange={handleFileChange} className="mt-1" />
                 </div>
                 <div>
-                  <Label>চক্রে যোগ করুন (ঐচ্ছিক)</Label>
+                   <Label>চক্রে যোগ করুন (প্রয়োজনীয়)</Label>
                   <select className="h-10 mt-1 w-full rounded-md border bg-background px-3 text-sm" value={importCycleId} onChange={(event) => setImportCycleId(event.target.value)}>
-                    <option value="">শুধু permanent members তৈরি করুন</option>
+                     <option value="">active cycle নির্বাচন করুন</option>
                     {cycles?.filter((cycle) => cycle.status === "ACTIVE").map((cycle) => <option key={cycle.id} value={cycle.id}>{cycle.name}</option>)}
                   </select>
-                  <p className="text-xs text-muted-foreground mt-1">Cycle নির্বাচন করলে shares ওই cycle-এ প্রযোজ্য হবে।</p>
+                   <p className="text-xs text-muted-foreground mt-1">Import শুধু নির্বাচিত cycle-এর সদস্য ও cycle-specific shares তৈরি/আপডেট করবে। পুরনো payment বা dues আসবে না।</p>
                 </div>
 
                 {importPreview && (
@@ -158,7 +147,12 @@ export default function MembersPage() {
                         <span className="text-green-600 text-xs px-2 bg-green-100 rounded">OK</span> : 
                         <span className="text-red-600 text-xs px-2 bg-red-100 rounded">Errors found</span>}
                     </h4>
-                    <p className="text-sm">মোট লাইন: {importRows.length}, সঠিক: {importPreview.valid}</p>
+                     <div className="grid grid-cols-3 gap-2 text-center">
+                       <div className="rounded-md bg-muted/50 p-2"><div className="text-lg font-bold">{importPreview.memberCount}</div><div className="text-xs text-muted-foreground">সদস্য</div></div>
+                       <div className="rounded-md bg-muted/50 p-2"><div className="text-lg font-bold">{importPreview.totalShares}</div><div className="text-xs text-muted-foreground">মোট shares</div></div>
+                       <div className="rounded-md bg-muted/50 p-2"><div className="text-lg font-bold">{formatCurrency(importPreview.expectedDailyCollection)}</div><div className="text-xs text-muted-foreground">প্রত্যাশিত দৈনিক</div></div>
+                     </div>
+                     <p className="text-sm">মোট লাইন: {importRows.length}, সঠিক: {importPreview.valid}</p>
                     {importRows.length > 0 && (
                       <div className="max-h-48 overflow-y-auto border rounded-md mt-3">
                         <table className="w-full text-xs">
@@ -187,10 +181,26 @@ export default function MembersPage() {
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsImportOpen(false)}>বাতিল</Button>
                 <Button 
-                  onClick={handleCommitImport} 
-                  disabled={importMembers.isPending || !importPreview || importPreview.errors.length > 0}
+                   onClick={() => {
+                     if (!importPreview || importPreview.errors.length > 0) return
+                     if (!window.confirm(`এই preview অনুমোদন করে ${importPreview.memberCount} জন সদস্য ও ${importPreview.totalShares} shares Cycle #01-এ commit করবেন?`)) return
+                     importMembers.mutate({
+                       data: { dryRun: false, rows: importRows, cycleId: Number(importCycleId), confirmImport: true, previewToken: importPreview.previewToken }
+                     }, {
+                       onSuccess: (data) => {
+                         toast.success(`${data.imported} জন সদস্য সফলভাবে যোগ করা হয়েছে`)
+                         setIsImportOpen(false)
+                         setImportRows([])
+                         setImportPreview(null)
+                         setImportCycleId("")
+                         refetch()
+                       },
+                       onError: (err: any) => toast.error(err.message || "Import failed")
+                     })
+                   }} 
+                   disabled={importMembers.isPending || !importPreview || importPreview.errors.length > 0 || !importCycleId}
                 >
-                  ইম্পোর্ট নিশ্চিত করুন (Commit)
+                   Preview অনুমোদন করে Commit
                 </Button>
               </DialogFooter>
             </DialogContent>

@@ -27,8 +27,10 @@ export default function CyclesPage() {
   const { data: cycles, isLoading } = useListCycles({ query: { queryKey: getListCyclesQueryKey() } })
   const { data: members } = useListMembers()
   const [selectedCycleId, setSelectedCycleId] = useState<number | null>(null)
-  const [newCycle, setNewCycle] = useState({ name: "", startDate: today(), dailyPerShare: 100 })
+  const [newCycle, setNewCycle] = useState({ name: "", startDate: today(), trackingStartDate: today(), dailyPerShare: 100 })
   const [participant, setParticipant] = useState({ memberId: "", shares: 1 })
+  const [trackingStartDate, setTrackingStartDate] = useState("")
+  const [shareDrafts, setShareDrafts] = useState<Record<number, number>>({})
   const createCycle = useCreateCycle()
   const updateCycle = useUpdateCycle()
   const upsertMember = useUpsertCycleMember()
@@ -42,6 +44,14 @@ export default function CyclesPage() {
     if (!selectedCycleId && cycles?.[0]) setSelectedCycleId(cycles[0].id)
   }, [cycles, selectedCycleId])
 
+  useEffect(() => {
+    setTrackingStartDate(selectedCycle?.trackingStartDate ?? "")
+  }, [selectedCycle?.id, selectedCycle?.trackingStartDate])
+
+  useEffect(() => {
+    if (cycleMembers) setShareDrafts(Object.fromEntries(cycleMembers.map((member) => [member.memberId, member.shares])))
+  }, [cycleMembers])
+
   const availableMembers = useMemo(() => {
     const enrolled = new Set((cycleMembers ?? []).map((member) => member.memberId))
     return (members ?? []).filter((member) => !enrolled.has(member.id) && member.status === "active")
@@ -52,7 +62,7 @@ export default function CyclesPage() {
     createCycle.mutate({ data: newCycle }, {
       onSuccess: (created) => {
         toast.success("নতুন চক্র তৈরি হয়েছে")
-        setNewCycle({ name: "", startDate: today(), dailyPerShare: 100 })
+        setNewCycle({ name: "", startDate: today(), trackingStartDate: today(), dailyPerShare: 100 })
         setSelectedCycleId(created.id)
         queryClient.invalidateQueries({ queryKey: getListCyclesQueryKey() })
       },
@@ -86,6 +96,31 @@ export default function CyclesPage() {
     })
   }
 
+  const saveTrackingStart = () => {
+    if (!selectedCycle || !trackingStartDate) return toast.error("ডিজিটাল tracking শুরুর তারিখ দিন")
+    return updateCycle.mutate({ id: selectedCycle.id, data: { trackingStartDate } }, {
+      onSuccess: () => {
+        toast.success("ডিজিটাল tracking শুরুর তারিখ সংরক্ষণ হয়েছে")
+        queryClient.invalidateQueries({ queryKey: getListCyclesQueryKey() })
+      },
+      onError: (error: any) => toast.error(error?.message || "তারিখ সংরক্ষণ করা যায়নি"),
+    })
+  }
+
+  const saveShares = (memberId: number) => {
+    if (!activeId) return
+    const shares = Number(shareDrafts[memberId])
+    if (!Number.isInteger(shares) || shares < 1) return toast.error("শেয়ার ১ বা তার বেশি হতে হবে")
+    return upsertMember.mutate({ id: activeId, data: { memberId, shares } }, {
+      onSuccess: () => {
+        toast.success("এই চক্রের শেয়ার আপডেট হয়েছে")
+        queryClient.invalidateQueries({ queryKey: getListCycleMembersQueryKey(activeId) })
+        queryClient.invalidateQueries({ queryKey: getListCyclesQueryKey() })
+      },
+      onError: (error: any) => toast.error(error?.message || "শেয়ার আপডেট করা যায়নি"),
+    })
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -99,9 +134,10 @@ export default function CyclesPage() {
             <CardTitle className="flex items-center gap-2"><Plus className="w-5 h-5" /> নতুন চক্র তৈরি করুন</CardTitle>
             <CardDescription>ডিফল্ট নিয়ম: প্রতি শেয়ারে প্রতিদিন ৳100, শুক্রবার সাপ্তাহিক ড্র</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-[1fr_180px_160px_auto] items-end">
+           <CardContent className="grid gap-4 sm:grid-cols-[1fr_170px_170px_150px_auto] items-end">
             <div className="space-y-2"><Label>চক্রের নাম/নম্বর</Label><Input value={newCycle.name} placeholder="Cycle #01" onChange={(event) => setNewCycle({ ...newCycle, name: event.target.value })} /></div>
             <div className="space-y-2"><Label>শুরুর তারিখ</Label><Input type="date" value={newCycle.startDate} onChange={(event) => setNewCycle({ ...newCycle, startDate: event.target.value })} /></div>
+             <div className="space-y-2"><Label>ডিজিটাল tracking শুরু</Label><Input type="date" value={newCycle.trackingStartDate} onChange={(event) => setNewCycle({ ...newCycle, trackingStartDate: event.target.value })} /></div>
             <div className="space-y-2"><Label>৳/শেয়ার/দিন</Label><Input type="number" min={1} value={newCycle.dailyPerShare} onChange={(event) => setNewCycle({ ...newCycle, dailyPerShare: Number(event.target.value) })} /></div>
             <Button onClick={handleCreate} disabled={createCycle.isPending}>চক্র তৈরি</Button>
           </CardContent>
@@ -130,7 +166,7 @@ export default function CyclesPage() {
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div>
                   <CardTitle>{selectedCycle.name}</CardTitle>
-                  <CardDescription>চক্র #{selectedCycle.cycleNumber} · শুরু {formatDate(selectedCycle.startDate)} · শুক্রবার ড্র</CardDescription>
+                  <CardDescription>চক্র #{selectedCycle.cycleNumber} · শুরু {formatDate(selectedCycle.startDate)} · ডিজিটাল tracking {selectedCycle.trackingStartDate ? formatDate(selectedCycle.trackingStartDate) : "এখনো খোলা হয়নি"} · শুক্রবার ড্র</CardDescription>
                 </div>
                 {user?.role === "OWNER" && selectedCycle.status === "ACTIVE" && <Button variant="outline" onClick={completeCycle} disabled={updateCycle.isPending}>চক্র সম্পন্ন করুন</Button>}
               </div>
@@ -138,6 +174,14 @@ export default function CyclesPage() {
             <CardContent className="space-y-5">
               {user?.role === "OWNER" && selectedCycle.status === "ACTIVE" && (
                 <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <div className="space-y-2 flex-1">
+                      <Label>ডিজিটাল collection শুরুর তারিখ</Label>
+                      <Input type="date" value={trackingStartDate} onChange={(event) => setTrackingStartDate(event.target.value)} />
+                      <p className="text-xs text-muted-foreground">এই তারিখের আগে কোনো due বা collection হিসাব হবে না।</p>
+                    </div>
+                    <Button variant="outline" onClick={saveTrackingStart} disabled={updateCycle.isPending || !trackingStartDate}>তারিখ সংরক্ষণ</Button>
+                  </div>
                   <p className="font-semibold">চক্রে সদস্য যোগ করুন</p>
                   <div className="grid gap-3 sm:grid-cols-[1fr_130px_auto] items-end">
                     <div className="space-y-2"><Label>সদস্য</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={participant.memberId} onChange={(event) => setParticipant({ ...participant, memberId: event.target.value })}><option value="">সদস্য নির্বাচন করুন</option>{availableMembers.map((member) => <option key={member.id} value={member.id}>{member.memberId} — {member.name}</option>)}</select></div>
@@ -148,11 +192,11 @@ export default function CyclesPage() {
               )}
               <div className="flex items-center gap-2 text-sm text-muted-foreground"><Users className="w-4 h-4" /> {cycleMembers?.length ?? 0} জন অংশগ্রহণকারী</div>
               <div className="border rounded-lg overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50"><tr><th className="text-left p-3">সদস্য</th><th className="text-right p-3">শেয়ার</th><th className="text-right p-3">দৈনিক জমা</th><th className="text-right p-3">মোট সংগ্রহ</th><th className="text-right p-3">আজকের বাকি</th></tr></thead>
+                 <table className="w-full text-sm">
+                   <thead className="bg-muted/50"><tr><th className="text-left p-3">সদস্য</th><th className="text-right p-3">শেয়ার</th><th className="text-right p-3">দৈনিক জমা</th><th className="text-right p-3">মোট সংগ্রহ</th><th className="text-right p-3">আজকের বাকি</th>{user?.role === "OWNER" && selectedCycle.status === "ACTIVE" && <th className="p-3"></th>}</tr></thead>
                   <tbody>
-                    {membersLoading ? <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">লোড হচ্ছে...</td></tr> : cycleMembers?.length === 0 ? <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">এই চক্রে কোনো সদস্য নেই</td></tr> : cycleMembers?.map((member) => (
-                      <tr key={member.id} className="border-t"><td className="p-3"><div className="font-medium">{member.name}</div><div className="text-xs text-muted-foreground">{member.memberCode}</div></td><td className="p-3 text-right">{member.shares}</td><td className="p-3 text-right">{formatCurrency(member.dailyContribution)}</td><td className="p-3 text-right">{formatCurrency(member.totalCollected)}</td><td className="p-3 text-right font-medium text-destructive">{formatCurrency(member.todayDue)}</td></tr>
+                     {membersLoading ? <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">লোড হচ্ছে...</td></tr> : cycleMembers?.length === 0 ? <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">এই চক্রে কোনো সদস্য নেই</td></tr> : cycleMembers?.map((member) => (
+                       <tr key={member.id} className="border-t"><td className="p-3"><div className="font-medium">{member.name}</div><div className="text-xs text-muted-foreground">{member.memberCode}</div></td><td className="p-3 text-right">{user?.role === "OWNER" && selectedCycle.status === "ACTIVE" ? <Input type="number" min={1} className="ml-auto w-20 text-right" value={shareDrafts[member.memberId] ?? member.shares} onChange={(event) => setShareDrafts({ ...shareDrafts, [member.memberId]: Number(event.target.value) })} /> : member.shares}</td><td className="p-3 text-right">{formatCurrency(member.dailyContribution)}</td><td className="p-3 text-right">{formatCurrency(member.totalCollected)}</td><td className="p-3 text-right font-medium text-destructive">{formatCurrency(member.todayDue)}</td>{user?.role === "OWNER" && selectedCycle.status === "ACTIVE" && <td className="p-3 text-right"><Button size="sm" variant="outline" onClick={() => saveShares(member.memberId)} disabled={upsertMember.isPending}>Save</Button></td>}</tr>
                     ))}
                   </tbody>
                 </table>

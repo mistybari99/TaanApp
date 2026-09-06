@@ -6,6 +6,7 @@ ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS cycle_id integer;
 ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS collection_date date NOT NULL DEFAULT CURRENT_DATE;
 ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS shares integer NOT NULL DEFAULT 1;
 ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS notes text NOT NULL DEFAULT '';
+ALTER TABLE fund_settlements ADD COLUMN IF NOT EXISTS cycle_id integer;
 
 CREATE TABLE IF NOT EXISTS fund_cycles (
   id serial PRIMARY KEY,
@@ -20,6 +21,7 @@ CREATE TABLE IF NOT EXISTS fund_cycles (
   notes text NOT NULL DEFAULT '',
   created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE fund_cycles ADD COLUMN IF NOT EXISTS tracking_start_date date;
 
 CREATE TABLE IF NOT EXISTS fund_cycle_members (
   id serial PRIMARY KEY,
@@ -47,3 +49,5 @@ CREATE TABLE IF NOT EXISTS fund_draws (
 CREATE INDEX IF NOT EXISTS fund_payments_cycle_date_idx ON fund_payments(cycle_id, collection_date);
 CREATE INDEX IF NOT EXISTS fund_cycle_members_cycle_idx ON fund_cycle_members(cycle_id);
 CREATE INDEX IF NOT EXISTS fund_draws_cycle_date_idx ON fund_draws(cycle_id, draw_date);
+CREATE UNIQUE INDEX IF NOT EXISTS fund_cycles_one_active_idx ON fund_cycles(status) WHERE status = 'ACTIVE';
+CREATE INDEX IF NOT EXISTS fund_settlements_cycle_idx ON fund_settlements(cycle_id, created_at);

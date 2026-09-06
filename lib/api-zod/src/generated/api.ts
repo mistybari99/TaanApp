@@ -74,6 +74,8 @@ export const InitializeFundResponse = zod.object({
 
 
 export const GetDashboardResponse = zod.object({
+  "trackingReady": zod.boolean(),
+  "trackingStartDate": zod.string().nullable(),
   "totalMembers": zod.number().int(),
   "todayTarget": zod.number(),
   "collected": zod.number(),
@@ -134,6 +136,7 @@ export const ListCyclesResponseItem = zod.object({
   "name": zod.string(),
   "startDate": zod.string(),
   "endDate": zod.string().nullish(),
+  "trackingStartDate": zod.string().nullish(),
   "dailyPerShare": zod.number(),
   "drawFrequency": zod.enum(['WEEKLY']),
   "drawDay": zod.enum(['FRIDAY']),
@@ -152,6 +155,7 @@ export const CreateCycleBody = zod.object({
   "name": zod.string(),
   "startDate": zod.string(),
   "endDate": zod.string().optional(),
+  "trackingStartDate": zod.string().optional(),
   "dailyPerShare": zod.number().default(createCycleBodyDailyPerShareDefault),
   "status": zod.enum(['ACTIVE', 'COMPLETED']).optional(),
   "notes": zod.string().optional()
@@ -163,6 +167,7 @@ export const CreateCycleResponse = zod.object({
   "name": zod.string(),
   "startDate": zod.string(),
   "endDate": zod.string().nullish(),
+  "trackingStartDate": zod.string().nullish(),
   "dailyPerShare": zod.number(),
   "drawFrequency": zod.enum(['WEEKLY']),
   "drawDay": zod.enum(['FRIDAY']),
@@ -180,6 +185,7 @@ export const UpdateCycleParams = zod.object({
 export const UpdateCycleBody = zod.object({
   "name": zod.string().optional(),
   "endDate": zod.string().optional(),
+  "trackingStartDate": zod.string().optional(),
   "dailyPerShare": zod.number().optional(),
   "status": zod.enum(['ACTIVE', 'COMPLETED']).optional(),
   "notes": zod.string().optional()
@@ -191,6 +197,7 @@ export const UpdateCycleResponse = zod.object({
   "name": zod.string(),
   "startDate": zod.string(),
   "endDate": zod.string().nullish(),
+  "trackingStartDate": zod.string().nullish(),
   "dailyPerShare": zod.number(),
   "drawFrequency": zod.enum(['WEEKLY']),
   "drawDay": zod.enum(['FRIDAY']),
@@ -306,6 +313,8 @@ export const importMembersBodyRowsMax = 500;
 export const ImportMembersBody = zod.object({
   "dryRun": zod.boolean(),
   "cycleId": zod.number().int().optional(),
+  "confirmImport": zod.boolean().optional(),
+  "previewToken": zod.string().optional(),
   "rows": zod.array(zod.object({
   "memberId": zod.string(),
   "name": zod.string(),
@@ -324,7 +333,11 @@ export const ImportMembersResponse = zod.object({
   "errors": zod.array(zod.object({
   "row": zod.number().int(),
   "message": zod.string()
-}))
+})),
+  "memberCount": zod.number().int(),
+  "totalShares": zod.number().int(),
+  "expectedDailyCollection": zod.number(),
+  "previewToken": zod.string()
 })
 
 
@@ -494,6 +507,7 @@ export const ReversePaymentResponse = zod.object({
 
 export const ListSettlementsResponseItem = zod.object({
   "id": zod.number().int(),
+  "cycleId": zod.number().int().nullish(),
   "amount": zod.number(),
   "collectorName": zod.string(),
   "reference": zod.string(),
@@ -515,6 +529,7 @@ export const CreateSettlementBody = zod.object({
 
 export const CreateSettlementResponse = zod.object({
   "id": zod.number().int(),
+  "cycleId": zod.number().int().nullish(),
   "amount": zod.number(),
   "collectorName": zod.string(),
   "reference": zod.string(),

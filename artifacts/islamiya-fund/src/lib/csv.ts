@@ -1,8 +1,8 @@
 export function downloadCsvTemplate() {
-  const headers = ["memberId", "name", "mobile", "address", "shares", "dailyAmount", "joiningDate", "status"];
+  const headers = ["name", "shares"];
   const rows = [
-    ["M-001", "আব্দুর রহমান (Abdur Rahman)", "01711000000", "ঢাকা (Dhaka)", "1", "100", "2024-01-01", "active"],
-    ["M-002", "করিম মিয়া (Karim Mia)", "01811000000", "চট্টগ্রাম (Chittagong)", "2", "200", "2024-01-02", "active"]
+    ["আব্দুর রহমান (Abdur Rahman)", "1"],
+    ["করিম মিয়া (Karim Mia)", "2"]
   ];
   
   const csvContent = [

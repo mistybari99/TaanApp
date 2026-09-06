@@ -12,6 +12,7 @@ export interface FundCycleInput {
   name: string;
   startDate: string;
   endDate?: string;
+  trackingStartDate?: string;
   dailyPerShare?: number;
   status?: FundCycleInputStatus;
   notes?: string;

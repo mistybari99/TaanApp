@@ -11,6 +11,8 @@ import type { Member } from './member';
 import type { Payment } from './payment';
 
 export interface Dashboard {
+  trackingReady: boolean;
+  trackingStartDate: string | null;
   totalMembers: number;
   todayTarget: number;
   collected: number;

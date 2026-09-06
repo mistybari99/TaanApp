@@ -307,6 +307,7 @@ components:
         name: { type: string }
         startDate: { type: string }
         endDate: { type: string, nullable: true }
+        trackingStartDate: { type: string, nullable: true }
         dailyPerShare: { type: number }
         drawFrequency: { type: string, enum: [WEEKLY] }
         drawDay: { type: string, enum: [FRIDAY] }
@@ -322,6 +323,7 @@ components:
         name: { type: string }
         startDate: { type: string }
         endDate: { type: string }
+        trackingStartDate: { type: string }
         dailyPerShare: { type: number, default: 100 }
         status: { type: string, enum: [ACTIVE, COMPLETED] }
         notes: { type: string }
@@ -330,6 +332,7 @@ components:
       properties:
         name: { type: string }
         endDate: { type: string }
+        trackingStartDate: { type: string }
         dailyPerShare: { type: number }
         status: { type: string, enum: [ACTIVE, COMPLETED] }
         notes: { type: string }
@@ -445,6 +448,8 @@ components:
       properties:
         dryRun: { type: boolean }
         cycleId: { type: integer }
+        confirmImport: { type: boolean }
+        previewToken: { type: string }
         rows: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/MemberImportRow" } }
     MemberImportError:
       type: object
@@ -454,11 +459,15 @@ components:
         message: { type: string }
     MemberImportResult:
       type: object
-      required: [valid, imported, errors]
+      required: [valid, imported, errors, memberCount, totalShares, expectedDailyCollection, previewToken]
       properties:
         valid: { type: integer }
         imported: { type: integer }
         errors: { type: array, items: { $ref: "#/components/schemas/MemberImportError" } }
+        memberCount: { type: integer }
+        totalShares: { type: integer }
+        expectedDailyCollection: { type: number }
+        previewToken: { type: string }
     Payment:
       type: object
       required: [id, receiptId, memberId, memberName, amount, collectorName, verificationStatus, createdAt, status]
@@ -498,6 +507,7 @@ components:
       required: [id, amount, collectorName, reference, createdAt]
       properties:
         id: { type: integer }
+        cycleId: { type: integer, nullable: true }
         amount: { type: number }
         collectorName: { type: string }
         reference: { type: string }
@@ -521,8 +531,10 @@ components:
       properties: { name: { type: string }, collected: { type: number }, payments: { type: integer }, cash: { type: number } }
     Dashboard:
       type: object
-      required: [totalMembers, todayTarget, collected, due, collectorCash, officeDeposits, unsettledCash, paymentCount, performances, dueMembers, recentPayments, audit]
+      required: [trackingReady, trackingStartDate, totalMembers, todayTarget, collected, due, collectorCash, officeDeposits, unsettledCash, paymentCount, performances, dueMembers, recentPayments, audit]
       properties:
+        trackingReady: { type: boolean }
+        trackingStartDate: { type: string, nullable: true }
         totalMembers: { type: integer }
         todayTarget: { type: number }
         collected: { type: number }

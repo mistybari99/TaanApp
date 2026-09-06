@@ -10,6 +10,7 @@ import type { FundCycleUpdateStatus } from './fundCycleUpdateStatus';
 export interface FundCycleUpdate {
   name?: string;
   endDate?: string;
+  trackingStartDate?: string;
   dailyPerShare?: number;
   status?: FundCycleUpdateStatus;
   notes?: string;

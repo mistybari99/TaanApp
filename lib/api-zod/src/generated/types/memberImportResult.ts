@@ -11,4 +11,8 @@ export interface MemberImportResult {
   valid: number;
   imported: number;
   errors: MemberImportError[];
+  memberCount: number;
+  totalShares: number;
+  expectedDailyCollection: number;
+  previewToken: string;
 }

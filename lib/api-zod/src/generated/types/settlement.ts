@@ -8,6 +8,7 @@
 
 export interface Settlement {
   id: number;
+  cycleId?: number | null;
   amount: number;
   collectorName: string;
   reference: string;

@@ -133,6 +133,7 @@ export interface FundCycle {
   name: string;
   startDate: string;
   endDate?: string | null;
+  trackingStartDate?: string | null;
   dailyPerShare: number;
   drawFrequency: FundCycleDrawFrequency;
   drawDay: FundCycleDrawDay;
@@ -155,6 +156,7 @@ export interface FundCycleInput {
   name: string;
   startDate: string;
   endDate?: string;
+  trackingStartDate?: string;
   dailyPerShare?: number;
   status?: FundCycleInputStatus;
   notes?: string;
@@ -171,6 +173,7 @@ export const FundCycleUpdateStatus = {
 export interface FundCycleUpdate {
   name?: string;
   endDate?: string;
+  trackingStartDate?: string;
   dailyPerShare?: number;
   status?: FundCycleUpdateStatus;
   notes?: string;
@@ -293,6 +296,8 @@ export interface MemberImportRow {
 export interface MemberImportInput {
   dryRun: boolean;
   cycleId?: number;
+  confirmImport?: boolean;
+  previewToken?: string;
   /** @maxItems 500 */
   rows: MemberImportRow[];
 }
@@ -306,6 +311,10 @@ export interface MemberImportResult {
   valid: number;
   imported: number;
   errors: MemberImportError[];
+  memberCount: number;
+  totalShares: number;
+  expectedDailyCollection: number;
+  previewToken: string;
 }
 
 export type PaymentInputVerificationMethod = typeof PaymentInputVerificationMethod[keyof typeof PaymentInputVerificationMethod];
@@ -335,6 +344,7 @@ export interface ReversalInput {
 
 export interface Settlement {
   id: number;
+  cycleId?: number | null;
   amount: number;
   collectorName: string;
   reference: string;
@@ -365,6 +375,8 @@ export interface CollectorPerformance {
 }
 
 export interface Dashboard {
+  trackingReady: boolean;
+  trackingStartDate: string | null;
   totalMembers: number;
   todayTarget: number;
   collected: number;
