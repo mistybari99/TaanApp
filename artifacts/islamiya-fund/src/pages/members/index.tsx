@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useListMembers, useCreateMember, useImportMembers, useListCycles, useUpdateMember, useGetCurrentUser } from "@workspace/api-client-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -37,6 +37,14 @@ export default function MembersPage() {
   const [importRows, setImportRows] = useState<any[]>([])
   const [importPreview, setImportPreview] = useState<{valid: number, imported: number, errors: any[]} | null>(null)
   const [importCycleId, setImportCycleId] = useState("")
+  const importCycle = cycles?.find((cycle) => cycle.id === Number(importCycleId))
+
+  useEffect(() => {
+    if (!importCycleId) {
+      const activeCycle = cycles?.find((cycle) => cycle.status === "ACTIVE")
+      if (activeCycle) setImportCycleId(String(activeCycle.id))
+    }
+  }, [cycles, importCycleId])
 
   const handleAdd = () => {
     createMember.mutate({
@@ -151,6 +159,18 @@ export default function MembersPage() {
                         <span className="text-red-600 text-xs px-2 bg-red-100 rounded">Errors found</span>}
                     </h4>
                     <p className="text-sm">মোট লাইন: {importRows.length}, সঠিক: {importPreview.valid}</p>
+                    {importRows.length > 0 && (
+                      <div className="max-h-48 overflow-y-auto border rounded-md mt-3">
+                        <table className="w-full text-xs">
+                          <thead className="bg-muted/50 sticky top-0"><tr><th className="text-left p-2">No.</th><th className="text-left p-2">Member Name</th><th className="text-right p-2">Shares</th><th className="text-right p-2">Daily Contribution</th></tr></thead>
+                          <tbody>{importRows.map((row, index) => {
+                            const shares = Number(row.shares) || 0
+                            const daily = shares * (importCycle?.dailyPerShare ?? 100)
+                            return <tr key={`${row.name}-${index}`} className="border-t"><td className="p-2">{index + 1}</td><td className="p-2">{row.name || "—"}</td><td className="p-2 text-right">{shares}</td><td className="p-2 text-right font-medium">{formatCurrency(daily)}</td></tr>
+                          })}</tbody>
+                        </table>
+                      </div>
+                    )}
                     {importPreview.errors.length > 0 && (
                       <div className="max-h-32 overflow-y-auto text-xs space-y-1 mt-2">
                         {importPreview.errors.map((err, i) => (

@@ -165,10 +165,20 @@ router.post("/members/import", requireAuth, ownerOnly, async (req: AuthedRequest
           memberDbId = created.rows[0].id;
         }
       } else {
-        memberId = `M-${randomBytes(4).toString("hex").toUpperCase()}`;
-        const created = await client.query(`INSERT INTO fund_members(member_id,name,mobile,address,shares,daily_amount,joining_date,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-          [memberId,row.name,row.mobile,row.address,row.shares,row.dailyAmount,row.joiningDate,row.status]);
-        memberDbId = created.rows[0].id;
+        const existing = await client.query(
+          `SELECT id FROM fund_members
+             WHERE LOWER(TRIM(name))=LOWER(TRIM($1))
+               AND (NULLIF($2,'') IS NULL OR mobile=$2)
+             ORDER BY id LIMIT 1`,
+          [row.name,row.mobile],
+        );
+        if (existing.rows[0]) memberDbId = existing.rows[0].id;
+        else {
+          memberId = `M-${randomBytes(4).toString("hex").toUpperCase()}`;
+          const created = await client.query(`INSERT INTO fund_members(member_id,name,mobile,address,shares,daily_amount,joining_date,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+            [memberId,row.name,row.mobile,row.address,row.shares,row.dailyAmount,row.joiningDate,row.status]);
+          memberDbId = created.rows[0].id;
+        }
       }
       if (cycleId) {
         const cycle = await client.query("SELECT daily_per_share::float AS daily_per_share FROM fund_cycles WHERE id=$1", [cycleId]);

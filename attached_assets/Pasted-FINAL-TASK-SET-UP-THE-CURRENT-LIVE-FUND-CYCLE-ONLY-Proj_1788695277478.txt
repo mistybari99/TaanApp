@@ -1,0 +1,220 @@
+FINAL TASK — SET UP THE CURRENT LIVE FUND CYCLE ONLY
+
+Project: ISLAMIYA Revolving Fund
+
+We have now confirmed that the current 31-member CSV list is the CURRENT MEMBER LIST for the already-running fund/tan.
+
+There are approximately 3 weeks remaining in the current fund/tan.
+
+IMPORTANT:
+- Do NOT create the next/new cycle yet.
+- Do NOT delete or overwrite any existing collection/payment/draw data.
+- Do NOT reset existing balances.
+- Do NOT import the CSV into the database automatically without showing a preview first.
+- Do NOT redesign the app.
+- Keep this task lightweight and use the cycle system you already implemented.
+
+CURRENT CSV:
+The CSV contains these fields:
+
+name,shares
+
+Use the CSV file I provide as the current member list.
+
+==================================================
+STEP 1 — CREATE / IDENTIFY CURRENT CYCLE
+==================================================
+
+If an active cycle already exists for the current running tan:
+
+→ DO NOT create another cycle.
+→ Use the existing active cycle.
+
+If no active cycle exists:
+
+Create ONE current active cycle:
+
+Cycle name:
+ISLAMIYA Revolving Fund — Current Tan
+
+Cycle number:
+#01
+
+Start date:
+28/03/2026
+
+Daily contribution:
+৳100 per share
+
+Draw frequency:
+Weekly
+
+Draw day:
+Friday
+
+Status:
+ACTIVE
+
+IMPORTANT:
+Do not create Cycle #02 or any future cycle.
+
+==================================================
+STEP 2 — IMPORT CURRENT 31 MEMBERS
+==================================================
+
+Import the supplied CSV into the CURRENT ACTIVE CYCLE only.
+
+CSV fields:
+
+name,shares
+
+For each row:
+
+- Match an existing member if possible.
+- Do not create duplicate member records unnecessarily.
+- Preserve permanent Member IDs.
+- Add the member to the current cycle.
+- Assign the CSV share count to this cycle only.
+
+IMPORTANT:
+
+The same person may participate in a future cycle with a different number of shares.
+
+Therefore:
+
+Member master data ≠ Cycle membership data.
+
+Do not permanently change a member's historical share count.
+
+==================================================
+STEP 3 — PREVIEW BEFORE COMMIT
+==================================================
+
+Before saving/importing:
+
+Show a clear preview containing:
+
+No. | Member Name | Shares | Daily Contribution
+
+Daily Contribution =
+Shares × ৳100
+
+Example:
+
+1 | শিমুল | 6 | ৳600
+2 | ফুলমিয়া | 5 | ৳500
+
+DO NOT commit the import until the preview is available.
+
+==================================================
+STEP 4 — PRESERVE CURRENT DATA
+==================================================
+
+The current cycle already has real collection/draw activity or may receive activity immediately.
+
+Therefore:
+
+- Do not reset collection totals.
+- Do not reset member balances.
+- Do not delete existing payments.
+- Do not delete existing Friday Draw records.
+- Do not alter historical dates.
+- Do not duplicate existing members or payments.
+
+If existing cycle membership already exists, safely reconcile it with the CSV instead of blindly inserting duplicates.
+
+==================================================
+STEP 5 — CURRENT CYCLE OPERATION
+==================================================
+
+After import, the current cycle must be ready for:
+
+Members
+→ Daily Collection
+→ Collector tracking
+→ Flexible payments
+→ Due calculation
+→ Friday Draw
+→ Draw History
+→ Member History
+
+All of these must remain scoped to the CURRENT ACTIVE CYCLE.
+
+==================================================
+STEP 6 — FUTURE CYCLE BREAK POINT
+==================================================
+
+Verify that the app already supports this exact workflow:
+
+CURRENT CYCLE #01
+        ↓
+Remaining 3 weeks
+        ↓
+Final Friday Draw
+        ↓
+Mark Cycle #01 = COMPLETED
+        ↓
+Create NEW Cycle #02
+        ↓
+Choose new members
+        ↓
+Assign new shares
+        ↓
+Start new collections
+
+Cycle #01 and Cycle #02 MUST remain completely separate.
+
+A member can exist in both cycles, but their collection/payment/draw records must remain separated by cycle.
+
+Example:
+
+শিমুল
+Cycle #01
+6 shares
+Old collection history
+Old draw history
+
+Cycle #02
+3 shares
+New collection history
+New draw history
+
+Do not merge these records.
+
+==================================================
+STEP 7 — DO NOT START THE NEXT CYCLE
+==================================================
+
+For this task:
+
+ONLY prepare and activate the CURRENT CYCLE.
+
+Do NOT:
+- Create Cycle #02
+- Add future members
+- Import another member list
+- Start a new collection period
+- Publish the application
+
+==================================================
+FINAL VERIFICATION
+==================================================
+
+After implementation/import:
+
+Verify:
+
+1. Current active cycle exists.
+2. Current 31-member CSV can be previewed/imported.
+3. Each member has correct shares.
+4. Daily contribution = shares × ৳100.
+5. Existing collection history remains intact.
+6. Friday Draw history remains intact.
+7. Member History remains intact.
+8. New collections use the current cycle ID.
+9. No duplicate members/payments are created.
+10. Future cycles can be created independently after this cycle is completed.
+
+Run typecheck/build and relevant API smoke tests.
+
+Do not make unrelated changes.
