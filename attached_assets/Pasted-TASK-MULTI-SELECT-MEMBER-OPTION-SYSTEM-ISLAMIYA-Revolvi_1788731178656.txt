@@ -1,0 +1,78 @@
+TASK — MULTI-SELECT MEMBER / OPTION SYSTEM
+
+ISLAMIYA Revolving Fund app-এর যেসব জায়গায় Member বা একাধিক option নির্বাচন করার প্রয়োজন হয়, সেখানে single-select-এর পাশাপাশি MULTI-SELECT support যোগ করো।
+
+Requirements:
+
+1. Member selection
+- একাধিক member একসাথে select করা যাবে।
+- Search করে member খুঁজে select করা যাবে।
+- Dropdown / searchable dropdown ব্যবহার করা যাবে।
+- Selected members clearly visible থাকবে।
+- প্রতিটি selected member-এর পাশে Remove/X option থাকবে।
+- "Select All" এবং "Clear All" option যেখানে appropriate সেখানে থাকবে।
+
+2. Search
+- Member search হবে:
+  - Member ID
+  - Member Name
+  - Mobile Number
+- Bangla name অবশ্যই Bangla-তেই থাকবে।
+- কোনো automatic translation করা যাবে না।
+- "বিশ্ব (দুধ)" কখনো "World Milk" বা অন্য translated name হবে না।
+- Database-এর original member name exactly preserve করতে হবে।
+
+3. Selection behavior
+- একই member দুইবার select করা যাবে না।
+- Already selected member search result-এ clearly marked থাকবে।
+- Selection change করলে duplicate record তৈরি হবে না।
+- Large member list হলে searchable এবং responsive হতে হবে।
+
+4. Single-select compatibility
+- যেখানে শুধু একজন member নির্বাচন করার প্রয়োজন, সেখানে single-select behavior থাকবে।
+- যেখানে multiple members প্রয়োজন, সেখানে multi-select ব্যবহার হবে।
+- Existing working flows যেন ভেঙে না যায়।
+
+5. Financial safety
+- Multi-select UI কোনো financial transaction নিজে থেকে তৈরি/commit করবে না।
+- Final financial action-এর আগে explicit confirmation থাকবে।
+- Existing permission rules বজায় থাকবে।
+- Collector ও Owner-এর existing access rules পরিবর্তন করা যাবে না।
+
+6. UX
+- Bangla / English mixed interface থাকবে।
+- Technical database ID না দেখিয়ে operational Member ID দেখাবে:
+  IRF-001
+  IRF-002
+  IRF-003
+  ...
+- Member ID serially generated হবে এবং unique থাকবে।
+- Member name original language-এ preserve হবে।
+
+7. Testing
+Test করো:
+- One member selection
+- Multiple member selection
+- Search by Member ID
+- Search by Bangla name
+- Search by mobile
+- Duplicate selection prevention
+- Remove selected member
+- Select All
+- Clear All
+- Bangla name preservation
+- Permission behavior
+- Existing financial flows
+
+Do NOT import any new real CSV.
+Do NOT create Cycle #02.
+Do NOT modify genuine financial records.
+
+Run:
+- Typecheck
+- Relevant regression tests
+- API build
+- Web build
+- Browser verification
+
+STOP after this task and provide a concise PASS / PASS WITH WARNINGS / FAIL report.
