@@ -1,5 +1,6 @@
 -- Additive migration for the cycle-based revolving fund model.
 -- Safe to run against the existing fund schema: no historical rows are deleted.
+ALTER TABLE fund_members ALTER COLUMN mobile DROP NOT NULL;
 ALTER TABLE fund_members ADD COLUMN IF NOT EXISTS notes text NOT NULL DEFAULT '';
 ALTER TABLE fund_members ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
 ALTER TABLE fund_members ADD COLUMN IF NOT EXISTS nid text;

@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 import { formatCurrency } from "@/lib/utils"
-import { Search, UserPlus, Upload, Download, AlertTriangle, WalletCards } from "lucide-react"
+import { Search, UserPlus, Upload, Download, AlertTriangle, WalletCards, Pencil } from "lucide-react"
 import { downloadCsvTemplate, parseCsv } from "@/lib/csv"
 import { Link } from "wouter"
 
@@ -39,10 +39,12 @@ export default function MembersPage() {
 
   // Import State
   const [importRows, setImportRows] = useState<any[]>([])
-  const [importPreview, setImportPreview] = useState<{valid: number, imported: number, errors: any[], memberCount: number, totalShares: number, expectedDailyCollection: number, previewToken: string} | null>(null)
+  const [importPreview, setImportPreview] = useState<{valid: number, imported: number, errors: any[], memberCount: number, totalShares: number, expectedDailyCollection: number, previewToken: string, previewRows?: Array<{row: number, name: string, shares: number, mobile: string, mobileStatus: "provided" | "missing", existingMember?: {id: number, memberId: string, name: string} | null}>} | null>(null)
   const [importCycleId, setImportCycleId] = useState("")
   const importCycle = cycles?.find((cycle) => cycle.id === Number(importCycleId))
   const activeCycles = cycles?.filter((cycle) => cycle.status === "ACTIVE") ?? []
+  const [editingMember, setEditingMember] = useState<any | null>(null)
+  const [editMobile, setEditMobile] = useState("")
   const [isDueEntryOpen, setIsDueEntryOpen] = useState(false)
   const [isDueConfirmationOpen, setIsDueConfirmationOpen] = useState(false)
   const [dueEntry, setDueEntry] = useState({
@@ -63,6 +65,10 @@ export default function MembersPage() {
   }, [cycles, importCycleId])
 
   const handleAdd = () => {
+    if (!newMember.mobile.trim()) {
+      toast.error("নতুন সদস্যের মোবাইল নম্বর আবশ্যক (Mobile is required)")
+      return
+    }
     createMember.mutate({
       data: {
         ...newMember,
@@ -79,6 +85,31 @@ export default function MembersPage() {
       onError: (err: any) => {
         toast.error(err.message || "ব্যর্থ হয়েছে")
       }
+    })
+  }
+
+  const openMemberEdit = (member: any) => {
+    setEditingMember(member)
+    setEditMobile(member.mobile ?? "")
+  }
+
+  const saveMemberEdit = () => {
+    const mobile = editMobile.trim()
+    if (!mobile) {
+      toast.error("মোবাইল নম্বর দিন (Enter a mobile number)")
+      return
+    }
+    updateMember.mutate({
+      id: editingMember.id,
+      data: { mobile },
+    }, {
+      onSuccess: () => {
+        toast.success("মোবাইল নম্বর আপডেট হয়েছে (Mobile updated)")
+        setEditingMember(null)
+        setEditMobile("")
+        refetch()
+      },
+      onError: (error: any) => toast.error(error?.message || "মোবাইল নম্বর আপডেট করা যায়নি"),
     })
   }
 
@@ -202,7 +233,7 @@ export default function MembersPage() {
                 <div className="flex justify-between items-center bg-muted/50 p-4 rounded-lg">
                   <div>
                     <h4 className="font-semibold text-sm">সঠিক ফরম্যাট ব্যবহার করুন</h4>
-                   <p className="text-xs text-muted-foreground">বর্তমান ফরম্যাট: name,shares</p>
+                    <p className="text-xs text-muted-foreground">ফরম্যাট: name,shares · Mobile optional</p>
                   </div>
                   <Button variant="secondary" size="sm" onClick={downloadCsvTemplate}>
                     <Download className="w-4 h-4 mr-2" /> টেমপ্লেট
@@ -238,12 +269,13 @@ export default function MembersPage() {
                      <p className="text-sm">মোট লাইন: {importRows.length}, সঠিক: {importPreview.valid}</p>
                     {importRows.length > 0 && (
                       <div className="max-h-48 overflow-y-auto border rounded-md mt-3">
-                        <table className="w-full text-xs">
-                          <thead className="bg-muted/50 sticky top-0"><tr><th className="text-left p-2">No.</th><th className="text-left p-2">Member Name</th><th className="text-right p-2">Shares</th><th className="text-right p-2">Daily Contribution</th></tr></thead>
+                       <table className="w-full text-xs">
+                         <thead className="bg-muted/50 sticky top-0"><tr><th className="text-left p-2">No.</th><th className="text-left p-2">Member Name</th><th className="text-left p-2">Mobile</th><th className="text-left p-2">Match</th><th className="text-right p-2">Shares</th><th className="text-right p-2">Daily Contribution</th></tr></thead>
                           <tbody>{importRows.map((row, index) => {
                             const shares = Number(row.shares) || 0
                             const daily = shares * (importCycle?.dailyPerShare ?? 100)
-                            return <tr key={`${row.name}-${index}`} className="border-t"><td className="p-2">{index + 1}</td><td className="p-2">{row.name || "—"}</td><td className="p-2 text-right">{shares}</td><td className="p-2 text-right font-medium">{formatCurrency(daily)}</td></tr>
+                           const previewRow = importPreview.previewRows?.find((item) => item.row === index + 2)
+                           return <tr key={`${row.name}-${index}`} className="border-t"><td className="p-2">{index + 1}</td><td className="p-2">{row.name || "—"}</td><td className="p-2">{previewRow?.mobileStatus === "missing" || !row.mobile ? "Missing / Not provided" : row.mobile}</td><td className="p-2">{previewRow?.existingMember ? `Existing: ${previewRow.existingMember.memberId}` : "New / no match"}</td><td className="p-2 text-right">{shares}</td><td className="p-2 text-right font-medium">{formatCurrency(daily)}</td></tr>
                           })}</tbody>
                         </table>
                       </div>
@@ -284,6 +316,41 @@ export default function MembersPage() {
                    disabled={importMembers.isPending || !importPreview || importPreview.errors.length > 0 || !importCycleId}
                 >
                    Preview অনুমোদন করে Commit
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={Boolean(editingMember)} onOpenChange={(open) => {
+            if (!open) {
+              setEditingMember(null)
+              setEditMobile("")
+            }
+          }}>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>মোবাইল যোগ করুন (Add Mobile)</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="rounded-lg bg-muted/50 p-3 text-sm">
+                  <div className="font-medium">{editingMember?.name}</div>
+                  <div className="text-muted-foreground">{editingMember?.memberId}</div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="editMemberMobile">মোবাইল (Mobile)</Label>
+                  <Input
+                    id="editMemberMobile"
+                    value={editMobile}
+                    onChange={(event) => setEditMobile(event.target.value)}
+                    placeholder="01XXXXXXXXX"
+                    autoFocus
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setEditingMember(null)}>Cancel</Button>
+                <Button onClick={saveMemberEdit} disabled={updateMember.isPending}>
+                  {updateMember.isPending ? "Saving..." : "Save Mobile"}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -473,19 +540,20 @@ export default function MembersPage() {
               <TableHead className="text-right">মোট বকেয়া (Total)</TableHead>
               <TableHead className="text-right">আজকের বকেয়া (Due)</TableHead>
               <TableHead>স্ট্যাটাস</TableHead>
+              <TableHead className="text-right">অ্যাকশন</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">লোড হচ্ছে (Loading...)</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">লোড হচ্ছে (Loading...)</TableCell></TableRow>
             ) : members?.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">কোন তথ্য নেই</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">কোন তথ্য নেই</TableCell></TableRow>
             ) : (
               members?.map((member) => (
                 <TableRow key={member.id}>
                   <TableCell className="font-medium">{member.memberId}</TableCell>
                   <TableCell><Link href={`/members/${member.id}/history`} className="font-medium hover:text-primary hover:underline">{member.name}</Link>{member.notes && <div className="text-xs text-muted-foreground">{member.notes}</div>}</TableCell>
-                  <TableCell>{member.mobile}</TableCell>
+                  <TableCell>{member.mobile || <span className="text-amber-700">Missing / Not provided</span>}</TableCell>
                   <TableCell className="text-right">{formatCurrency(member.dailyAmount)}</TableCell>
                   <TableCell className="text-right font-medium text-amber-900">{formatCurrency(member.previousDue ?? 0)}</TableCell>
                   <TableCell className="text-right font-bold text-destructive">{formatCurrency(member.totalDue ?? member.todayDue)}</TableCell>
@@ -496,6 +564,13 @@ export default function MembersPage() {
                     </span>
                     {user?.role === "OWNER" && <Button variant="ghost" size="sm" className="ml-2 h-7 px-2" onClick={() => updateMember.mutate({ id: member.id, data: { status: member.status === "active" ? "inactive" : "active" } }, { onSuccess: () => { toast.success("সদস্যের স্ট্যাটাস আপডেট হয়েছে"); refetch() }, onError: () => toast.error("স্ট্যাটাস আপডেট করা যায়নি") })}>{member.status === "active" ? "Inactive" : "Active"}</Button>}
                   </TableCell>
+                   <TableCell className="text-right">
+                     {user?.role === "OWNER" && (
+                       <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => openMemberEdit(member)}>
+                         <Pencil className="w-3.5 h-3.5 mr-1" /> Edit
+                       </Button>
+                     )}
+                   </TableCell>
                 </TableRow>
               ))
             )}

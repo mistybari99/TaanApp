@@ -380,15 +380,15 @@ export interface MemberInput {
 }
 
 export interface MemberImportRow {
-  memberId: string;
+  memberId?: string;
   name: string;
-  mobile: string;
+  mobile?: string;
   nid?: string;
   address?: string;
   shares: number;
-  dailyAmount: number;
-  joiningDate: string;
-  status: string;
+  dailyAmount?: number;
+  joiningDate?: string;
+  status?: string;
 }
 
 export interface MemberImportInput {
@@ -413,6 +413,20 @@ export interface MemberImportResult {
   totalShares: number;
   expectedDailyCollection: number;
   previewToken: string;
+  previewRows?: MemberImportPreviewRow[];
+}
+
+export interface MemberImportPreviewRow {
+  row: number;
+  name: string;
+  shares: number;
+  mobile: string;
+  mobileStatus: 'provided' | 'missing';
+  existingMember?: {
+    id: number;
+    memberId: string;
+    name: string;
+  } | null;
 }
 
 export type PaymentInputVerificationMethod = typeof PaymentInputVerificationMethod[keyof typeof PaymentInputVerificationMethod];

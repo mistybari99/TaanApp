@@ -196,16 +196,22 @@ router.get("/members", requireAuth, async (req: AuthedRequest, res) => {
 });
 router.post("/members", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
   const b = req.body;
-  if (!String(b.memberId ?? "").trim() || !String(b.name ?? "").trim() || !String(b.mobile ?? "").trim()) {
+  const mobile = String(b.mobile ?? "").trim();
+  if (!String(b.memberId ?? "").trim() || !String(b.name ?? "").trim() || !mobile) {
     return res.status(400).json({ error: "Member ID, name, and mobile are required" });
   }
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const duplicateMobile = await client.query("SELECT 1 FROM fund_members WHERE mobile=$1 LIMIT 1", [mobile]);
+    if (duplicateMobile.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Mobile already belongs to another member" });
+    }
     const r = await client.query(
       `INSERT INTO fund_members(member_id,name,mobile,address,nid,shares,daily_amount,joining_date,status,notes)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,member_id AS "memberId",name,mobile,address,nid,shares,daily_amount::float AS "dailyAmount",joining_date::text AS "joiningDate",created_at AS "createdAt",notes,status`,
-      [b.memberId,b.name,b.mobile,b.address ?? "",b.nid ?? null,b.shares,b.dailyAmount,b.joiningDate,b.status === "inactive" ? "inactive" : "active",b.notes ?? ""],
+      [b.memberId,b.name,mobile,b.address ?? "",b.nid ?? null,b.shares,b.dailyAmount,b.joiningDate,b.status === "inactive" ? "inactive" : "active",b.notes ?? ""],
     );
     await auditOn(client, req.user!.id, "MEMBER_CREATED", `Created ${b.memberId}`, "member", String(r.rows[0].id));
     await client.query("COMMIT");
@@ -237,11 +243,43 @@ router.post("/members/import", requireAuth, ownerOnly, async (req: AuthedRequest
   }));
   const errors: Array<{ row: number; message: string }> = [];
   const seen = new Set<string>();
+  const seenMobiles = new Map<string, number>();
+  const previewRows: Array<{
+    row: number;
+    name: string;
+    shares: number;
+    mobile: string;
+    mobileStatus: "provided" | "missing";
+    existingMember: { id: number; memberId: string; name: string } | null;
+  }> = normalized.map((row, index) => ({
+    row: index + 2,
+    name: row.name,
+    shares: Number(row.shares),
+    mobile: row.mobile,
+    mobileStatus: row.mobile ? "provided" : "missing",
+    existingMember: null,
+  }));
+  const existingMembers = await pool.query(
+    `SELECT id,member_id AS "memberId",name,mobile
+       FROM fund_members
+      ORDER BY id`,
+  );
+  const membersById = new Map(existingMembers.rows.map((member) => [String(member.memberId), member]));
+  const existingMobileOwners = new Map(
+    existingMembers.rows
+      .filter((member) => String(member.mobile ?? "").trim())
+      .map((member) => [String(member.mobile).trim(), member]),
+  );
   normalized.forEach((row, index) => {
     const id = row.memberId;
     if (!row.name) errors.push({ row: index + 2, message: "Name is required" });
     if (id && seen.has(id)) errors.push({ row: index + 2, message: `Duplicate member ID in file: ${id}` });
     if (id) seen.add(id);
+    if (row.mobile) {
+      const firstRow = seenMobiles.get(row.mobile);
+      if (firstRow) errors.push({ row: index + 2, message: `Duplicate mobile in file; already used on row ${firstRow}` });
+      else seenMobiles.set(row.mobile, index + 2);
+    }
     if (!Number.isInteger(Number(row.shares)) || Number(row.shares) < 1) errors.push({ row: index + 2, message: "Shares must be a positive whole number" });
     if (!Number.isFinite(Number(row.dailyAmount)) || Number(row.dailyAmount) <= 0) errors.push({ row: index + 2, message: "Daily amount must be positive" });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(row.joiningDate ?? ""))) errors.push({ row: index + 2, message: "Joining date must be YYYY-MM-DD" });
@@ -249,13 +287,34 @@ router.post("/members/import", requireAuth, ownerOnly, async (req: AuthedRequest
   const cycle = await pool.query("SELECT id,status,daily_per_share::float AS daily_per_share,tracking_start_date::text AS tracking_start_date FROM fund_cycles WHERE id=$1", [cycleId]);
   if (!cycle.rows[0]) errors.push({ row: 1, message: "Selected cycle was not found" });
   else if (cycle.rows[0].status !== "ACTIVE") errors.push({ row: 1, message: "Members can only be imported into an active cycle" });
-  if (seen.size) {
-    const existing = await pool.query("SELECT member_id FROM fund_members WHERE member_id=ANY($1::text[])", [[...seen]]);
-    const ids = new Set(existing.rows.map((r) => r.member_id));
-    normalized.forEach((row, index) => {
-      if (row.memberId && ids.has(row.memberId) && !cycleId) errors.push({ row: index + 2, message: `Member ID already exists: ${row.memberId}` });
-    });
-  }
+  normalized.forEach((row, index) => {
+    const rowNumber = index + 2;
+    let match = row.memberId ? membersById.get(row.memberId) : undefined;
+    if (!row.memberId) {
+      const sameName = existingMembers.rows.filter((member) => String(member.name).trim().toLocaleLowerCase() === row.name.toLocaleLowerCase());
+      const candidates = row.mobile
+        ? sameName.filter((member) => String(member.mobile ?? "").trim() === row.mobile)
+        : sameName;
+      if (candidates.length > 1) {
+        errors.push({ row: rowNumber, message: `Ambiguous member match for ${row.name}; include a member ID or unique mobile` });
+      } else {
+        match = candidates[0];
+      }
+    }
+    if (match) {
+      previewRows[index].existingMember = {
+        id: Number(match.id),
+        memberId: String(match.memberId),
+        name: String(match.name),
+      };
+    }
+    if (row.mobile) {
+      const mobileOwner = existingMobileOwners.get(row.mobile);
+      if (mobileOwner && Number(mobileOwner.id) !== Number(match?.id)) {
+        errors.push({ row: rowNumber, message: `Mobile already belongs to another member: ${mobileOwner.memberId}` });
+      }
+    }
+  });
   const invalidRows = new Set(errors.map((error) => error.row));
   const validRows = normalized.filter((_row, index) => !invalidRows.has(index + 2));
   const cyclePerShare = money(cycle.rows[0]?.daily_per_share) || defaultDaily;
@@ -270,6 +329,7 @@ router.post("/members/import", requireAuth, ownerOnly, async (req: AuthedRequest
     totalShares,
     expectedDailyCollection,
     previewToken,
+    previewRows,
   };
   if (errors.length || req.body.dryRun) return res.json(preview);
   if (req.body.confirmImport !== true || req.body.previewToken !== previewToken) {
@@ -283,29 +343,42 @@ router.post("/members/import", requireAuth, ownerOnly, async (req: AuthedRequest
       let memberId = row.memberId;
       let memberDbId: number;
       if (memberId) {
-        const existing = await client.query("SELECT id FROM fund_members WHERE member_id=$1", [memberId]);
-        if (existing.rows[0]) memberDbId = existing.rows[0].id;
+        const existing = await client.query("SELECT id FROM fund_members WHERE member_id=$1 FOR UPDATE", [memberId]);
+        if (existing.rows[0]) {
+          memberDbId = existing.rows[0].id;
+          await client.query(
+            `UPDATE fund_members SET name=$2,mobile=COALESCE(NULLIF($3,''),mobile) WHERE id=$1`,
+            [memberDbId, row.name, row.mobile],
+          );
+        }
         else {
           const created = await client.query(`INSERT INTO fund_members(member_id,name,mobile,address,shares,daily_amount,joining_date,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-            [memberId,row.name,row.mobile,row.address,row.shares,row.dailyAmount,row.joiningDate,row.status]);
+            [memberId,row.name,row.mobile || null,row.address,row.shares,row.dailyAmount,row.joiningDate,row.status]);
           memberDbId = created.rows[0].id;
         }
       } else {
-    const existing = await client.query(
+        const existing = await client.query(
           `SELECT id FROM fund_members
              WHERE LOWER(TRIM(name))=LOWER(TRIM($1))
                AND (NULLIF($2,'') IS NULL OR mobile=$2)
-             ORDER BY id`,
+             ORDER BY id
+             FOR UPDATE`,
           [row.name,row.mobile],
         );
         if (existing.rows.length > 1) {
           throw new Error(`Ambiguous member match for ${row.name}; include a memberId or unique mobile`);
         }
-        if (existing.rows[0]) memberDbId = existing.rows[0].id;
+        if (existing.rows[0]) {
+          memberDbId = existing.rows[0].id;
+          await client.query(
+            `UPDATE fund_members SET name=$2,mobile=COALESCE(NULLIF($3,''),mobile) WHERE id=$1`,
+            [memberDbId, row.name, row.mobile],
+          );
+        }
         else {
           memberId = `M-${randomBytes(4).toString("hex").toUpperCase()}`;
           const created = await client.query(`INSERT INTO fund_members(member_id,name,mobile,address,shares,daily_amount,joining_date,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-            [memberId,row.name,row.mobile,row.address,row.shares,row.dailyAmount,row.joiningDate,row.status]);
+            [memberId,row.name,row.mobile || null,row.address,row.shares,row.dailyAmount,row.joiningDate,row.status]);
           memberDbId = created.rows[0].id;
         }
       }
@@ -348,12 +421,20 @@ router.patch("/members/:id", requireAuth, ownerOnly, async (req: AuthedRequest, 
       await client.query("ROLLBACK");
       return res.status(404).json({ error: "Member not found" });
     }
+    const mobile = b.mobile == null ? null : String(b.mobile).trim();
+    if (mobile) {
+      const duplicateMobile = await client.query("SELECT 1 FROM fund_members WHERE mobile=$1 AND id<>$2 LIMIT 1", [mobile, id]);
+      if (duplicateMobile.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "Mobile already belongs to another member" });
+      }
+    }
     const result = await client.query(
       `UPDATE fund_members SET name=COALESCE($2,name),mobile=COALESCE($3,mobile),address=COALESCE($4,address),nid=COALESCE($5,nid),
         status=COALESCE($6,status),notes=COALESCE($7,notes) WHERE id=$1
         RETURNING id,member_id AS "memberId",name,mobile,address,nid,shares,daily_amount::float AS "dailyAmount",
         joining_date::text AS "joiningDate",created_at AS "createdAt",notes,status`,
-      [id,b.name ?? null,b.mobile ?? null,b.address ?? null,b.nid ?? null,b.status ?? null,b.notes ?? null],
+      [id,b.name ?? null,mobile,b.address ?? null,b.nid ?? null,b.status ?? null,b.notes ?? null],
     );
     const statusChanged = String(current.rows[0].status) !== String(result.rows[0].status);
     await auditOn(

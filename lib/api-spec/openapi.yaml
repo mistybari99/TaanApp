@@ -564,7 +564,7 @@ components:
         notes: { type: string }
     MemberImportRow:
       type: object
-      required: [memberId, name, mobile, shares, dailyAmount, joiningDate, status]
+      required: [name, shares]
       properties:
         memberId: { type: string }
         name: { type: string }
@@ -601,6 +601,30 @@ components:
         totalShares: { type: integer }
         expectedDailyCollection: { type: number }
         previewToken: { type: string }
+        previewRows:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemberImportPreviewRow"
+    MemberImportPreviewRow:
+      type: object
+      required: [row, name, shares, mobile, mobileStatus]
+      properties:
+        row: { type: integer }
+        name: { type: string }
+        shares: { type: integer }
+        mobile: { type: string }
+        mobileStatus: { type: string, enum: [provided, missing] }
+        existingMember:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/MemberImportExistingMember"
+    MemberImportExistingMember:
+      type: object
+      required: [id, memberId, name]
+      properties:
+        id: { type: integer }
+        memberId: { type: string }
+        name: { type: string }
     Payment:
       type: object
       required: [id, receiptId, memberId, memberName, amount, collectorName, verificationStatus, createdAt, status]

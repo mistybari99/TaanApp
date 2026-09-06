@@ -516,15 +516,15 @@ export const ImportMembersBody = zod.object({
   "confirmImport": zod.boolean().optional(),
   "previewToken": zod.string().optional(),
   "rows": zod.array(zod.object({
-  "memberId": zod.string(),
+  "memberId": zod.string().optional(),
   "name": zod.string(),
-  "mobile": zod.string(),
+  "mobile": zod.string().optional(),
   "nid": zod.string().optional(),
   "address": zod.string().optional(),
   "shares": zod.number().int(),
-  "dailyAmount": zod.number(),
-  "joiningDate": zod.string(),
-  "status": zod.string()
+  "dailyAmount": zod.number().optional(),
+  "joiningDate": zod.string().optional(),
+  "status": zod.string().optional()
 })).max(importMembersBodyRowsMax)
 })
 
@@ -538,7 +538,19 @@ export const ImportMembersResponse = zod.object({
   "memberCount": zod.number().int(),
   "totalShares": zod.number().int(),
   "expectedDailyCollection": zod.number(),
-  "previewToken": zod.string()
+  "previewToken": zod.string(),
+  "previewRows": zod.array(zod.object({
+  "row": zod.number().int(),
+  "name": zod.string(),
+  "shares": zod.number().int(),
+  "mobile": zod.string(),
+  "mobileStatus": zod.enum(["provided", "missing"]),
+  "existingMember": zod.object({
+  "id": zod.number().int(),
+  "memberId": zod.string(),
+  "name": zod.string()
+}).nullable().optional()
+})).optional()
 })
 
 

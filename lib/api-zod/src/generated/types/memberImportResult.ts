@@ -15,4 +15,16 @@ export interface MemberImportResult {
   totalShares: number;
   expectedDailyCollection: number;
   previewToken: string;
+  previewRows?: Array<{
+    row: number;
+    name: string;
+    shares: number;
+    mobile: string;
+    mobileStatus: 'provided' | 'missing';
+    existingMember?: {
+      id: number;
+      memberId: string;
+      name: string;
+    } | null;
+  }>;
 }

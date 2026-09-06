@@ -7,13 +7,13 @@
  */
 
 export interface MemberImportRow {
-  memberId: string;
+  memberId?: string;
   name: string;
-  mobile: string;
+  mobile?: string;
   nid?: string;
   address?: string;
   shares: number;
-  dailyAmount: number;
-  joiningDate: string;
-  status: string;
+  dailyAmount?: number;
+  joiningDate?: string;
+  status?: string;
 }
