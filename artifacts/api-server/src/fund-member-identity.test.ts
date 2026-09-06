@@ -115,6 +115,15 @@ test("member IDs are sequential, duplicate-safe, and preserve Bangla names acros
     assert.equal(reloadedMembers[0]?.name, "শাহানা খাতুন");
     assert.equal(reloadedMembers[0]?.businessName, "শাহানা বস্ত্রালয়");
 
+    const dashboardResponse = await request("/api/dashboard");
+    assert.equal(dashboardResponse.status, 200);
+    const dashboard = await dashboardResponse.json() as {
+      dueMembers: Array<{ id: number; memberId: string; name: string }>;
+    };
+    const dashboardMember = dashboard.dueMembers.find((member) => member.id === first.id);
+    assert.equal(dashboardMember?.memberId, first.memberId);
+    assert.equal(dashboardMember?.name, "শাহানা খাতুন");
+
     const exportResponse = await request("/api/reports/export?type=members");
     assert.equal(exportResponse.status, 200);
     const exported = await exportResponse.text();
