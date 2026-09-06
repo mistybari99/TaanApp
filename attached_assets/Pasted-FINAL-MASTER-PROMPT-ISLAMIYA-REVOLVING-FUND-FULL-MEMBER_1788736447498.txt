@@ -1,0 +1,362 @@
+FINAL MASTER PROMPT — ISLAMIYA REVOLVING FUND
+FULL MEMBER & CYCLE DATA RESET — FRESH START
+
+This is a STRICT DATA RESET task.
+
+Before doing anything, inspect the current database/schema and identify exactly which records belong to:
+1. Members
+2. Member shares
+3. Cycles / Taan periods
+4. Cycle memberships / participants
+5. Draw dates / draw schedules
+6. Cycle-specific collection/due records
+7. Any test/import-generated member-related records
+
+IMPORTANT:
+The purpose is to make the ISLAMIYA REVOLVING FUND software completely FRESH so that I can import the correct member CSV again from zero.
+
+==================================================
+1. DELETE ALL CURRENT MEMBER DATA
+==================================================
+
+STRICTLY REMOVE ALL CURRENT MEMBER RECORDS.
+
+Delete:
+- All existing members
+- All current member IDs
+- All member names
+- All member share allocations
+- All member metadata created for the current/test setup
+- All imported/incorrect member records
+- Any duplicate/test member records
+
+The current member database must become EMPTY.
+
+After reset:
+
+Members = 0
+
+Do NOT preserve the currently imported 37 members.
+Do NOT preserve the currently incorrect member ordering.
+Do NOT preserve the current incorrect English-translated names.
+
+I will provide/import the correct CSV again after the reset.
+
+==================================================
+2. DELETE ALL CURRENT CYCLE / TAAN DATA
+==================================================
+
+STRICTLY REMOVE the current Cycle #01 and any other existing cycle/taan setup that was created for testing/import purposes.
+
+Delete/reset:
+- Current cycle
+- Cycle participants
+- Cycle share assignments
+- Cycle draw-date configuration
+- Cycle draw schedule
+- Cycle-specific member mappings
+- Test draw configuration
+- Test collection-period configuration
+
+After reset:
+
+Cycles/Taan periods = 0
+
+The system must behave as if no Taan/Cycle has been created yet.
+
+==================================================
+3. REMOVE MEMBER-RELATED TEST FINANCIAL DATA
+==================================================
+
+Remove ONLY financial/operational records that were created specifically from the current test/import/member setup.
+
+This includes, if present:
+- Test payments
+- Test dues
+- Test collection records
+- Test draw records
+- Test settlements
+- Test transfer records
+- Test transfer settlements
+- Test cycle-specific transactions
+
+Current verification target:
+
+Payments = 0
+Due entries = 0
+Draws = 0
+Settlements = 0
+Transfers = 0
+Transfer settlements = 0
+
+IMPORTANT:
+Do NOT delete genuine historical financial data that belongs to real previous operations.
+
+If a record cannot be confidently identified as test/current-import data, DO NOT delete it automatically.
+Inspect relationships and report it first.
+
+==================================================
+4. DO NOT DELETE THESE
+==================================================
+
+ABSOLUTELY DO NOT DELETE OR MODIFY:
+
+- Owner account
+- Authentication/session system
+- Login credentials
+- User roles
+- Owner permissions
+- Collector permissions
+- Staff accounts unless they are clearly test accounts
+- Application source code
+- Database schema
+- API structure
+- Existing routes
+- Existing UI architecture
+- Existing financial logic
+- Share Transfer system
+- Owner Previous Due system
+- Search functionality
+- Multi-select functionality
+- Reports architecture
+- Settings
+- Security configuration
+- Environment variables
+- Deployment configuration
+
+This is a DATA RESET, NOT a software/code reset.
+
+==================================================
+5. DO NOT CREATE ANY NEW MEMBER
+==================================================
+
+After deleting the current data:
+
+DO NOT automatically create:
+- Members
+- Cycles
+- Shares
+- Draw dates
+- Payments
+- Dues
+- Draws
+
+Wait for my new CSV import.
+
+The database should remain clean and empty until I provide the correct CSV.
+
+==================================================
+6. BAN AUTOMATIC NAME TRANSLATION
+==================================================
+
+The future member import MUST preserve names exactly as provided in the CSV.
+
+For example:
+
+বিশ্ব
+
+must remain:
+
+বিশ্ব
+
+NOT:
+
+World
+World (Milk)
+World Milk
+Milk World
+
+Likewise:
+
+ফুলমিয়া
+সিমা আপু
+রিমা আপু
+মহাজন
+বাসা
+
+must remain exactly as supplied.
+
+NEVER use Google Translate, browser translation, automatic transliteration, AI translation, or English normalization on member names.
+
+Member names are identity data and must be stored/displayed exactly as imported.
+
+==================================================
+7. MEMBER ID FORMAT
+==================================================
+
+The operational Member ID must use the fixed sequential format:
+
+IRF-001
+IRF-002
+IRF-003
+IRF-004
+...
+
+Do NOT generate random IDs such as:
+
+M-68OABED
+M-8C839DB8
+M-XXXXXXX
+
+The operational ID must be human-readable and sequential.
+
+The ID must remain stable after creation.
+
+==================================================
+8. PREPARE FOR NEW CSV IMPORT
+==================================================
+
+After the reset, the system must be ready for a fresh CSV import.
+
+The import process must:
+
+- Read the CSV correctly
+- Preserve Bangla names exactly
+- Preserve share counts exactly
+- Create members cleanly
+- Generate sequential IRF IDs
+- Prevent accidental duplicate identities
+- Show an import review before commit
+- Allow Owner to verify the import
+- Commit atomically
+- Never create financial records during member import
+
+CSV import must only create member/share master data.
+
+It must NOT create:
+- Payments
+- Dues
+- Draws
+- Settlements
+- Transfers
+
+==================================================
+9. VERY IMPORTANT — DO NOT CHANGE BUSINESS LOGIC
+==================================================
+
+Do NOT redesign or modify the Taan business logic in this task.
+
+The following business rules must remain available for the next phase:
+
+- A Taan period is fixed at its beginning.
+- Total shares are fixed for that entire Taan period.
+- Share count cannot be increased/decreased in the middle of a running Taan.
+- A member who wants to reduce shares during a running Taan must use Share Transfer.
+- Running members may receive transferred shares.
+- If no running member accepts the transfer, a new member may receive the transferred share according to Owner/Coordinator rules.
+- Owner acts as Coordinator where applicable.
+- Weekly draw count is determined at the beginning of each Taan based on total shares.
+- Once fixed, the weekly draw count remains locked until that Taan ends.
+- Each draw-date represents one weekly collection closing period.
+- Collection period runs from Saturday through Friday.
+- Friday is the draw/closing day.
+- Previous unpaid dues remain outstanding after a draw-date closes.
+- A member's previous due must be adjusted first when they make a new payment.
+- Only the remaining amount after previous due adjustment contributes to the current running collection.
+- Multiple draw dates are automatically generated according to the fixed draw configuration.
+- No new cycle should need to be manually created every week.
+
+DO NOT implement these rules now unless necessary to preserve existing functionality.
+This task is primarily a CLEAN DATA RESET.
+
+==================================================
+10. REQUIRED VERIFICATION AFTER RESET
+==================================================
+
+After completing the reset, run a complete verification.
+
+Report exactly:
+
+MEMBERS:
+0
+
+CYCLES:
+0
+
+SHARES:
+0
+
+PAYMENTS:
+0
+
+DUE ENTRIES:
+0
+
+DRAWS:
+0
+
+SETTLEMENTS:
+0
+
+TRANSFERS:
+0
+
+TRANSFER SETTLEMENTS:
+0
+
+Then verify:
+
+- Owner can still log in.
+- Authentication works.
+- Navigation works.
+- No route is broken.
+- Database schema is intact.
+- Application builds successfully.
+- API typecheck passes.
+- Frontend typecheck passes.
+- Production build passes.
+- No runtime console errors.
+- No existing financial/business logic was accidentally removed.
+
+==================================================
+11. IMPORTANT SAFETY RULE
+==================================================
+
+Before destructive deletion, inspect the database relationships.
+
+Do NOT blindly DROP tables.
+
+Prefer deleting records while preserving:
+- Database schema
+- Foreign-key structure
+- Application architecture
+- Existing migrations
+
+If cascading deletion is required, verify exactly what will be deleted first.
+
+Do not delete the database itself.
+
+Do not recreate the entire database unless absolutely necessary and only after confirming schema preservation.
+
+==================================================
+12. FINAL REPORT
+==================================================
+
+When finished, provide:
+
+A. What data was deleted
+B. What data was preserved
+C. Final member count
+D. Final cycle count
+E. Final financial-record counts
+F. Whether Owner login still works
+G. Whether build/typecheck passed
+H. Whether the application is ready for the new CSV import
+
+FINAL TARGET:
+
+A completely CLEAN member/cycle environment.
+
+No current members.
+No current test cycle.
+No test member financial records.
+No accidental historical-data deletion.
+No code/schema destruction.
+
+READY FOR MY NEW CSV IMPORT.
+
+Do NOT import any CSV yet.
+Do NOT create any member yet.
+Do NOT create Cycle #01 yet.
+
+WAIT FOR MY NEXT CSV.
