@@ -2,8 +2,7 @@ import * as React from "react"
 import { useLocation, Link } from "wouter"
 import { getGetCurrentUserQueryKey, useGetCurrentUser, useLogout } from "@workspace/api-client-react"
 import { 
-  LayoutDashboard, Users, UserSquare, Receipt, 
-  ArrowDownToLine, FileText, Settings, Activity, 
+  LayoutDashboard, Users, Receipt, ArrowDownToLine,
   LogOut, Wallet, WifiOff, RefreshCw
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -20,13 +19,9 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: "/owner", icon: LayoutDashboard, labelBn: "ড্যাশবোর্ড", labelEn: "Dashboard", roles: ["OWNER"] },
   { href: "/collector", icon: Wallet, labelBn: "সংগ্রহ", labelEn: "Collect", roles: ["COLLECTOR"] },
-  { href: "/members", icon: Users, labelBn: "সদস্য", labelEn: "Members", roles: ["OWNER", "COLLECTOR"] },
-  { href: "/collectors", icon: UserSquare, labelBn: "কর্মী", labelEn: "Staff", roles: ["OWNER"] },
+  { href: "/members", icon: Users, labelBn: "সদস্য", labelEn: "Members", roles: ["OWNER"] },
   { href: "/payments", icon: Receipt, labelBn: "লেনদেন", labelEn: "Payments", roles: ["OWNER", "COLLECTOR"] },
   { href: "/settlements", icon: ArrowDownToLine, labelBn: "জমা", labelEn: "Deposits", roles: ["OWNER", "COLLECTOR"] },
-  { href: "/reports", icon: FileText, labelBn: "রিপোর্ট", labelEn: "Reports", roles: ["OWNER"] },
-  { href: "/settings", icon: Settings, labelBn: "সেটিংস", labelEn: "Settings", roles: ["OWNER"] },
-  { href: "/status", icon: Activity, labelBn: "স্ট্যাটাস", labelEn: "Status", roles: ["OWNER"] },
 ]
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -157,7 +152,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Mobile Bottom Nav */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 h-16 bg-card border-t flex items-center justify-around px-2 z-50 pb-safe">
-        {allowedItems.slice(0, 5).map((item) => {
+        {allowedItems.map((item) => {
           const isActive = location === item.href || (location.startsWith(item.href) && item.href !== "/")
           return (
             <Link 
