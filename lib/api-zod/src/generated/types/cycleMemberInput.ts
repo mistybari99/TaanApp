@@ -10,4 +10,7 @@ export interface CycleMemberInput {
   memberId: number;
   /** @minimum 1 */
   shares: number;
+  effectiveDate?: string;
+  /** @minLength 1 */
+  reason?: string;
 }

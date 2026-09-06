@@ -28,6 +28,7 @@ export default function MembersPage() {
     name: "",
     mobile: "",
     address: "",
+    nid: "",
     shares: 1,
     dailyAmount: 100,
     notes: ""
@@ -57,7 +58,7 @@ export default function MembersPage() {
       onSuccess: () => {
         toast.success("সদস্য যোগ করা হয়েছে (Member added)")
         setIsAddOpen(false)
-        setNewMember({ memberId: "", name: "", mobile: "", address: "", shares: 1, dailyAmount: 100, notes: "" })
+         setNewMember({ memberId: "", name: "", mobile: "", address: "", nid: "", shares: 1, dailyAmount: 100, notes: "" })
         refetch()
       },
       onError: (err: any) => {
@@ -183,7 +184,7 @@ export default function MembersPage() {
                 <Button 
                    onClick={() => {
                      if (!importPreview || importPreview.errors.length > 0) return
-                     if (!window.confirm(`এই preview অনুমোদন করে ${importPreview.memberCount} জন সদস্য ও ${importPreview.totalShares} shares Cycle #01-এ commit করবেন?`)) return
+                      if (!window.confirm(`এই preview অনুমোদন করে ${importPreview.memberCount} জন সদস্য ও ${importPreview.totalShares} shares “${importCycle?.name ?? "selected cycle"}”-এ commit করবেন?`)) return
                      importMembers.mutate({
                        data: { dryRun: false, rows: importRows, cycleId: Number(importCycleId), confirmImport: true, previewToken: importPreview.previewToken }
                      }, {
@@ -234,11 +235,15 @@ export default function MembersPage() {
                   <Input id="address" value={newMember.address} onChange={e => setNewMember({...newMember, address: e.target.value})} className="col-span-3" />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="shares" className="text-right">শেয়ার (Shares)</Label>
+                  <Label htmlFor="nid" className="text-right">NID</Label>
+                  <Input id="nid" value={newMember.nid} onChange={e => setNewMember({...newMember, nid: e.target.value})} className="col-span-3" />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="shares" className="text-right">প্রোফাইল শেয়ার</Label>
                   <Input id="shares" type="number" value={newMember.shares} onChange={e => setNewMember({...newMember, shares: Number(e.target.value)})} className="col-span-3" />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="dailyAmount" className="text-right">দৈনিক জমা</Label>
+                  <Label htmlFor="dailyAmount" className="text-right">প্রোফাইল দৈনিক জমা</Label>
                   <Input id="dailyAmount" type="number" value={newMember.dailyAmount} onChange={e => setNewMember({...newMember, dailyAmount: Number(e.target.value)})} className="col-span-3" />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
@@ -246,6 +251,7 @@ export default function MembersPage() {
                   <Input id="memberNotes" value={newMember.notes} onChange={e => setNewMember({...newMember, notes: e.target.value})} className="col-span-3" />
                 </div>
               </div>
+              <p className="text-xs text-muted-foreground text-right">Cycle-এর shares ও daily due আলাদা cycle screen-এ নির্ধারিত হয়।</p>
               <DialogFooter>
                 <Button onClick={handleAdd} disabled={createMember.isPending}>সংরক্ষণ করুন (Save)</Button>
               </DialogFooter>

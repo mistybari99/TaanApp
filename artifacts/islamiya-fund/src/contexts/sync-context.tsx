@@ -103,7 +103,8 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       if (task.status !== 'PENDING' && task.status !== 'FAILED') continue;
       try {
         if (task.type === 'PAYMENT') {
-          await createPayment.mutateAsync({ data: task.payload });
+          const result = await createPayment.mutateAsync({ data: task.payload });
+          window.dispatchEvent(new CustomEvent('islamiya:offline-payment-synced', { detail: { taskId: task.id, result } }));
         } else if (task.type === 'SETTLEMENT') {
           await createSettlement.mutateAsync({ data: task.payload });
         }

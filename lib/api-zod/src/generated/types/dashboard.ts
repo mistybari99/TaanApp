@@ -17,6 +17,11 @@ export interface Dashboard {
   todayTarget: number;
   collected: number;
   due: number;
+  previousDue: number;
+  totalDue: number;
+  transferValue: number;
+  transferSettlementValue: number;
+  drawCount: number;
   collectorCash: number;
   officeDeposits: number;
   unsettledCash: number;

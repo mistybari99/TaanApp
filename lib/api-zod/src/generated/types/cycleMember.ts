@@ -18,4 +18,6 @@ export interface CycleMember {
   dailyContribution: number;
   totalCollected: number;
   todayDue: number;
+  previousDue?: number;
+  totalDue?: number;
 }

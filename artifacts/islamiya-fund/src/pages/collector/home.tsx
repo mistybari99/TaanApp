@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react"
+import { useState, useMemo, useRef, useEffect } from "react"
 import { useListMembers, useGetDashboard, useCreatePayment, useListCycles, useListCycleMembers, getGetCurrentUserQueryKey, getGetDashboardQueryKey, getListPaymentsQueryKey, getListMembersQueryKey, getListCycleMembersQueryKey } from "@workspace/api-client-react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -40,6 +40,8 @@ export default function CollectorHome() {
     mobile: member.mobile,
     dailyAmount: member.dailyContribution,
     todayPaid: Math.max(0, member.dailyContribution - member.todayDue),
+    previousDue: member.previousDue ?? 0,
+    totalDue: (member.previousDue ?? 0) + member.todayDue,
   })), [cycleMembers])
   const memberOptions = activeCycle ? cycleMemberOptions : members
   const visibleMembers = useMemo(() => memberOptions?.filter((member) => {
@@ -48,6 +50,25 @@ export default function CollectorHome() {
     return member.name.toLowerCase().includes(term) || member.memberId.toLowerCase().includes(term)
   }), [memberOptions, search])
   const selectedMember = useMemo(() => memberOptions?.find(m => m.id === selectedMemberId), [memberOptions, selectedMemberId])
+
+  useEffect(() => {
+    const onSynced = (event: Event) => {
+      const result = (event as CustomEvent<{ result?: any }>).detail?.result
+      if (!result) return
+      receiptRef.current?.show({
+        receiptId: result.receiptId,
+        memberName: result.memberName || selectedMember?.name || "Member",
+        memberId: selectedMember?.memberId || String(result.memberId),
+        amount: result.amount,
+        date: result.createdAt,
+        collectorName: result.collectorName || "Collector",
+        status: "COMPLETED",
+      })
+      toast.success(`অফলাইন রসিদ ${result.receiptId} server-এ মিলেছে`)
+    }
+    window.addEventListener("islamiya:offline-payment-synced", onSynced)
+    return () => window.removeEventListener("islamiya:offline-payment-synced", onSynced)
+  }, [selectedMember])
 
   const handleSelect = (id: number) => {
     setSelectedMemberId(id)
@@ -153,10 +174,17 @@ export default function CollectorHome() {
             <span className="text-xl font-bold mt-1 text-destructive">{formatCurrency(dashboard?.due || 0)}</span>
           </CardContent>
         </Card>
+        <Card className="bg-amber-50 border-amber-200">
+          <CardContent className="p-4 flex flex-col items-center justify-center text-center">
+            <span className="text-xs text-amber-800">আগের বকেয়া</span>
+            <span className="text-xl font-bold mt-1 text-amber-900">{formatCurrency(dashboard?.previousDue || 0)}</span>
+          </CardContent>
+        </Card>
       </div>
       {activeCycle && <div className={`rounded-lg border px-4 py-3 text-sm ${dashboard?.trackingReady ? "border-primary/20 bg-primary/5" : "border-amber-300 bg-amber-50 text-amber-900"}`}>
         <span className="font-semibold">{activeCycle.name}</span>
         <span className="text-muted-foreground"> · ৳{activeCycle.dailyPerShare}/শেয়ার/দিন · শুক্রবার ড্র</span>
+        {new Date().getDay() === 5 && <p className="mt-1 font-medium text-amber-800">আজ শুক্রবার — draw record করার আগে Owner-এর draw workflow সম্পন্ন করুন।</p>}
         {!dashboard?.trackingReady && <p className="mt-1 font-medium">Owner এখনো digital collection শুরুর তারিখ নিশ্চিত করেননি; collection বন্ধ আছে।</p>}
       </div>}
 
@@ -196,8 +224,8 @@ export default function CollectorHome() {
                       <div className="text-sm text-muted-foreground">ID: {member.memberId}</div>
                     </div>
                     <div className="text-right">
-                      <div className="text-primary font-bold">{formatCurrency(member.dailyAmount)}</div>
-                      <div className="text-xs text-muted-foreground">Daily</div>
+                       <div className="text-primary font-bold">{formatCurrency(member.totalDue ?? member.dailyAmount)}</div>
+                       <div className="text-xs text-muted-foreground">মোট বকেয়া</div>
                     </div>
                   </CardContent>
                 </Card>
@@ -227,6 +255,11 @@ export default function CollectorHome() {
               </div>
 
               <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-2 rounded-lg bg-muted/50 p-3 text-center text-sm">
+                  <div><div className="font-semibold">{formatCurrency(selectedMember?.previousDue ?? 0)}</div><div className="text-xs text-muted-foreground">আগের বকেয়া</div></div>
+                  <div><div className="font-semibold">{formatCurrency(selectedMember?.dailyAmount ?? 0)}</div><div className="text-xs text-muted-foreground">আজকের due</div></div>
+                  <div><div className="font-semibold text-destructive">{formatCurrency(selectedMember?.totalDue ?? selectedMember?.dailyAmount ?? 0)}</div><div className="text-xs text-muted-foreground">মোট due</div></div>
+                </div>
                 <div className="space-y-2">
                   <Label className="text-lg">টাকার পরিমাণ (Amount)</Label>
                   <Input 

@@ -38,6 +38,17 @@ export default function OwnerDashboard() {
           </CardContent>
         </Card>
 
+        <Card className="bg-amber-50 border-amber-200">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-amber-900">আগের বকেয়া</CardTitle>
+            <AlertCircle className="h-4 w-4 text-amber-700" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-amber-900">{formatCurrency(dashboard.previousDue)}</div>
+            <p className="text-xs text-amber-800">Carried forward</p>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">আজকের সংগ্রহ</CardTitle>
@@ -46,6 +57,28 @@ export default function OwnerDashboard() {
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(dashboard.collected)}</div>
             <p className="text-xs text-muted-foreground">Collected Today</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Share transfer value</CardTitle>
+            <TrendingUp className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(dashboard.transferValue)}</div>
+            <p className="text-xs text-muted-foreground">Transfer-linked contribution</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Transfer settlements</CardTitle>
+            <ArrowDownToLine className="h-4 w-4 text-secondary-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(dashboard.transferSettlementValue)}</div>
+            <p className="text-xs text-muted-foreground">{dashboard.drawCount} recorded draws</p>
           </CardContent>
         </Card>
         

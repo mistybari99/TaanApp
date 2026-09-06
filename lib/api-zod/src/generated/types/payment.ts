@@ -18,6 +18,8 @@ export interface Payment {
   amount: number;
   collectorName: string;
   verificationStatus: string;
+  previousDueApplied?: number;
+  currentPeriodApplied?: number;
   createdAt: string;
   status: string;
 }

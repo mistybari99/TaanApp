@@ -87,6 +87,14 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/CycleMemberInput" } } }
       responses:
         "201": { description: Added, content: { application/json: { schema: { $ref: "#/components/schemas/CycleMember" } } } }
+  /due-entries:
+    post:
+      operationId: createDueEntry
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DueEntryInput" } } }
+      responses:
+        "201": { description: Previous due recorded }
   /share-transfers/preview:
     get:
       operationId: previewShareTransfer
@@ -315,6 +323,7 @@ components:
         memberId: { type: string }
         name: { type: string }
         mobile: { type: string }
+        nid: { type: string, nullable: true }
         address: { type: string }
         shares: { type: integer }
         dailyAmount: { type: number }
@@ -322,6 +331,8 @@ components:
         status: { type: string, enum: [active, inactive] }
         todayPaid: { type: number }
         todayDue: { type: number }
+        previousDue: { type: number }
+        totalDue: { type: number }
         createdAt: { type: string }
         notes: { type: string }
     MemberUpdate:
@@ -329,6 +340,7 @@ components:
       properties:
         name: { type: string }
         mobile: { type: string }
+        nid: { type: string }
         address: { type: string }
         status: { type: string, enum: [active, inactive] }
         notes: { type: string }
@@ -385,12 +397,26 @@ components:
         dailyContribution: { type: number }
         totalCollected: { type: number }
         todayDue: { type: number }
+        previousDue: { type: number }
+        totalDue: { type: number }
     CycleMemberInput:
       type: object
       required: [memberId, shares]
       properties:
         memberId: { type: integer }
         shares: { type: integer, minimum: 1 }
+        effectiveDate: { type: string }
+        reason: { type: string, minLength: 1 }
+    DueEntryInput:
+      type: object
+      required: [cycleId, memberId, amount, dueDate, reason]
+      properties:
+        cycleId: { type: integer }
+        memberId: { type: integer }
+        amount: { type: number, exclusiveMinimum: 0 }
+        dueDate: { type: string }
+        reason: { type: string, minLength: 1 }
+        idempotencyKey: { type: string, minLength: 8 }
     ShareTransferPreview:
       type: object
       required: [cycleId, fromMemberId, currentShares, transferableShares, requestedShares, remainingShares, accumulatedContribution, transferredContribution, isWinner]
@@ -485,6 +511,7 @@ components:
         winningAmount: { type: number }
         status: { type: string }
         notes: { type: string }
+        idempotencyKey: { type: string, minLength: 8 }
     MemberHistory:
       type: object
       required: [member, cycles, payments, draws, transfers]
@@ -507,6 +534,8 @@ components:
         shares: { type: integer }
         dailyContribution: { type: number }
         totalCollected: { type: number }
+        previousDue: { type: number }
+        totalDue: { type: number }
     MemberDrawHistory:
       type: object
       required: [id, cycleId, cycleNumber, drawNumber, drawDate, winningAmount, status]
@@ -526,6 +555,7 @@ components:
         memberId: { type: string }
         name: { type: string }
         mobile: { type: string }
+        nid: { type: string }
         address: { type: string }
         shares: { type: integer }
         dailyAmount: { type: number }
@@ -539,6 +569,7 @@ components:
         memberId: { type: string }
         name: { type: string }
         mobile: { type: string }
+        nid: { type: string }
         address: { type: string }
         shares: { type: integer }
         dailyAmount: { type: number }
@@ -585,6 +616,8 @@ components:
         amount: { type: number }
         collectorName: { type: string }
         verificationStatus: { type: string }
+        previousDueApplied: { type: number }
+        currentPeriodApplied: { type: number }
         createdAt: { type: string }
         status: { type: string }
     PaymentInput:
@@ -633,7 +666,7 @@ components:
       properties: { name: { type: string }, collected: { type: number }, payments: { type: integer }, cash: { type: number } }
     Dashboard:
       type: object
-      required: [trackingReady, trackingStartDate, totalMembers, todayTarget, collected, due, collectorCash, officeDeposits, unsettledCash, paymentCount, performances, dueMembers, recentPayments, audit]
+      required: [trackingReady, trackingStartDate, totalMembers, todayTarget, collected, due, collectorCash, officeDeposits, unsettledCash, paymentCount, performances, dueMembers, recentPayments, audit, previousDue, totalDue, transferValue, transferSettlementValue, drawCount]
       properties:
         trackingReady: { type: boolean }
         trackingStartDate: { type: string, nullable: true }
@@ -641,6 +674,11 @@ components:
         todayTarget: { type: number }
         collected: { type: number }
         due: { type: number }
+        previousDue: { type: number }
+        totalDue: { type: number }
+        transferValue: { type: number }
+        transferSettlementValue: { type: number }
+        drawCount: { type: integer }
         collectorCash: { type: number }
         officeDeposits: { type: number }
         unsettledCash: { type: number }

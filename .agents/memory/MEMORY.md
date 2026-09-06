@@ -1,2 +1,3 @@
 - [Fund schema migrations](fund-schema.md) — legacy fund tables are raw-SQL managed; keep new financial structures additive and backward-compatible.
 - [Share transfer accounting](transfer-logic.md) — transfer value follows shares across repeated moves; winner overrides require explicit Owner auditing.
+- [Financial safety safeguards](financial-safety.md) — financial writes and audit rows commit atomically; reversed payments must reopen allocated due.

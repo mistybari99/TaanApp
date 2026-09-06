@@ -78,6 +78,7 @@ export interface Member {
   memberId: string;
   name: string;
   mobile: string;
+  nid?: string | null;
   address?: string;
   shares: number;
   dailyAmount: number;
@@ -85,6 +86,8 @@ export interface Member {
   status: MemberStatus;
   todayPaid: number;
   todayDue: number;
+  previousDue?: number;
+  totalDue?: number;
   createdAt?: string;
   notes?: string;
 }
@@ -100,6 +103,7 @@ export const MemberUpdateStatus = {
 export interface MemberUpdate {
   name?: string;
   mobile?: string;
+  nid?: string;
   address?: string;
   status?: MemberUpdateStatus;
   notes?: string;
@@ -191,12 +195,29 @@ export interface CycleMember {
   dailyContribution: number;
   totalCollected: number;
   todayDue: number;
+  previousDue?: number;
+  totalDue?: number;
 }
 
 export interface CycleMemberInput {
   memberId: number;
   /** @minimum 1 */
   shares: number;
+  effectiveDate?: string;
+  /** @minLength 1 */
+  reason?: string;
+}
+
+export interface DueEntryInput {
+  cycleId: number;
+  memberId: number;
+  /** @exclusiveMinimum 0 */
+  amount: number;
+  dueDate: string;
+  /** @minLength 1 */
+  reason: string;
+  /** @minLength 8 */
+  idempotencyKey?: string;
 }
 
 export interface ShareTransferPreview {
@@ -290,6 +311,8 @@ export interface DrawInput {
   winningAmount: number;
   status?: string;
   notes?: string;
+  /** @minLength 8 */
+  idempotencyKey?: string;
 }
 
 export interface MemberCycleSummary {
@@ -302,6 +325,8 @@ export interface MemberCycleSummary {
   shares: number;
   dailyContribution: number;
   totalCollected: number;
+  previousDue?: number;
+  totalDue?: number;
 }
 
 export interface Payment {
@@ -316,6 +341,8 @@ export interface Payment {
   amount: number;
   collectorName: string;
   verificationStatus: string;
+  previousDueApplied?: number;
+  currentPeriodApplied?: number;
   createdAt: string;
   status: string;
 }
@@ -343,6 +370,7 @@ export interface MemberInput {
   memberId: string;
   name: string;
   mobile: string;
+  nid?: string;
   address?: string;
   shares: number;
   dailyAmount: number;
@@ -355,6 +383,7 @@ export interface MemberImportRow {
   memberId: string;
   name: string;
   mobile: string;
+  nid?: string;
   address?: string;
   shares: number;
   dailyAmount: number;
@@ -450,6 +479,11 @@ export interface Dashboard {
   todayTarget: number;
   collected: number;
   due: number;
+  previousDue: number;
+  totalDue: number;
+  transferValue: number;
+  transferSettlementValue: number;
+  drawCount: number;
   collectorCash: number;
   officeDeposits: number;
   unsettledCash: number;

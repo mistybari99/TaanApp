@@ -15,6 +15,7 @@ export * from './cycleMemberInput';
 export * from './dashboard';
 export * from './draw';
 export * from './drawInput';
+export * from './dueEntryInput';
 export * from './exportReportParams';
 export * from './exportReportType';
 export * from './fundCycle';

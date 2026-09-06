@@ -12,6 +12,7 @@ export interface Member {
   memberId: string;
   name: string;
   mobile: string;
+  nid?: string | null;
   address?: string;
   shares: number;
   dailyAmount: number;
@@ -19,6 +20,8 @@ export interface Member {
   status: MemberStatus;
   todayPaid: number;
   todayDue: number;
+  previousDue?: number;
+  totalDue?: number;
   createdAt?: string;
   notes?: string;
 }

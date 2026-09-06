@@ -10,6 +10,7 @@ export interface MemberInput {
   memberId: string;
   name: string;
   mobile: string;
+  nid?: string;
   address?: string;
   shares: number;
   dailyAmount: number;

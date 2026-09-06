@@ -16,4 +16,6 @@ export interface MemberCycleSummary {
   shares: number;
   dailyContribution: number;
   totalCollected: number;
+  previousDue?: number;
+  totalDue?: number;
 }

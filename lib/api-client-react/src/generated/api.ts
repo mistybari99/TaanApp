@@ -28,6 +28,7 @@ import type {
   Dashboard,
   Draw,
   DrawInput,
+  DueEntryInput,
   ExportReportParams,
   FundCycle,
   FundCycleInput,
@@ -903,6 +904,71 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getUpsertCycleMemberMutationOptions(options));
+    }
+
+export const getCreateDueEntryUrl = () => {
+
+
+
+
+  return `/api/due-entries`
+}
+
+export const createDueEntry = async (dueEntryInput: DueEntryInput, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getCreateDueEntryUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(dueEntryInput)
+  }
+);}
+
+
+
+
+
+export const getCreateDueEntryMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDueEntry>>, TError,{data: BodyType<DueEntryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createDueEntry>>, TError,{data: BodyType<DueEntryInput>}, TContext> => {
+
+const mutationKey = ['createDueEntry'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createDueEntry>>, {data: BodyType<DueEntryInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createDueEntry(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateDueEntryMutationResult = NonNullable<Awaited<ReturnType<typeof createDueEntry>>>
+    export type CreateDueEntryMutationBody = BodyType<DueEntryInput>
+    export type CreateDueEntryMutationError = ErrorType<unknown>
+
+    export const useCreateDueEntry = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDueEntry>>, TError,{data: BodyType<DueEntryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createDueEntry>>,
+        TError,
+        {data: BodyType<DueEntryInput>},
+        TContext
+      > => {
+      return useMutation(getCreateDueEntryMutationOptions(options));
     }
 
 export const getPreviewShareTransferUrl = (params: PreviewShareTransferParams,) => {

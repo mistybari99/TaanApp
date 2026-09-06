@@ -229,3 +229,37 @@ Cleanup used one database transaction. It removed only the labeled synthetic mem
 9. Decide whether transfer settlement, offline transfer/reversal, and receipt reconciliation are required for launch; if they are, implement them before collection. If not, make the online-only limitations explicit in the operating procedure and UI.
 
 **Launch recommendation:** Do not import the real 31-member CSV or open digital tracking until the critical/high findings have been remediated and the automated regression suite passes against a fresh synthetic database.
+
+## 14. Remediation update — Task #16
+
+The release-blocking safeguards were implemented without importing the real member CSV, creating Cycle #02, migrating paper-book history, or changing genuine financial records.
+
+### Addressed
+
+- Added additive database safeguards for cycle/member ownership, draw and settlement statuses, nonnegative shares, due entries, reversal uniqueness, and financial idempotency keys. Legacy rows remain preservable through `NOT VALID` constraints.
+- Made payment posting, reversal, collector settlement, transfer settlement, share transfer, and draw writes transactional with their audit records.
+- Added transaction advisory locks and deterministic idempotency replay for retryable financial writes; draw numbering is serialized per cycle.
+- Restricted Collector transfer responses to operational member/share information and removed Owner-only settlement, override, creator, notes, and audit details.
+- Enforced Friday, non-future draw dates, allowed draw statuses, and cycle membership checks.
+- Added effective-date and reason requirements plus share-history records for cycle share changes.
+- Rejected ambiguous CSV name/mobile matches and made the import confirmation show the selected cycle name.
+- Added stored previous-due/current-period allocation fields, Owner-only due-entry recording, dashboard reconciliation totals, member due breakdowns, and offline receipt reconciliation.
+- Added a rollback-safe database regression test covering composite ownership, status checks, and duplicate reversal protection.
+
+### Remaining before live collection
+
+- Expand automated coverage to concurrent API requests, full route authorization, settlement replay, draw replay, transfer accounting, and end-to-end cleanup invariants.
+- Decide and document whether transfer settlement and other non-payment mutations must support offline operation; currently those operations remain online-only.
+- Standardize structured before/after audit values and finish terminology/accessibility review across all operational screens.
+
+### Final verification
+
+- Full workspace typecheck: **PASS**
+- API build: **PASS**
+- Frontend build with workflow inputs: **PASS**
+- Fund safety regression test: **PASS**
+- API health/database reachability: **PASS**
+- Managed API and web workflows: **RUNNING with clean startup logs**
+- Final development financial invariant: **1 active Cycle #01; 0 members, cycle memberships, payments, settlements, draws, transfers, transfer settlements, and due entries; tracking start remains NULL**
+
+The fund is now materially safer for controlled setup and synthetic verification, but real-member import and live collection remain intentionally blocked until the remaining test and operating-policy follow-ups are completed.

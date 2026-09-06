@@ -13,4 +13,6 @@ export interface DrawInput {
   winningAmount: number;
   status?: string;
   notes?: string;
+  /** @minLength 8 */
+  idempotencyKey?: string;
 }
