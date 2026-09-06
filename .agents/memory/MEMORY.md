@@ -4,3 +4,4 @@
 - [Member identity migration](member-identity.md) — public IRF IDs are additive and stable; legacy IDs remain untouched while every user-facing surface uses the public ID.
 - [Fund business date](fund-business-date.md) — collection deadlines and Friday/Saturday period state use Asia/Dhaka business dates, not UTC.
 - [Member selection modes](member-selection.md) — batch Previous Due uses atomic multi-select; payments, draws, transfers, and history remain single-member actions.
+- [Navigation hierarchy](navigation-hierarchy.md) — daily work stays in mobile primary navigation; infrequent records/admin routes live under More and logout requires confirmation.
