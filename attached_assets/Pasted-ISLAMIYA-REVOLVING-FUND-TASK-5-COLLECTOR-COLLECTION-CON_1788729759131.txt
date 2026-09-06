@@ -1,0 +1,118 @@
+ISLAMIYA REVOLVING FUND
+TASK 5 — COLLECTOR COLLECTION CONTROL & FRIDAY RED ALERT
+
+Collector-এর জন্য operational collection screen business reality অনুযায়ী তৈরি/হarden করো।
+
+PRIMARY RULE:
+
+প্রতিটি Draw-Date:
+Saturday → Friday
+
+Friday = COLLECTION CLOSING DAY + DRAW DAY.
+
+Collector screen-এ শুক্রবারের collection deadline visibly prominent করতে হবে।
+
+RED ALERT / MENTAL PRESSURE:
+
+Friday হলে Collector collection page-এ একটি clear RED ALERT দেখাবে:
+
+🔴 FRIDAY COLLECTION CLOSING
+আজকের মধ্যে সকল সম্ভব collection complete করুন।
+Friday is the Collection Closing & Draw Day.
+
+আরও দেখাবে:
+
+🔴 Outstanding Members
+🔴 Previous Due Members
+🔴 Current Collection Due
+🔴 Total Due
+
+এই alert collection pages-এ থাকবে।
+
+Collector যেন member list দেখে বুঝতে পারে কার:
+- Previous Due আছে
+- Current Due আছে
+- Total Due আছে
+- আজ collection নেওয়া জরুরি
+
+IMPORTANT:
+
+Friday পার হয়ে Saturday শুরু হলে:
+আগের Draw-Date automatically CLOSED হবে।
+Unpaid amount Previous Due হিসেবে carry forward হবে।
+নতুন Draw-Date automatically OPEN হবে।
+
+Collector-কে manually Draw-Date create করতে হবে না।
+
+NEW DRAW-DATE:
+
+Saturday থেকে নতুন period:
+Draw-Date N+1
+
+Collector screen:
+Current Draw-Date
+Previous Due
+Current Collection
+Total Due
+
+এই breakdown দেখাবে।
+
+COLLECTOR PERMISSION:
+
+Collector দেখতে পারবে:
+- Member
+- Member ID
+- Mobile
+- Shares
+- Previous Due
+- Current Due
+- Total Due
+- Payment history যতটুকু collection-এর জন্য প্রয়োজন
+- Collection status
+
+Collector দেখতে পারবে না:
+- Owner-only administrative data
+- Sensitive audit details
+- Override controls
+- Owner settlement controls
+- Unrestricted transfer administration
+
+Payment allocation:
+Previous Due first → Current period second.
+
+Friday reminder:
+যদি Previous Due থাকে, সেটা RED indicator-এ দেখাবে।
+
+UI language:
+Bangla + English mixed রাখা যাবে।
+
+Example:
+
+🔴 Previous Due — আগের সপ্তাহের বকেয়া
+Current Collection — চলতি Draw-Date
+Total Due — মোট বকেয়া
+Friday Closing — আজ Collection Closing Day
+
+কোনো automatic translation দিয়ে member name পরিবর্তন করা যাবে না।
+
+DO NOT:
+- Existing financial logic ভাঙবে না।
+- Real CSV import করবে না।
+- Cycle #02 create করবে না।
+- Genuine data modify করবে না।
+- Existing transfer logic replace করবে না।
+
+Focused tests:
+- Friday red alert
+- Saturday rollover
+- Previous due display
+- Current due display
+- Total due display
+- Previous due first allocation
+- Collector permission
+- Bangla/English UI
+- Member name preservation
+
+Typecheck + tests + build চালাও।
+
+STOP after this task.

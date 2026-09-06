@@ -1877,14 +1877,22 @@ router.get("/audit",requireAuth,ownerOnly,async(_req,res)=>{const r=await pool.q
 router.get("/settings",requireAuth,async(_req,res)=>{const r=await pool.query(`SELECT organization_name AS "organizationName",expected_members AS "expectedMembers",default_daily_per_share::float AS "defaultDailyPerShare",demo_mode AS "demoMode",biometric_optional AS "biometricOptional" FROM fund_settings WHERE id=1`);res.json(r.rows[0]);});
 router.patch("/settings",requireAuth,ownerOnly,async(req:AuthedRequest,res)=>{const b=req.body;const r=await pool.query(`UPDATE fund_settings SET organization_name=COALESCE($1,organization_name),expected_members=COALESCE($2,expected_members),default_daily_per_share=COALESCE($3,default_daily_per_share) WHERE id=1 RETURNING organization_name AS "organizationName",expected_members AS "expectedMembers",default_daily_per_share::float AS "defaultDailyPerShare",demo_mode AS "demoMode",biometric_optional AS "biometricOptional"`,[b.organizationName??null,b.expectedMembers??null,b.defaultDailyPerShare??null]);await audit(req.user!.id,"SETTINGS_UPDATED","Business settings updated");res.json(r.rows[0]);});
 
-router.get("/dashboard",requireAuth,async(req:AuthedRequest,res)=>{
-   const activeCycleResult = await pool.query("SELECT id,tracking_start_date::text AS tracking_start_date FROM fund_cycles WHERE status='ACTIVE' LIMIT 1");
+ router.get("/dashboard",requireAuth,async(req:AuthedRequest,res)=>{
+    const businessDate = todayIso();
+    const activeCycleResult = await pool.query("SELECT id,tracking_start_date::text AS tracking_start_date FROM fund_cycles WHERE status='ACTIVE' LIMIT 1");
    const activeCycleId = Number(activeCycleResult.rows[0]?.id ?? 0);
    const trackingStartDate = activeCycleResult.rows[0]?.tracking_start_date ?? null;
-   const trackingReady = Boolean(trackingStartDate && todayIso() >= String(trackingStartDate));
+    const trackingReady = Boolean(trackingStartDate && businessDate >= String(trackingStartDate));
    const readySql = trackingReady ? "TRUE" : "FALSE";
     const activeTan = activeCycleId ? await tanConfigForCycle(pool, activeCycleId) : null;
-    const activeTanPeriod = activeTan ? await tanPeriodForDate(pool, activeCycleId, todayIso()) : null;
+     const activeTanPeriod = activeTan ? await tanPeriodForDate(pool, activeCycleId, businessDate) : null;
+     const periodSummary = {
+       isFridayClosingDay: Boolean(activeTanPeriod && isFriday(businessDate) && activeTanPeriod.drawDate === businessDate),
+       isSaturdayOpeningDay: Boolean(activeTanPeriod && isSaturday(businessDate) && activeTanPeriod.periodStart === businessDate),
+       currentDrawDate: activeTanPeriod?.drawDate ?? null,
+       currentPeriodStart: activeTanPeriod?.periodStart ?? null,
+       currentPeriodEnd: activeTanPeriod?.periodEnd ?? null,
+     };
     const activeTanDue = activeTan ? await tanDueForMembers(pool, activeCycleId, activeTanPeriod) : new Map<number, any>();
     const tanCollectorRows = activeTan && req.user!.role === "COLLECTOR"
       ? await tanDashboardMemberRows(pool, activeCycleId, activeTanPeriod, activeTanDue, req.user!.id)
