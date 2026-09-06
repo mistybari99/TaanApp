@@ -1,0 +1,89 @@
+TASK — COMMIT CURRENT MEMBER CSV INTO CYCLE #01
+
+This is the FINAL OWNER CONFIRMATION to commit the currently previewed CSV.
+
+IMPORTANT:
+- Commit ONLY the current 31-member CSV already uploaded/previewed.
+- Do NOT create Cycle #02.
+- Do NOT modify any financial transaction history.
+- Do NOT import any historical dues, payments, draws, settlements, or transfers.
+- Do NOT change payment, due, draw, transfer, settlement, audit, or cycle logic.
+- Do NOT run unrelated migrations or feature changes.
+- Do NOT create synthetic/demo financial data.
+- Do NOT delete any genuine data.
+
+TARGET:
+- Cycle: #01
+- Status: ACTIVE
+- Current Tan
+- Contribution: ৳100 per share per day
+- Weekly draw: Friday
+
+CSV:
+- Header: name, shares
+- 31 rows
+- Mobile is intentionally missing from the CSV.
+- Missing Mobile is allowed for this import.
+- Total intended shares MUST be 108.
+- Expected daily collection MUST therefore be:
+  108 × ৳100 = ৳10,800
+
+IMPORTANT MEMBER MERGE:
+The CSV contains two rows:
+
+- বিপ্লব (বাজার) — 10 shares
+- বিপ্লব (বাজার) — 5 shares
+
+These two rows represent ONE member.
+
+Therefore:
+- Create only ONE permanent member for “বিপ্লব (বাজার)”
+- Assign that member 15 shares in Cycle #01
+- Do NOT create two separate members.
+- The final Cycle #01 total must remain exactly 108 shares.
+
+IMPORT RULES:
+1. Use the current CSV preview as the source of truth.
+2. Merge the two “বিপ্লব (বাজার)” rows into one member with 15 shares.
+3. Do not invent Mobile numbers.
+4. Leave Mobile NULL/blank where it is missing.
+5. Preserve the existing member master/cycle separation.
+6. Create/update Cycle #01 membership only.
+7. Do not create any payment, due, draw, settlement, transfer, or historical transaction.
+8. Keep the import transactional: if validation fails, commit nothing.
+9. Preserve audit integrity and create the appropriate import/member/cycle audit record if the existing system requires it.
+10. Do not create Cycle #02.
+
+BEFORE COMMIT:
+Run a final validation and report:
+- CSV rows = 31
+- Unique members after the confirmed merge
+- Total Cycle #01 shares = EXACTLY 108
+- Expected daily collection = EXACTLY ৳10,800
+- “বিপ্লব (বাজার)” = ONE member with 15 shares
+- Mobile provided = 0
+- Mobile missing = all applicable members
+- Payments created = 0
+- Due entries created = 0
+- Draws created = 0
+- Settlements created = 0
+- Transfers created = 0
+- Transfer settlements created = 0
+- Cycle #02 = does not exist
+
+COMMIT:
+Only after all validations pass, commit the CSV into Cycle #01.
+
+AFTER COMMIT:
+Verify the database and report:
+- Cycle #01 participant count
+- Total shares
+- Expected daily collection
+- “বিপ্লব (বাজার)” share count
+- No financial transaction was accidentally created
+- No Cycle #02 was created
+- No genuine historical data was modified/deleted
+
+STOP after the import and verification.
+
+Do NOT make any other application changes.
