@@ -4,7 +4,7 @@ import { getGetCurrentUserQueryKey, useGetCurrentUser, useLogout } from "@worksp
 import { 
   LayoutDashboard, Users, UserSquare, Receipt, 
   ArrowDownToLine, FileText, Settings, Activity, 
-  LogOut, Wallet, WifiOff, RefreshCw
+  LogOut, Wallet, WifiOff, RefreshCw, Repeat2, Trophy, History
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useSync } from "@/contexts/sync-context"
@@ -21,9 +21,13 @@ const navItems: NavItem[] = [
   { href: "/owner", icon: LayoutDashboard, labelBn: "ড্যাশবোর্ড", labelEn: "Dashboard", roles: ["OWNER"] },
   { href: "/collector", icon: Wallet, labelBn: "সংগ্রহ", labelEn: "Collect", roles: ["COLLECTOR"] },
   { href: "/members", icon: Users, labelBn: "সদস্য", labelEn: "Members", roles: ["OWNER", "COLLECTOR"] },
+  { href: "/cycles", icon: Repeat2, labelBn: "চক্র", labelEn: "Current Cycle", roles: ["OWNER", "COLLECTOR"] },
   { href: "/collectors", icon: UserSquare, labelBn: "কর্মী", labelEn: "Staff", roles: ["OWNER"] },
   { href: "/payments", icon: Receipt, labelBn: "লেনদেন", labelEn: "Payments", roles: ["OWNER", "COLLECTOR"] },
   { href: "/settlements", icon: ArrowDownToLine, labelBn: "জমা", labelEn: "Deposits", roles: ["OWNER", "COLLECTOR"] },
+  { href: "/draws", icon: Trophy, labelBn: "শুক্রবার ড্র", labelEn: "Friday Draw", roles: ["OWNER"] },
+  { href: "/draw-history", icon: History, labelBn: "ড্র ইতিহাস", labelEn: "Draw History", roles: ["OWNER", "COLLECTOR"] },
+  { href: "/member-history", icon: History, labelBn: "সদস্য ইতিহাস", labelEn: "Member History", roles: ["OWNER", "COLLECTOR"] },
   { href: "/reports", icon: FileText, labelBn: "রিপোর্ট", labelEn: "Reports", roles: ["OWNER"] },
   { href: "/settings", icon: Settings, labelBn: "সেটিংস", labelEn: "Settings", roles: ["OWNER"] },
   { href: "/status", icon: Activity, labelBn: "স্ট্যাটাস", labelEn: "Status", roles: ["OWNER"] },

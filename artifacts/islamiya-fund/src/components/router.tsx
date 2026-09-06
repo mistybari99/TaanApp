@@ -16,6 +16,9 @@ import SettlementsPage from "@/pages/settlements"
 import ReportsPage from "@/pages/reports"
 import SettingsPage from "@/pages/settings"
 import StatusPage from "@/pages/status"
+import CyclesPage from "@/pages/cycles"
+import DrawsPage, { DrawHistoryPage } from "@/pages/draws"
+import MemberHistoryPage from "@/pages/member-history"
 import NotFound from "@/pages/not-found"
 
 export function Router() {
@@ -48,10 +51,15 @@ export function Router() {
               <Switch>
                 <Route path="/owner" component={OwnerDashboard} />
                 <Route path="/collector" component={CollectorHome} />
+                <Route path="/members/:id/history" component={MemberHistoryPage} />
                 <Route path="/members" component={MembersPage} />
+                <Route path="/member-history" component={MemberHistoryPage} />
+                <Route path="/cycles" component={CyclesPage} />
                 <Route path="/collectors" component={CollectorsPage} />
                 <Route path="/payments" component={PaymentsPage} />
                 <Route path="/settlements" component={SettlementsPage} />
+                <Route path="/draws" component={DrawsPage} />
+                <Route path="/draw-history" component={DrawHistoryPage} />
                 <Route path="/reports" component={ReportsPage} />
                 <Route path="/settings" component={SettingsPage} />
                 <Route path="/status" component={StatusPage} />

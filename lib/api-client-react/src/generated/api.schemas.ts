@@ -85,6 +85,186 @@ export interface Member {
   status: MemberStatus;
   todayPaid: number;
   todayDue: number;
+  createdAt?: string;
+  notes?: string;
+}
+
+export type MemberUpdateStatus = typeof MemberUpdateStatus[keyof typeof MemberUpdateStatus];
+
+
+export const MemberUpdateStatus = {
+  active: 'active',
+  inactive: 'inactive',
+} as const;
+
+export interface MemberUpdate {
+  name?: string;
+  mobile?: string;
+  address?: string;
+  status?: MemberUpdateStatus;
+  notes?: string;
+}
+
+export type FundCycleDrawFrequency = typeof FundCycleDrawFrequency[keyof typeof FundCycleDrawFrequency];
+
+
+export const FundCycleDrawFrequency = {
+  WEEKLY: 'WEEKLY',
+} as const;
+
+export type FundCycleDrawDay = typeof FundCycleDrawDay[keyof typeof FundCycleDrawDay];
+
+
+export const FundCycleDrawDay = {
+  FRIDAY: 'FRIDAY',
+} as const;
+
+export type FundCycleStatus = typeof FundCycleStatus[keyof typeof FundCycleStatus];
+
+
+export const FundCycleStatus = {
+  ACTIVE: 'ACTIVE',
+  COMPLETED: 'COMPLETED',
+} as const;
+
+export interface FundCycle {
+  id: number;
+  cycleNumber: number;
+  name: string;
+  startDate: string;
+  endDate?: string | null;
+  dailyPerShare: number;
+  drawFrequency: FundCycleDrawFrequency;
+  drawDay: FundCycleDrawDay;
+  status: FundCycleStatus;
+  notes?: string;
+  createdAt?: string;
+  memberCount: number;
+}
+
+export type FundCycleInputStatus = typeof FundCycleInputStatus[keyof typeof FundCycleInputStatus];
+
+
+export const FundCycleInputStatus = {
+  ACTIVE: 'ACTIVE',
+  COMPLETED: 'COMPLETED',
+} as const;
+
+export interface FundCycleInput {
+  cycleNumber?: number;
+  name: string;
+  startDate: string;
+  endDate?: string;
+  dailyPerShare?: number;
+  status?: FundCycleInputStatus;
+  notes?: string;
+}
+
+export type FundCycleUpdateStatus = typeof FundCycleUpdateStatus[keyof typeof FundCycleUpdateStatus];
+
+
+export const FundCycleUpdateStatus = {
+  ACTIVE: 'ACTIVE',
+  COMPLETED: 'COMPLETED',
+} as const;
+
+export interface FundCycleUpdate {
+  name?: string;
+  endDate?: string;
+  dailyPerShare?: number;
+  status?: FundCycleUpdateStatus;
+  notes?: string;
+}
+
+export interface CycleMember {
+  id: number;
+  cycleId: number;
+  memberId: number;
+  memberCode: string;
+  name: string;
+  mobile?: string;
+  status?: string;
+  shares: number;
+  dailyContribution: number;
+  totalCollected: number;
+  todayDue: number;
+}
+
+export interface CycleMemberInput {
+  memberId: number;
+  /** @minimum 1 */
+  shares: number;
+}
+
+export interface Draw {
+  id: number;
+  cycleId: number;
+  cycleNumber: number;
+  cycleName?: string;
+  drawNumber: number;
+  drawDate: string;
+  winnerMemberId: number;
+  winnerMemberCode: string;
+  winnerName: string;
+  winningAmount: number;
+  status: string;
+  notes?: string;
+  createdAt?: string;
+}
+
+export interface DrawInput {
+  cycleId: number;
+  drawDate: string;
+  winnerMemberId: number;
+  winningAmount: number;
+  status?: string;
+  notes?: string;
+}
+
+export interface MemberCycleSummary {
+  cycleId: number;
+  cycleNumber: number;
+  name: string;
+  startDate: string;
+  endDate?: string | null;
+  status: string;
+  shares: number;
+  dailyContribution: number;
+  totalCollected: number;
+}
+
+export interface Payment {
+  id: number;
+  receiptId: string;
+  memberId: number;
+  cycleId?: number | null;
+  collectionDate?: string;
+  shares?: number;
+  notes?: string;
+  memberName: string;
+  amount: number;
+  collectorName: string;
+  verificationStatus: string;
+  createdAt: string;
+  status: string;
+}
+
+export interface MemberDrawHistory {
+  id: number;
+  cycleId: number;
+  cycleNumber: number;
+  drawNumber: number;
+  drawDate: string;
+  winningAmount: number;
+  status: string;
+  notes?: string;
+}
+
+export interface MemberHistory {
+  member: Member;
+  cycles: MemberCycleSummary[];
+  payments: Payment[];
+  draws: MemberDrawHistory[];
 }
 
 export interface MemberInput {
@@ -96,6 +276,7 @@ export interface MemberInput {
   dailyAmount: number;
   joiningDate: string;
   status: string;
+  notes?: string;
 }
 
 export interface MemberImportRow {
@@ -111,6 +292,7 @@ export interface MemberImportRow {
 
 export interface MemberImportInput {
   dryRun: boolean;
+  cycleId?: number;
   /** @maxItems 500 */
   rows: MemberImportRow[];
 }
@@ -126,18 +308,6 @@ export interface MemberImportResult {
   errors: MemberImportError[];
 }
 
-export interface Payment {
-  id: number;
-  receiptId: string;
-  memberId: number;
-  memberName: string;
-  amount: number;
-  collectorName: string;
-  verificationStatus: string;
-  createdAt: string;
-  status: string;
-}
-
 export type PaymentInputVerificationMethod = typeof PaymentInputVerificationMethod[keyof typeof PaymentInputVerificationMethod];
 
 
@@ -148,6 +318,9 @@ export const PaymentInputVerificationMethod = {
 
 export interface PaymentInput {
   memberId: number;
+  cycleId?: number;
+  collectionDate?: string;
+  notes?: string;
   amount: number;
   verificationMethod: PaymentInputVerificationMethod;
   verificationCode?: string;
@@ -224,7 +397,30 @@ export type ListMembersParams = {
 search?: string;
 };
 
-export type ExportReportParams = {
-type: string;
+export type ListDrawsParams = {
+cycleId?: number;
+memberId?: number;
+date?: string;
+drawNumber?: number;
 };
+
+export type ExportReportParams = {
+type: ExportReportType;
+};
+
+export type ExportReportType = typeof ExportReportType[keyof typeof ExportReportType];
+
+
+export const ExportReportType = {
+  members: 'members',
+  payments: 'payments',
+  collectors: 'collectors',
+  settlements: 'settlements',
+  audit: 'audit',
+  daily: 'daily',
+  weekly: 'weekly',
+  monthly: 'monthly',
+  due: 'due',
+  collector: 'collector',
+} as const;
 

@@ -86,7 +86,7 @@ export default function PaymentsPage() {
                       <Button variant="ghost" size="icon" onClick={() => printReceipt(payment)} title="Print Receipt">
                         <FileText className="w-4 h-4" />
                       </Button>
-                      {payment.status === 'COMPLETED' && (
+                      {payment.status === 'POSTED' && (
                         <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" onClick={() => handleReverse(payment.id)} title="Reverse">
                           <RotateCcw className="w-4 h-4" />
                         </Button>

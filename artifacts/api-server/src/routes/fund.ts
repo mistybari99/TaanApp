@@ -92,7 +92,7 @@ router.get("/members", requireAuth, async (req: AuthedRequest, res) => {
   if (req.user?.role === "COLLECTOR") { params.push(req.user.id); allowed = " AND (m.assigned_collector_id=$2 OR m.assigned_collector_id IS NULL)"; }
   const rows = await pool.query(
     `SELECT m.id,m.member_id AS "memberId",m.name,m.mobile,m.address,m.shares,m.daily_amount::float AS "dailyAmount",
-      m.joining_date::text AS "joiningDate",m.status,COALESCE(SUM(p.amount) FILTER(WHERE p.created_at::date=CURRENT_DATE AND p.status='POSTED'),0)::float AS "todayPaid"
+       m.joining_date::text AS "joiningDate",m.created_at AS "createdAt",m.notes,m.status,COALESCE(SUM(p.amount) FILTER(WHERE p.created_at::date=CURRENT_DATE AND p.status='POSTED'),0)::float AS "todayPaid"
      FROM fund_members m LEFT JOIN fund_payments p ON p.member_id=m.id
      WHERE (m.name ILIKE $1 OR m.member_id ILIKE $1 OR m.mobile ILIKE $1)${allowed}
      GROUP BY m.id ORDER BY m.member_id`,
@@ -103,76 +103,264 @@ router.get("/members", requireAuth, async (req: AuthedRequest, res) => {
 router.post("/members", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
   const b = req.body;
   const r = await pool.query(
-    `INSERT INTO fund_members(member_id,name,mobile,address,shares,daily_amount,joining_date,status)
-     VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,member_id AS "memberId",name,mobile,address,shares,daily_amount::float AS "dailyAmount",joining_date::text AS "joiningDate",status`,
-    [b.memberId,b.name,b.mobile,b.address ?? "",b.shares,b.dailyAmount,b.joiningDate,b.status],
+    `INSERT INTO fund_members(member_id,name,mobile,address,shares,daily_amount,joining_date,status,notes)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,member_id AS "memberId",name,mobile,address,shares,daily_amount::float AS "dailyAmount",joining_date::text AS "joiningDate",created_at AS "createdAt",notes,status`,
+    [b.memberId,b.name,b.mobile ?? "",b.address ?? "",b.shares,b.dailyAmount,b.joiningDate,b.status === "inactive" ? "inactive" : "active",b.notes ?? ""],
   );
   await audit(req.user!.id, "MEMBER_CREATED", `Created ${b.memberId}`, "member", String(r.rows[0].id));
   res.status(201).json({ ...r.rows[0], todayPaid: 0, todayDue: money(b.dailyAmount) });
 });
 router.post("/members/import", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
   const rows: Array<Record<string, unknown>> = Array.isArray(req.body.rows) ? req.body.rows.slice(0, 500) : [];
+  const cycleId = req.body.cycleId ? Number(req.body.cycleId) : null;
+  const settings = await pool.query("SELECT default_daily_per_share::float AS amount FROM fund_settings WHERE id=1");
+  const defaultDaily = money(settings.rows[0]?.amount) || 100;
+  const normalized = rows.map((row) => ({
+    ...row,
+    memberId: String(row.memberId ?? "").trim(),
+    name: String(row.name ?? "").trim(),
+    mobile: String(row.mobile ?? "").trim(),
+    address: String(row.address ?? ""),
+    shares: Number(row.shares),
+    dailyAmount: row.dailyAmount === "" || row.dailyAmount == null ? Number(row.shares) * defaultDaily : Number(row.dailyAmount),
+    joiningDate: String(row.joiningDate ?? "").trim() || new Date().toISOString().slice(0, 10),
+    status: row.status === "inactive" ? "inactive" : "active",
+  }));
   const errors: Array<{ row: number; message: string }> = [];
   const seen = new Set<string>();
-  rows.forEach((row, index) => {
-    const id = String(row.memberId ?? "").trim();
-    if (!id || !String(row.name ?? "").trim()) errors.push({ row: index + 2, message: "Member ID and name are required" });
-    if (seen.has(id)) errors.push({ row: index + 2, message: `Duplicate member ID in file: ${id}` });
-    seen.add(id);
+  normalized.forEach((row, index) => {
+    const id = row.memberId;
+    if (!row.name) errors.push({ row: index + 2, message: "Name is required" });
+    if (id && seen.has(id)) errors.push({ row: index + 2, message: `Duplicate member ID in file: ${id}` });
+    if (id) seen.add(id);
     if (!Number.isInteger(Number(row.shares)) || Number(row.shares) < 1) errors.push({ row: index + 2, message: "Shares must be a positive whole number" });
     if (!Number.isFinite(Number(row.dailyAmount)) || Number(row.dailyAmount) <= 0) errors.push({ row: index + 2, message: "Daily amount must be positive" });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(row.joiningDate ?? ""))) errors.push({ row: index + 2, message: "Joining date must be YYYY-MM-DD" });
   });
+  if (cycleId) {
+    const cycle = await pool.query("SELECT id,daily_per_share::float AS daily_per_share FROM fund_cycles WHERE id=$1", [cycleId]);
+    if (!cycle.rows[0]) errors.push({ row: 1, message: "Selected cycle was not found" });
+  }
   if (seen.size) {
     const existing = await pool.query("SELECT member_id FROM fund_members WHERE member_id=ANY($1::text[])", [[...seen]]);
     const ids = new Set(existing.rows.map((r) => r.member_id));
-    rows.forEach((row, index) => { if (ids.has(String(row.memberId).trim())) errors.push({ row: index + 2, message: `Member ID already exists: ${row.memberId}` }); });
+    normalized.forEach((row, index) => {
+      if (row.memberId && ids.has(row.memberId) && !cycleId) errors.push({ row: index + 2, message: `Member ID already exists: ${row.memberId}` });
+    });
   }
-  if (errors.length || req.body.dryRun) return res.json({ valid: Math.max(0, rows.length - new Set(errors.map((e) => e.row)).size), imported: 0, errors });
+  if (errors.length || req.body.dryRun) return res.json({ valid: Math.max(0, normalized.length - new Set(errors.map((e) => e.row)).size), imported: 0, errors });
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    for (const row of rows) {
-      await client.query(`INSERT INTO fund_members(member_id,name,mobile,address,shares,daily_amount,joining_date,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [String(row.memberId).trim(),String(row.name).trim(),String(row.mobile ?? "").trim(),String(row.address ?? ""),Number(row.shares),Number(row.dailyAmount),row.joiningDate,row.status === "inactive" ? "inactive" : "active"]);
+    let imported = 0;
+    for (const row of normalized) {
+      let memberId = row.memberId;
+      let memberDbId: number;
+      if (memberId) {
+        const existing = await client.query("SELECT id FROM fund_members WHERE member_id=$1", [memberId]);
+        if (existing.rows[0]) memberDbId = existing.rows[0].id;
+        else {
+          const created = await client.query(`INSERT INTO fund_members(member_id,name,mobile,address,shares,daily_amount,joining_date,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+            [memberId,row.name,row.mobile,row.address,row.shares,row.dailyAmount,row.joiningDate,row.status]);
+          memberDbId = created.rows[0].id;
+        }
+      } else {
+        memberId = `M-${randomBytes(4).toString("hex").toUpperCase()}`;
+        const created = await client.query(`INSERT INTO fund_members(member_id,name,mobile,address,shares,daily_amount,joining_date,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+          [memberId,row.name,row.mobile,row.address,row.shares,row.dailyAmount,row.joiningDate,row.status]);
+        memberDbId = created.rows[0].id;
+      }
+      if (cycleId) {
+        const cycle = await client.query("SELECT daily_per_share::float AS daily_per_share FROM fund_cycles WHERE id=$1", [cycleId]);
+        const perShare = money(cycle.rows[0]?.daily_per_share) || defaultDaily;
+        await client.query(`INSERT INTO fund_cycle_members(cycle_id,member_id,shares,daily_contribution) VALUES($1,$2,$3,$4)
+          ON CONFLICT(cycle_id,member_id) DO UPDATE SET shares=EXCLUDED.shares,daily_contribution=EXCLUDED.daily_contribution`,
+          [cycleId,memberDbId,row.shares,row.shares * perShare]);
+      }
+      imported += 1;
     }
-    await client.query("INSERT INTO fund_audit(actor_id,action,detail,entity_type) VALUES($1,'MEMBERS_IMPORTED',$2,'member_import')", [req.user!.id, `${rows.length} members imported`]);
+    await client.query("INSERT INTO fund_audit(actor_id,action,detail,entity_type) VALUES($1,'MEMBERS_IMPORTED',$2,'member_import')", [req.user!.id, `${imported} members imported${cycleId ? ` into cycle ${cycleId}` : ""}`]);
     await client.query("COMMIT");
-    return res.json({ valid: rows.length, imported: rows.length, errors: [] });
+    return res.json({ valid: normalized.length, imported, errors: [] });
   } catch (error) {
     await client.query("ROLLBACK");
     req.log.error({ error }, "Member import failed");
     return res.status(400).json({ error: "Import was cancelled; no rows were saved" });
   } finally { client.release(); }
 });
+router.patch("/members/:id", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const b = req.body;
+  const result = await pool.query(
+    `UPDATE fund_members SET name=COALESCE($2,name),mobile=COALESCE($3,mobile),address=COALESCE($4,address),
+      status=COALESCE($5,status),notes=COALESCE($6,notes) WHERE id=$1
+      RETURNING id,member_id AS "memberId",name,mobile,address,shares,daily_amount::float AS "dailyAmount",
+      joining_date::text AS "joiningDate",created_at AS "createdAt",notes,status`,
+    [id,b.name ?? null,b.mobile ?? null,b.address ?? null,b.status ?? null,b.notes ?? null],
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: "Member not found" });
+  await audit(req.user!.id, "MEMBER_UPDATED", `Updated ${result.rows[0].memberId}`, "member", String(id));
+  return res.json(result.rows[0]);
+});
+router.get("/members/:id/history", requireAuth, async (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const member = await pool.query(`SELECT id,member_id AS "memberId",name,mobile,address,shares,daily_amount::float AS "dailyAmount",
+    joining_date::text AS "joiningDate",created_at AS "createdAt",notes,status FROM fund_members WHERE id=$1`, [id]);
+  if (!member.rows[0]) return res.status(404).json({ error: "Member not found" });
+  const [cycles, payments, draws] = await Promise.all([
+    pool.query(`SELECT c.id AS "cycleId",c.cycle_number AS "cycleNumber",c.name,c.start_date::text AS "startDate",c.end_date::text AS "endDate",
+      c.status,cm.shares,cm.daily_contribution::float AS "dailyContribution",
+      COALESCE(SUM(p.amount) FILTER(WHERE p.status='POSTED'),0)::float AS "totalCollected"
+      FROM fund_cycle_members cm JOIN fund_cycles c ON c.id=cm.cycle_id
+      LEFT JOIN fund_payments p ON p.cycle_id=c.id AND p.member_id=cm.member_id
+      WHERE cm.member_id=$1 GROUP BY c.id,cm.id ORDER BY c.start_date DESC`, [id]),
+    pool.query(`SELECT p.id,p.receipt_id AS "receiptId",p.cycle_id AS "cycleId",p.amount::float,p.collection_date::text AS "collectionDate",
+      p.shares,p.verification_status AS "verificationStatus",p.status,p.created_at AS "createdAt",u.name AS "collectorName"
+      FROM fund_payments p JOIN fund_users u ON u.id=p.collector_id WHERE p.member_id=$1 ORDER BY p.created_at DESC LIMIT 500`, [id]),
+    pool.query(`SELECT d.id,d.cycle_id AS "cycleId",c.cycle_number AS "cycleNumber",d.draw_number AS "drawNumber",
+      d.draw_date::text AS "drawDate",d.winning_amount::float AS "winningAmount",d.status,d.notes
+      FROM fund_draws d JOIN fund_cycles c ON c.id=d.cycle_id WHERE d.winner_member_id=$1 ORDER BY d.draw_date DESC`, [id]),
+  ]);
+  return res.json({ member: member.rows[0], cycles: cycles.rows, payments: payments.rows, draws: draws.rows });
+});
+
+router.get("/cycles", requireAuth, async (_req, res) => {
+  const result = await pool.query(`SELECT c.id,c.cycle_number AS "cycleNumber",c.name,c.start_date::text AS "startDate",
+    c.end_date::text AS "endDate",c.daily_per_share::float AS "dailyPerShare",c.draw_frequency AS "drawFrequency",
+    c.draw_day AS "drawDay",c.status,c.notes,c.created_at AS "createdAt",COUNT(cm.id)::int AS "memberCount"
+    FROM fund_cycles c LEFT JOIN fund_cycle_members cm ON cm.cycle_id=c.id
+    GROUP BY c.id ORDER BY c.start_date DESC,c.cycle_number DESC`);
+  return res.json(result.rows);
+});
+router.post("/cycles", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const b = req.body;
+  if (!String(b.name ?? "").trim() || !/^\d{4}-\d{2}-\d{2}$/.test(String(b.startDate ?? ""))) {
+    return res.status(400).json({ error: "Cycle name and valid start date are required" });
+  }
+  const number = b.cycleNumber ? Number(b.cycleNumber) : Number((await pool.query("SELECT COALESCE(MAX(cycle_number),0)+1 AS next FROM fund_cycles")).rows[0].next);
+  try {
+    const result = await pool.query(`INSERT INTO fund_cycles(cycle_number,name,start_date,end_date,daily_per_share,draw_frequency,draw_day,status,notes)
+      VALUES($1,$2,$3,$4,$5,'WEEKLY','FRIDAY',$6,$7)
+      RETURNING id,cycle_number AS "cycleNumber",name,start_date::text AS "startDate",end_date::text AS "endDate",
+      daily_per_share::float AS "dailyPerShare",draw_frequency AS "drawFrequency",draw_day AS "drawDay",status,notes,created_at AS "createdAt"`,
+      [number,String(b.name).trim(),b.startDate,b.endDate || null,Number(b.dailyPerShare) > 0 ? Number(b.dailyPerShare) : 100,b.status === "COMPLETED" ? "COMPLETED" : "ACTIVE",b.notes ?? ""]);
+    await audit(req.user!.id, "CYCLE_CREATED", `Created ${result.rows[0].name}`, "cycle", String(result.rows[0].id));
+    return res.status(201).json({ ...result.rows[0], memberCount: 0 });
+  } catch {
+    return res.status(409).json({ error: "Cycle number already exists" });
+  }
+});
+router.patch("/cycles/:id", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const b = req.body;
+  const result = await pool.query(`UPDATE fund_cycles SET name=COALESCE($2,name),end_date=COALESCE($3,end_date),
+    daily_per_share=COALESCE($4,daily_per_share),status=COALESCE($5,status),notes=COALESCE($6,notes)
+    WHERE id=$1 RETURNING id,cycle_number AS "cycleNumber",name,start_date::text AS "startDate",end_date::text AS "endDate",
+    daily_per_share::float AS "dailyPerShare",draw_frequency AS "drawFrequency",draw_day AS "drawDay",status,notes,created_at AS "createdAt"`,
+    [id,b.name ?? null,b.endDate ?? null,b.dailyPerShare ? Number(b.dailyPerShare) : null,b.status ?? null,b.notes ?? null]);
+  if (!result.rows[0]) return res.status(404).json({ error: "Cycle not found" });
+  await audit(req.user!.id, "CYCLE_UPDATED", `Updated ${result.rows[0].name}`, "cycle", String(id));
+  return res.json(result.rows[0]);
+});
+router.get("/cycles/:id/members", requireAuth, async (req: AuthedRequest, res) => {
+  const params: unknown[] = [Number(req.params.id)];
+  let access = "";
+  if (req.user?.role === "COLLECTOR") { params.push(req.user.id); access = " AND (m.assigned_collector_id=$2 OR m.assigned_collector_id IS NULL)"; }
+  const result = await pool.query(`SELECT cm.id,cm.cycle_id AS "cycleId",m.id AS "memberId",m.member_id AS "memberCode",m.name,m.mobile,
+    m.status,cm.shares,cm.daily_contribution::float AS "dailyContribution",
+    COALESCE(SUM(p.amount) FILTER(WHERE p.status='POSTED'),0)::float AS "totalCollected",
+    GREATEST(cm.daily_contribution-COALESCE(SUM(p.amount) FILTER(WHERE p.collection_date=CURRENT_DATE AND p.status='POSTED'),0),0)::float AS "todayDue"
+    FROM fund_cycle_members cm JOIN fund_members m ON m.id=cm.member_id LEFT JOIN fund_payments p ON p.cycle_id=cm.cycle_id AND p.member_id=cm.member_id
+    WHERE cm.cycle_id=$1${access} GROUP BY cm.id,m.id ORDER BY m.member_id`, params);
+  return res.json(result.rows);
+});
+router.post("/cycles/:id/members", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const cycleId = Number(req.params.id);
+  const memberId = Number(req.body.memberId);
+  const shares = Number(req.body.shares);
+  const cycle = await pool.query("SELECT daily_per_share::float AS per_share FROM fund_cycles WHERE id=$1", [cycleId]);
+  const member = await pool.query("SELECT id FROM fund_members WHERE id=$1", [memberId]);
+  if (!cycle.rows[0] || !member.rows[0]) return res.status(404).json({ error: "Cycle or member not found" });
+  if (!Number.isInteger(shares) || shares < 1) return res.status(400).json({ error: "Shares must be a positive whole number" });
+  const result = await pool.query(`INSERT INTO fund_cycle_members(cycle_id,member_id,shares,daily_contribution)
+    VALUES($1,$2,$3,$4) ON CONFLICT(cycle_id,member_id) DO UPDATE SET shares=EXCLUDED.shares,daily_contribution=EXCLUDED.daily_contribution
+    RETURNING id,cycle_id AS "cycleId",member_id AS "memberId",shares,daily_contribution::float AS "dailyContribution"`,
+    [cycleId,memberId,shares,shares * money(cycle.rows[0].per_share)]);
+  await audit(req.user!.id, "CYCLE_MEMBER_UPDATED", `Updated member ${memberId} in cycle ${cycleId}`, "cycle_member", String(result.rows[0].id));
+  return res.status(201).json(result.rows[0]);
+});
+
+router.get("/draws", requireAuth, async (req, res) => {
+  const values: unknown[] = [];
+  const clauses: string[] = [];
+  if (req.query.cycleId) { values.push(Number(req.query.cycleId)); clauses.push(`d.cycle_id=$${values.length}`); }
+  if (req.query.memberId) { values.push(Number(req.query.memberId)); clauses.push(`d.winner_member_id=$${values.length}`); }
+  if (req.query.date) { values.push(String(req.query.date)); clauses.push(`d.draw_date=$${values.length}`); }
+  if (req.query.drawNumber) { values.push(Number(req.query.drawNumber)); clauses.push(`d.draw_number=$${values.length}`); }
+  const result = await pool.query(`SELECT d.id,d.cycle_id AS "cycleId",c.cycle_number AS "cycleNumber",c.name AS "cycleName",
+    d.draw_number AS "drawNumber",d.draw_date::text AS "drawDate",m.id AS "winnerMemberId",m.member_id AS "winnerMemberCode",
+    m.name AS "winnerName",d.winning_amount::float AS "winningAmount",d.status,d.notes,d.created_at AS "createdAt"
+    FROM fund_draws d JOIN fund_cycles c ON c.id=d.cycle_id JOIN fund_members m ON m.id=d.winner_member_id
+    ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""} ORDER BY d.draw_date DESC,d.draw_number DESC`, values);
+  return res.json(result.rows);
+});
+router.post("/draws", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const b = req.body;
+  const cycleId = Number(b.cycleId);
+  const winnerMemberId = Number(b.winnerMemberId);
+  if (!cycleId || !winnerMemberId || !/^\d{4}-\d{2}-\d{2}$/.test(String(b.drawDate ?? "")) || Number(b.winningAmount) <= 0) {
+    return res.status(400).json({ error: "Cycle, winner, draw date and positive winning amount are required" });
+  }
+  const membership = await pool.query("SELECT 1 FROM fund_cycle_members WHERE cycle_id=$1 AND member_id=$2", [cycleId,winnerMemberId]);
+  if (!membership.rowCount) return res.status(400).json({ error: "Winner must participate in the selected cycle" });
+  const next = await pool.query("SELECT COALESCE(MAX(draw_number),0)+1 AS number FROM fund_draws WHERE cycle_id=$1", [cycleId]);
+  try {
+    const result = await pool.query(`INSERT INTO fund_draws(cycle_id,draw_number,draw_date,winner_member_id,winning_amount,status,notes)
+      VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,cycle_id AS "cycleId",draw_number AS "drawNumber",draw_date::text AS "drawDate",
+      winner_member_id AS "winnerMemberId",winning_amount::float AS "winningAmount",status,notes,created_at AS "createdAt"`,
+      [cycleId,Number(next.rows[0].number),b.drawDate,winnerMemberId,Number(b.winningAmount),b.status || "RECORDED",b.notes ?? ""]);
+    await audit(req.user!.id, "DRAW_RECORDED", `Recorded draw #${result.rows[0].drawNumber} for cycle ${cycleId}`, "draw", String(result.rows[0].id));
+    return res.status(201).json(result.rows[0]);
+  } catch {
+    return res.status(409).json({ error: "Could not record draw" });
+  }
+});
 
 router.get("/payments", requireAuth, async (req: AuthedRequest, res) => {
   const params: unknown[] = [];
   const where = req.user?.role === "COLLECTOR" ? (params.push(req.user.id), "WHERE p.collector_id=$1") : "";
   const r = await pool.query(
-    `SELECT p.id,p.receipt_id AS "receiptId",p.member_id AS "memberId",m.name AS "memberName",p.amount::float,
-      u.name AS "collectorName",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status
+    `SELECT p.id,p.receipt_id AS "receiptId",p.member_id AS "memberId",m.name AS "memberName",p.cycle_id AS "cycleId",
+       p.collection_date::text AS "collectionDate",p.shares,p.notes,p.amount::float,
+       u.name AS "collectorName",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status
      FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id ${where}
      ORDER BY p.created_at DESC LIMIT 500`, params);
   res.json(r.rows);
 });
 router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
-  const { memberId, amount, verificationMethod, verificationCode, confirmDuplicate, idempotencyKey } = req.body;
+  const { memberId, cycleId, collectionDate, amount, notes, verificationMethod, verificationCode, confirmDuplicate, idempotencyKey } = req.body;
   if (idempotencyKey) {
-    const replay = await pool.query(`SELECT p.id,p.receipt_id AS "receiptId",p.member_id AS "memberId",m.name AS "memberName",p.amount::float,u.name AS "collectorName",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id WHERE p.collector_id=$1 AND p.idempotency_key=$2`, [req.user!.id,idempotencyKey]);
+    const replay = await pool.query(`SELECT p.id,p.receipt_id AS "receiptId",p.member_id AS "memberId",m.name AS "memberName",p.cycle_id AS "cycleId",p.collection_date::text AS "collectionDate",p.shares,p.notes,p.amount::float,u.name AS "collectorName",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id WHERE p.collector_id=$1 AND p.idempotency_key=$2`, [req.user!.id,idempotencyKey]);
     if (replay.rows[0]) return res.status(200).json(replay.rows[0]);
   }
   if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) return res.status(400).json({ error: "Amount must be greater than zero" });
-  const duplicate = await pool.query("SELECT 1 FROM fund_payments WHERE member_id=$1 AND created_at::date=CURRENT_DATE AND status='POSTED' LIMIT 1", [memberId]);
+  const paidDate = /^\d{4}-\d{2}-\d{2}$/.test(String(collectionDate ?? "")) ? collectionDate : new Date().toISOString().slice(0, 10);
+  const duplicate = await pool.query("SELECT 1 FROM fund_payments WHERE member_id=$1 AND cycle_id IS NOT DISTINCT FROM $2 AND collection_date=$3 AND status='POSTED' LIMIT 1", [memberId, cycleId ? Number(cycleId) : null, paidDate]);
   if (duplicate.rowCount && !confirmDuplicate) return res.status(409).json({ error: "A payment already exists today. Confirm to add another or partial payment." });
-  const member = await pool.query("SELECT id,name FROM fund_members WHERE id=$1 AND status='active'", [memberId]);
+  const member = await pool.query("SELECT id,name,shares,daily_amount::float AS daily_amount FROM fund_members WHERE id=$1 AND status='active'", [memberId]);
   if (!member.rows[0]) return res.status(404).json({ error: "Active member not found" });
+  let paymentShares = Number(member.rows[0].shares);
+  if (cycleId) {
+    const cycleMember = await pool.query("SELECT shares FROM fund_cycle_members WHERE cycle_id=$1 AND member_id=$2", [Number(cycleId),Number(memberId)]);
+    if (!cycleMember.rows[0]) return res.status(400).json({ error: "Member is not enrolled in the selected cycle" });
+    paymentShares = Number(cycleMember.rows[0].shares);
+  }
   const receiptId = `IRF-${new Date().toISOString().slice(0,10).replaceAll("-","")}-${randomBytes(3).toString("hex").toUpperCase()}`;
   const verification = verificationMethod === "PIN" && verificationCode ? "PIN VERIFIED" : "COLLECTOR CONFIRMED";
   const r = await pool.query(
-    `INSERT INTO fund_payments(receipt_id,member_id,amount,collector_id,verification_status,idempotency_key)
-     VALUES($1,$2,$3,$4,$5,$6) RETURNING id,receipt_id AS "receiptId",member_id AS "memberId",amount::float,verification_status AS "verificationStatus",created_at AS "createdAt",status`,
-    [receiptId,memberId,amount,req.user!.id,verification,idempotencyKey ?? null],
+    `INSERT INTO fund_payments(receipt_id,member_id,cycle_id,collection_date,shares,amount,collector_id,verification_status,notes,idempotency_key)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,receipt_id AS "receiptId",member_id AS "memberId",cycle_id AS "cycleId",collection_date::text AS "collectionDate",shares,notes,amount::float,verification_status AS "verificationStatus",created_at AS "createdAt",status`,
+    [receiptId,memberId,cycleId ? Number(cycleId) : null,paidDate,paymentShares,amount,req.user!.id,verification,notes ?? "",idempotencyKey ?? null],
   );
   await audit(req.user!.id, "PAYMENT_POSTED", `${receiptId}: BDT ${amount}`, "payment", String(r.rows[0].id));
   return res.status(201).json({ ...r.rows[0], memberName: member.rows[0].name, collectorName: req.user!.name });
@@ -231,24 +419,51 @@ router.get("/settings",requireAuth,async(_req,res)=>{const r=await pool.query(`S
 router.patch("/settings",requireAuth,ownerOnly,async(req:AuthedRequest,res)=>{const b=req.body;const r=await pool.query(`UPDATE fund_settings SET organization_name=COALESCE($1,organization_name),expected_members=COALESCE($2,expected_members),default_daily_per_share=COALESCE($3,default_daily_per_share) WHERE id=1 RETURNING organization_name AS "organizationName",expected_members AS "expectedMembers",default_daily_per_share::float AS "defaultDailyPerShare",demo_mode AS "demoMode",biometric_optional AS "biometricOptional"`,[b.organizationName??null,b.expectedMembers??null,b.defaultDailyPerShare??null]);await audit(req.user!.id,"SETTINGS_UPDATED","Business settings updated");res.json(r.rows[0]);});
 
 router.get("/dashboard",requireAuth,async(req:AuthedRequest,res)=>{
+   const activeCycleExists = "EXISTS (SELECT 1 FROM fund_cycles WHERE status='ACTIVE')";
+   const paymentCycleScope = `(NOT ${activeCycleExists} OR p.cycle_id=(SELECT id FROM fund_cycles WHERE status='ACTIVE' ORDER BY id DESC LIMIT 1))`;
   if(req.user!.role==="COLLECTOR"){
     const [members,payments,settlements,due,recent]=await Promise.all([
-      pool.query("SELECT COUNT(*)::int count,COALESCE(SUM(daily_amount),0)::float target FROM fund_members WHERE status='active' AND (assigned_collector_id=$1 OR assigned_collector_id IS NULL)",[req.user!.id]),
-      pool.query("SELECT COALESCE(SUM(amount),0)::float amount,COUNT(*)::int count FROM fund_payments WHERE collector_id=$1 AND created_at::date=CURRENT_DATE AND status='POSTED'",[req.user!.id]),
+       pool.query(`SELECT COUNT(*)::int count,COALESCE(SUM(COALESCE(cm.daily_contribution,m.daily_amount)),0)::float target
+         FROM fund_members m LEFT JOIN fund_cycle_members cm ON cm.member_id=m.id
+         LEFT JOIN fund_cycles c ON c.id=cm.cycle_id AND c.status='ACTIVE'
+         WHERE m.status='active' AND (m.assigned_collector_id=$1 OR m.assigned_collector_id IS NULL)
+           AND (c.id IS NOT NULL OR NOT ${activeCycleExists})`,[req.user!.id]),
+       pool.query(`SELECT COALESCE(SUM(amount),0)::float amount,COUNT(*)::int count FROM fund_payments p
+         WHERE collector_id=$1 AND created_at::date=CURRENT_DATE AND status='POSTED' AND ${paymentCycleScope}`,[req.user!.id]),
       pool.query("SELECT COALESCE(SUM(amount),0)::float amount FROM fund_settlements WHERE collector_id=$1 AND created_at::date=CURRENT_DATE",[req.user!.id]),
-      pool.query(`SELECT m.id,m.member_id AS "memberId",m.name,m.mobile,m.address,m.shares,m.daily_amount::float AS "dailyAmount",m.joining_date::text AS "joiningDate",m.status,COALESCE(SUM(p.amount),0)::float AS "todayPaid" FROM fund_members m LEFT JOIN fund_payments p ON p.member_id=m.id AND p.created_at::date=CURRENT_DATE AND p.status='POSTED' WHERE m.status='active' AND (m.assigned_collector_id=$1 OR m.assigned_collector_id IS NULL) GROUP BY m.id HAVING COALESCE(SUM(p.amount),0)<m.daily_amount ORDER BY m.member_id LIMIT 20`,[req.user!.id]),
-      pool.query(`SELECT p.id,p.receipt_id AS "receiptId",p.member_id AS "memberId",m.name AS "memberName",p.amount::float,u.name AS "collectorName",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id WHERE p.collector_id=$1 ORDER BY p.created_at DESC LIMIT 8`,[req.user!.id])
+       pool.query(`SELECT m.id,m.member_id AS "memberId",m.name,m.mobile,m.address,
+         COALESCE(cm.shares,m.shares)::int AS shares,COALESCE(cm.daily_contribution,m.daily_amount)::float AS "dailyAmount",
+         m.joining_date::text AS "joiningDate",m.status,COALESCE(SUM(p.amount),0)::float AS "todayPaid"
+         FROM fund_members m LEFT JOIN fund_cycle_members cm ON cm.member_id=m.id
+         LEFT JOIN fund_cycles c ON c.id=cm.cycle_id AND c.status='ACTIVE'
+         LEFT JOIN fund_payments p ON p.member_id=m.id AND p.created_at::date=CURRENT_DATE AND p.status='POSTED' AND ${paymentCycleScope}
+         WHERE m.status='active' AND (m.assigned_collector_id=$1 OR m.assigned_collector_id IS NULL)
+           AND (c.id IS NOT NULL OR NOT ${activeCycleExists})
+         GROUP BY m.id,cm.shares,cm.daily_contribution,c.id
+         HAVING COALESCE(SUM(p.amount),0)<COALESCE(cm.daily_contribution,m.daily_amount)
+         ORDER BY m.member_id LIMIT 20`,[req.user!.id]),
+       pool.query(`SELECT p.id,p.receipt_id AS "receiptId",p.member_id AS "memberId",m.name AS "memberName",p.amount::float,u.name AS "collectorName",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id WHERE p.collector_id=$1 AND ${paymentCycleScope} ORDER BY p.created_at DESC LIMIT 8`,[req.user!.id])
     ]);
     const target=money(members.rows[0].target),collected=money(payments.rows[0].amount),deposits=money(settlements.rows[0].amount);
     return res.json({totalMembers:members.rows[0].count,todayTarget:target,collected,due:Math.max(0,target-collected),collectorCash:collected,officeDeposits:deposits,unsettledCash:collected-deposits,paymentCount:payments.rows[0].count,performances:[{name:req.user!.name,collected,payments:payments.rows[0].count,cash:collected-deposits}],dueMembers:due.rows.map(m=>({...m,todayDue:money(m.dailyAmount)-money(m.todayPaid)})),recentPayments:recent.rows,audit:[]});
   }
   const [members,payments,settlements,perf,due,recent,audits]=await Promise.all([
-    pool.query("SELECT COUNT(*)::int count,COALESCE(SUM(daily_amount),0)::float target FROM fund_members WHERE status='active'"),
-    pool.query("SELECT COALESCE(SUM(amount),0)::float amount,COUNT(*)::int count FROM fund_payments WHERE created_at::date=CURRENT_DATE AND status='POSTED'"),
+     pool.query(`SELECT COUNT(*)::int count,COALESCE(SUM(COALESCE(cm.daily_contribution,m.daily_amount)),0)::float target
+       FROM fund_members m LEFT JOIN fund_cycle_members cm ON cm.member_id=m.id
+       LEFT JOIN fund_cycles c ON c.id=cm.cycle_id AND c.status='ACTIVE'
+       WHERE m.status='active' AND (c.id IS NOT NULL OR NOT ${activeCycleExists})`),
+     pool.query(`SELECT COALESCE(SUM(amount),0)::float amount,COUNT(*)::int count FROM fund_payments p WHERE created_at::date=CURRENT_DATE AND status='POSTED' AND ${paymentCycleScope}`),
     pool.query("SELECT COALESCE(SUM(amount),0)::float amount FROM fund_settlements WHERE created_at::date=CURRENT_DATE"),
-    pool.query(`SELECT u.name,COALESCE(SUM(p.amount),0)::float collected,COUNT(p.id)::int payments,(COALESCE(SUM(p.amount),0)-COALESCE((SELECT SUM(s.amount) FROM fund_settlements s WHERE s.collector_id=u.id),0))::float cash FROM fund_users u LEFT JOIN fund_payments p ON p.collector_id=u.id AND p.created_at::date=CURRENT_DATE AND p.status='POSTED' WHERE u.role='COLLECTOR' GROUP BY u.id ORDER BY collected DESC`),
-    pool.query(`SELECT m.id,m.member_id AS "memberId",m.name,m.mobile,m.address,m.shares,m.daily_amount::float AS "dailyAmount",m.joining_date::text AS "joiningDate",m.status,COALESCE(SUM(p.amount),0)::float AS "todayPaid" FROM fund_members m LEFT JOIN fund_payments p ON p.member_id=m.id AND p.created_at::date=CURRENT_DATE AND p.status='POSTED' WHERE m.status='active' GROUP BY m.id HAVING COALESCE(SUM(p.amount),0)<m.daily_amount ORDER BY m.member_id LIMIT 20`),
-    pool.query(`SELECT p.id,p.receipt_id AS "receiptId",p.member_id AS "memberId",m.name AS "memberName",p.amount::float,u.name AS "collectorName",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id ORDER BY p.created_at DESC LIMIT 8`),
+     pool.query(`SELECT u.name,COALESCE(SUM(p.amount),0)::float collected,COUNT(p.id)::int payments,(COALESCE(SUM(p.amount),0)-COALESCE((SELECT SUM(s.amount) FROM fund_settlements s WHERE s.collector_id=u.id),0))::float cash FROM fund_users u LEFT JOIN fund_payments p ON p.collector_id=u.id AND p.created_at::date=CURRENT_DATE AND p.status='POSTED' AND ${paymentCycleScope} WHERE u.role='COLLECTOR' GROUP BY u.id ORDER BY collected DESC`),
+     pool.query(`SELECT m.id,m.member_id AS "memberId",m.name,m.mobile,m.address,COALESCE(cm.shares,m.shares)::int AS shares,COALESCE(cm.daily_contribution,m.daily_amount)::float AS "dailyAmount",m.joining_date::text AS "joiningDate",m.status,COALESCE(SUM(p.amount),0)::float AS "todayPaid"
+       FROM fund_members m LEFT JOIN fund_cycle_members cm ON cm.member_id=m.id
+       LEFT JOIN fund_cycles c ON c.id=cm.cycle_id AND c.status='ACTIVE'
+       LEFT JOIN fund_payments p ON p.member_id=m.id AND p.created_at::date=CURRENT_DATE AND p.status='POSTED' AND ${paymentCycleScope}
+       WHERE m.status='active' AND (c.id IS NOT NULL OR NOT ${activeCycleExists})
+       GROUP BY m.id,cm.shares,cm.daily_contribution,c.id
+       HAVING COALESCE(SUM(p.amount),0)<COALESCE(cm.daily_contribution,m.daily_amount)
+       ORDER BY m.member_id LIMIT 20`),
+     pool.query(`SELECT p.id,p.receipt_id AS "receiptId",p.member_id AS "memberId",m.name AS "memberName",p.amount::float,u.name AS "collectorName",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id WHERE ${paymentCycleScope} ORDER BY p.created_at DESC LIMIT 8`),
     pool.query(`SELECT a.id,COALESCE(u.name,'System') actor,a.action,a.detail,a.created_at AS "createdAt" FROM fund_audit a LEFT JOIN fund_users u ON u.id=a.actor_id ORDER BY a.created_at DESC LIMIT 8`)
   ]);
   const target=money(members.rows[0].target), collected=money(payments.rows[0].amount), deposits=money(settlements.rows[0].amount);

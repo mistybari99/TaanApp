@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useListMembers, useCreateMember, useImportMembers } from "@workspace/api-client-react"
+import { useListMembers, useCreateMember, useImportMembers, useListCycles, useUpdateMember, useGetCurrentUser } from "@workspace/api-client-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -9,6 +9,7 @@ import { toast } from "sonner"
 import { formatCurrency } from "@/lib/utils"
 import { Search, UserPlus, Upload, Download, AlertTriangle } from "lucide-react"
 import { downloadCsvTemplate, parseCsv } from "@/lib/csv"
+import { Link } from "wouter"
 
 export default function MembersPage() {
   const [search, setSearch] = useState("")
@@ -16,8 +17,11 @@ export default function MembersPage() {
   const [isImportOpen, setIsImportOpen] = useState(false)
   
   const { data: members, isLoading, refetch } = useListMembers({ search: search || undefined })
+  const { data: cycles } = useListCycles()
+  const { data: user } = useGetCurrentUser()
   const createMember = useCreateMember()
   const importMembers = useImportMembers()
+  const updateMember = useUpdateMember()
 
   const [newMember, setNewMember] = useState({
     memberId: "",
@@ -25,12 +29,14 @@ export default function MembersPage() {
     mobile: "",
     address: "",
     shares: 1,
-    dailyAmount: 100
+    dailyAmount: 100,
+    notes: ""
   })
 
   // Import State
   const [importRows, setImportRows] = useState<any[]>([])
   const [importPreview, setImportPreview] = useState<{valid: number, imported: number, errors: any[]} | null>(null)
+  const [importCycleId, setImportCycleId] = useState("")
 
   const handleAdd = () => {
     createMember.mutate({
@@ -43,7 +49,7 @@ export default function MembersPage() {
       onSuccess: () => {
         toast.success("সদস্য যোগ করা হয়েছে (Member added)")
         setIsAddOpen(false)
-        setNewMember({ memberId: "", name: "", mobile: "", address: "", shares: 1, dailyAmount: 100 })
+        setNewMember({ memberId: "", name: "", mobile: "", address: "", shares: 1, dailyAmount: 100, notes: "" })
         refetch()
       },
       onError: (err: any) => {
@@ -60,7 +66,7 @@ export default function MembersPage() {
       setImportRows(rows);
       // Run dry-run validation
       importMembers.mutate({
-        data: { dryRun: true, rows }
+        data: { dryRun: true, rows, cycleId: importCycleId ? Number(importCycleId) : undefined }
       }, {
         onSuccess: (data) => {
           setImportPreview(data);
@@ -79,13 +85,14 @@ export default function MembersPage() {
 
   const handleCommitImport = () => {
     importMembers.mutate({
-      data: { dryRun: false, rows: importRows }
+      data: { dryRun: false, rows: importRows, cycleId: importCycleId ? Number(importCycleId) : undefined }
     }, {
       onSuccess: (data) => {
         toast.success(`${data.imported} জন সদস্য সফলভাবে যোগ করা হয়েছে`);
         setIsImportOpen(false);
         setImportRows([]);
         setImportPreview(null);
+        setImportCycleId("");
         refetch();
       },
       onError: (err: any) => toast.error(err.message || "Import failed")
@@ -125,6 +132,14 @@ export default function MembersPage() {
                 <div>
                   <Label>CSV ফাইল নির্বাচন করুন</Label>
                   <Input type="file" accept=".csv" onChange={handleFileChange} className="mt-1" />
+                </div>
+                <div>
+                  <Label>চক্রে যোগ করুন (ঐচ্ছিক)</Label>
+                  <select className="h-10 mt-1 w-full rounded-md border bg-background px-3 text-sm" value={importCycleId} onChange={(event) => setImportCycleId(event.target.value)}>
+                    <option value="">শুধু permanent members তৈরি করুন</option>
+                    {cycles?.filter((cycle) => cycle.status === "ACTIVE").map((cycle) => <option key={cycle.id} value={cycle.id}>{cycle.name}</option>)}
+                  </select>
+                  <p className="text-xs text-muted-foreground mt-1">Cycle নির্বাচন করলে shares ওই cycle-এ প্রযোজ্য হবে।</p>
                 </div>
 
                 {importPreview && (
@@ -196,6 +211,10 @@ export default function MembersPage() {
                   <Label htmlFor="dailyAmount" className="text-right">দৈনিক জমা</Label>
                   <Input id="dailyAmount" type="number" value={newMember.dailyAmount} onChange={e => setNewMember({...newMember, dailyAmount: Number(e.target.value)})} className="col-span-3" />
                 </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="memberNotes" className="text-right">নোট</Label>
+                  <Input id="memberNotes" value={newMember.notes} onChange={e => setNewMember({...newMember, notes: e.target.value})} className="col-span-3" />
+                </div>
               </div>
               <DialogFooter>
                 <Button onClick={handleAdd} disabled={createMember.isPending}>সংরক্ষণ করুন (Save)</Button>
@@ -238,7 +257,7 @@ export default function MembersPage() {
               members?.map((member) => (
                 <TableRow key={member.id}>
                   <TableCell className="font-medium">{member.memberId}</TableCell>
-                  <TableCell>{member.name}</TableCell>
+                  <TableCell><Link href={`/members/${member.id}/history`} className="font-medium hover:text-primary hover:underline">{member.name}</Link>{member.notes && <div className="text-xs text-muted-foreground">{member.notes}</div>}</TableCell>
                   <TableCell>{member.mobile}</TableCell>
                   <TableCell className="text-right">{formatCurrency(member.dailyAmount)}</TableCell>
                   <TableCell className="text-right font-bold text-destructive">{formatCurrency(member.todayDue)}</TableCell>
@@ -246,6 +265,7 @@ export default function MembersPage() {
                     <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${member.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                       {member.status}
                     </span>
+                    {user?.role === "OWNER" && <Button variant="ghost" size="sm" className="ml-2 h-7 px-2" onClick={() => updateMember.mutate({ id: member.id, data: { status: member.status === "active" ? "inactive" : "active" } }, { onSuccess: () => { toast.success("সদস্যের স্ট্যাটাস আপডেট হয়েছে"); refetch() }, onError: () => toast.error("স্ট্যাটাস আপডেট করা যায়নি") })}>{member.status === "active" ? "Inactive" : "Active"}</Button>}
                   </TableCell>
                 </TableRow>
               ))

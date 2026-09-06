@@ -10,6 +10,10 @@ export interface Payment {
   id: number;
   receiptId: string;
   memberId: number;
+  cycleId?: number | null;
+  collectionDate?: string;
+  shares?: number;
+  notes?: string;
   memberName: string;
   amount: number;
   collectorName: string;

@@ -1,0 +1,1 @@
+- [Fund schema migrations](fund-schema.md) — legacy fund tables are raw-SQL managed; keep new financial structures additive and backward-compatible.

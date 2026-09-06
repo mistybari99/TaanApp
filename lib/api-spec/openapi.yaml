@@ -49,6 +49,44 @@ paths:
       operationId: getDashboard
       responses:
         "200": { description: Owner dashboard, content: { application/json: { schema: { $ref: "#/components/schemas/Dashboard" } } } }
+  /cycles:
+    get:
+      operationId: listCycles
+      responses:
+        "200": { description: Fund cycles, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/FundCycle" } } } } }
+    post:
+      operationId: createCycle
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/FundCycleInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/FundCycle" } } } }
+  /cycles/{id}:
+    patch:
+      operationId: updateCycle
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/FundCycleUpdate" } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/FundCycle" } } } }
+  /cycles/{id}/members:
+    get:
+      operationId: listCycleMembers
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Cycle members, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/CycleMember" } } } } }
+    post:
+      operationId: upsertCycleMember
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CycleMemberInput" } } }
+      responses:
+        "201": { description: Added, content: { application/json: { schema: { $ref: "#/components/schemas/CycleMember" } } } }
   /members:
     get:
       operationId: listMembers
@@ -71,6 +109,23 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/MemberImportInput" } } }
       responses:
         "200": { description: Import preview or result, content: { application/json: { schema: { $ref: "#/components/schemas/MemberImportResult" } } } }
+  /members/{id}:
+    patch:
+      operationId: updateMember
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MemberUpdate" } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Member" } } } }
+  /members/{id}/history:
+    get:
+      operationId: getMemberHistory
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Member history, content: { application/json: { schema: { $ref: "#/components/schemas/MemberHistory" } } } }
   /payments:
     get:
       operationId: listPayments
@@ -106,6 +161,23 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/SettlementInput" } } }
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Settlement" } } } }
+  /draws:
+    get:
+      operationId: listDraws
+      parameters:
+        - { name: cycleId, in: query, schema: { type: integer } }
+        - { name: memberId, in: query, schema: { type: integer } }
+        - { name: date, in: query, schema: { type: string } }
+        - { name: drawNumber, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: Friday draws, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Draw" } } } } }
+    post:
+      operationId: createDraw
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DrawInput" } } }
+      responses:
+        "201": { description: Recorded, content: { application/json: { schema: { $ref: "#/components/schemas/Draw" } } } }
   /collectors:
     get:
       operationId: listCollectors
@@ -216,6 +288,132 @@ components:
         status: { type: string, enum: [active, inactive] }
         todayPaid: { type: number }
         todayDue: { type: number }
+        createdAt: { type: string }
+        notes: { type: string }
+    MemberUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        mobile: { type: string }
+        address: { type: string }
+        status: { type: string, enum: [active, inactive] }
+        notes: { type: string }
+    FundCycle:
+      type: object
+      required: [id, cycleNumber, name, startDate, dailyPerShare, drawFrequency, drawDay, status, memberCount]
+      properties:
+        id: { type: integer }
+        cycleNumber: { type: integer }
+        name: { type: string }
+        startDate: { type: string }
+        endDate: { type: string, nullable: true }
+        dailyPerShare: { type: number }
+        drawFrequency: { type: string, enum: [WEEKLY] }
+        drawDay: { type: string, enum: [FRIDAY] }
+        status: { type: string, enum: [ACTIVE, COMPLETED] }
+        notes: { type: string }
+        createdAt: { type: string }
+        memberCount: { type: integer }
+    FundCycleInput:
+      type: object
+      required: [name, startDate]
+      properties:
+        cycleNumber: { type: integer }
+        name: { type: string }
+        startDate: { type: string }
+        endDate: { type: string }
+        dailyPerShare: { type: number, default: 100 }
+        status: { type: string, enum: [ACTIVE, COMPLETED] }
+        notes: { type: string }
+    FundCycleUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        endDate: { type: string }
+        dailyPerShare: { type: number }
+        status: { type: string, enum: [ACTIVE, COMPLETED] }
+        notes: { type: string }
+    CycleMember:
+      type: object
+      required: [id, cycleId, memberId, memberCode, name, shares, dailyContribution, totalCollected, todayDue]
+      properties:
+        id: { type: integer }
+        cycleId: { type: integer }
+        memberId: { type: integer }
+        memberCode: { type: string }
+        name: { type: string }
+        mobile: { type: string }
+        status: { type: string }
+        shares: { type: integer }
+        dailyContribution: { type: number }
+        totalCollected: { type: number }
+        todayDue: { type: number }
+    CycleMemberInput:
+      type: object
+      required: [memberId, shares]
+      properties:
+        memberId: { type: integer }
+        shares: { type: integer, minimum: 1 }
+    Draw:
+      type: object
+      required: [id, cycleId, cycleNumber, drawNumber, drawDate, winnerMemberId, winnerMemberCode, winnerName, winningAmount, status]
+      properties:
+        id: { type: integer }
+        cycleId: { type: integer }
+        cycleNumber: { type: integer }
+        cycleName: { type: string }
+        drawNumber: { type: integer }
+        drawDate: { type: string }
+        winnerMemberId: { type: integer }
+        winnerMemberCode: { type: string }
+        winnerName: { type: string }
+        winningAmount: { type: number }
+        status: { type: string }
+        notes: { type: string }
+        createdAt: { type: string }
+    DrawInput:
+      type: object
+      required: [cycleId, drawDate, winnerMemberId, winningAmount]
+      properties:
+        cycleId: { type: integer }
+        drawDate: { type: string }
+        winnerMemberId: { type: integer }
+        winningAmount: { type: number }
+        status: { type: string }
+        notes: { type: string }
+    MemberHistory:
+      type: object
+      required: [member, cycles, payments, draws]
+      properties:
+        member: { $ref: "#/components/schemas/Member" }
+        cycles: { type: array, items: { $ref: "#/components/schemas/MemberCycleSummary" } }
+        payments: { type: array, items: { $ref: "#/components/schemas/Payment" } }
+        draws: { type: array, items: { $ref: "#/components/schemas/MemberDrawHistory" } }
+    MemberCycleSummary:
+      type: object
+      required: [cycleId, cycleNumber, name, startDate, status, shares, dailyContribution, totalCollected]
+      properties:
+        cycleId: { type: integer }
+        cycleNumber: { type: integer }
+        name: { type: string }
+        startDate: { type: string }
+        endDate: { type: string, nullable: true }
+        status: { type: string }
+        shares: { type: integer }
+        dailyContribution: { type: number }
+        totalCollected: { type: number }
+    MemberDrawHistory:
+      type: object
+      required: [id, cycleId, cycleNumber, drawNumber, drawDate, winningAmount, status]
+      properties:
+        id: { type: integer }
+        cycleId: { type: integer }
+        cycleNumber: { type: integer }
+        drawNumber: { type: integer }
+        drawDate: { type: string }
+        winningAmount: { type: number }
+        status: { type: string }
+        notes: { type: string }
     MemberInput:
       type: object
       required: [memberId, name, mobile, shares, dailyAmount, joiningDate, status]
@@ -228,6 +426,7 @@ components:
         dailyAmount: { type: number }
         joiningDate: { type: string }
         status: { type: string }
+        notes: { type: string }
     MemberImportRow:
       type: object
       required: [memberId, name, mobile, shares, dailyAmount, joiningDate, status]
@@ -245,6 +444,7 @@ components:
       required: [dryRun, rows]
       properties:
         dryRun: { type: boolean }
+        cycleId: { type: integer }
         rows: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/MemberImportRow" } }
     MemberImportError:
       type: object
@@ -266,6 +466,10 @@ components:
         id: { type: integer }
         receiptId: { type: string }
         memberId: { type: integer }
+        cycleId: { type: integer, nullable: true }
+        collectionDate: { type: string }
+        shares: { type: integer }
+        notes: { type: string }
         memberName: { type: string }
         amount: { type: number }
         collectorName: { type: string }
@@ -277,6 +481,9 @@ components:
       required: [memberId, amount, verificationMethod, confirmDuplicate]
       properties:
         memberId: { type: integer }
+        cycleId: { type: integer }
+        collectionDate: { type: string }
+        notes: { type: string }
         amount: { type: number }
         verificationMethod: { type: string, enum: [PIN, COLLECTOR_CONFIRMATION] }
         verificationCode: { type: string }

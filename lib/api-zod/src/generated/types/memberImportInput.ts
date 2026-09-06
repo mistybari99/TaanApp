@@ -9,6 +9,7 @@ import type { MemberImportRow } from './memberImportRow';
 
 export interface MemberImportInput {
   dryRun: boolean;
+  cycleId?: number;
   /** @maxItems 500 */
   rows: MemberImportRow[];
 }

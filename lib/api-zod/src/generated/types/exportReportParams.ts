@@ -5,7 +5,8 @@
  * ISLAMIYA Revolving Fund API
  * OpenAPI spec version: 1.0.0
  */
+import type { ExportReportType } from './exportReportType';
 
 export type ExportReportParams = {
-type: string;
+type: ExportReportType;
 };

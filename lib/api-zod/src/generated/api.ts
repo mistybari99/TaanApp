@@ -99,12 +99,18 @@ export const GetDashboardResponse = zod.object({
   "joiningDate": zod.string(),
   "status": zod.enum(['active', 'inactive']),
   "todayPaid": zod.number(),
-  "todayDue": zod.number()
+  "todayDue": zod.number(),
+  "createdAt": zod.string().optional(),
+  "notes": zod.string().optional()
 })),
   "recentPayments": zod.array(zod.object({
   "id": zod.number().int(),
   "receiptId": zod.string(),
   "memberId": zod.number().int(),
+  "cycleId": zod.number().int().nullish(),
+  "collectionDate": zod.string().optional(),
+  "shares": zod.number().int().optional(),
+  "notes": zod.string().optional(),
   "memberName": zod.string(),
   "amount": zod.number(),
   "collectorName": zod.string(),
@@ -119,6 +125,126 @@ export const GetDashboardResponse = zod.object({
   "detail": zod.string(),
   "createdAt": zod.string()
 }))
+})
+
+
+export const ListCyclesResponseItem = zod.object({
+  "id": zod.number().int(),
+  "cycleNumber": zod.number().int(),
+  "name": zod.string(),
+  "startDate": zod.string(),
+  "endDate": zod.string().nullish(),
+  "dailyPerShare": zod.number(),
+  "drawFrequency": zod.enum(['WEEKLY']),
+  "drawDay": zod.enum(['FRIDAY']),
+  "status": zod.enum(['ACTIVE', 'COMPLETED']),
+  "notes": zod.string().optional(),
+  "createdAt": zod.string().optional(),
+  "memberCount": zod.number().int()
+})
+export const ListCyclesResponse = zod.array(ListCyclesResponseItem)
+
+
+export const createCycleBodyDailyPerShareDefault = 100;
+
+export const CreateCycleBody = zod.object({
+  "cycleNumber": zod.number().int().optional(),
+  "name": zod.string(),
+  "startDate": zod.string(),
+  "endDate": zod.string().optional(),
+  "dailyPerShare": zod.number().default(createCycleBodyDailyPerShareDefault),
+  "status": zod.enum(['ACTIVE', 'COMPLETED']).optional(),
+  "notes": zod.string().optional()
+})
+
+export const CreateCycleResponse = zod.object({
+  "id": zod.number().int(),
+  "cycleNumber": zod.number().int(),
+  "name": zod.string(),
+  "startDate": zod.string(),
+  "endDate": zod.string().nullish(),
+  "dailyPerShare": zod.number(),
+  "drawFrequency": zod.enum(['WEEKLY']),
+  "drawDay": zod.enum(['FRIDAY']),
+  "status": zod.enum(['ACTIVE', 'COMPLETED']),
+  "notes": zod.string().optional(),
+  "createdAt": zod.string().optional(),
+  "memberCount": zod.number().int()
+})
+
+
+export const UpdateCycleParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const UpdateCycleBody = zod.object({
+  "name": zod.string().optional(),
+  "endDate": zod.string().optional(),
+  "dailyPerShare": zod.number().optional(),
+  "status": zod.enum(['ACTIVE', 'COMPLETED']).optional(),
+  "notes": zod.string().optional()
+})
+
+export const UpdateCycleResponse = zod.object({
+  "id": zod.number().int(),
+  "cycleNumber": zod.number().int(),
+  "name": zod.string(),
+  "startDate": zod.string(),
+  "endDate": zod.string().nullish(),
+  "dailyPerShare": zod.number(),
+  "drawFrequency": zod.enum(['WEEKLY']),
+  "drawDay": zod.enum(['FRIDAY']),
+  "status": zod.enum(['ACTIVE', 'COMPLETED']),
+  "notes": zod.string().optional(),
+  "createdAt": zod.string().optional(),
+  "memberCount": zod.number().int()
+})
+
+
+export const ListCycleMembersParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const ListCycleMembersResponseItem = zod.object({
+  "id": zod.number().int(),
+  "cycleId": zod.number().int(),
+  "memberId": zod.number().int(),
+  "memberCode": zod.string(),
+  "name": zod.string(),
+  "mobile": zod.string().optional(),
+  "status": zod.string().optional(),
+  "shares": zod.number().int(),
+  "dailyContribution": zod.number(),
+  "totalCollected": zod.number(),
+  "todayDue": zod.number()
+})
+export const ListCycleMembersResponse = zod.array(ListCycleMembersResponseItem)
+
+
+export const UpsertCycleMemberParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+
+
+
+export const UpsertCycleMemberBody = zod.object({
+  "memberId": zod.number().int(),
+  "shares": zod.number().int().min(1)
+})
+
+export const UpsertCycleMemberResponse = zod.object({
+  "id": zod.number().int(),
+  "cycleId": zod.number().int(),
+  "memberId": zod.number().int(),
+  "memberCode": zod.string(),
+  "name": zod.string(),
+  "mobile": zod.string().optional(),
+  "status": zod.string().optional(),
+  "shares": zod.number().int(),
+  "dailyContribution": zod.number(),
+  "totalCollected": zod.number(),
+  "todayDue": zod.number()
 })
 
 
@@ -137,7 +263,9 @@ export const ListMembersResponseItem = zod.object({
   "joiningDate": zod.string(),
   "status": zod.enum(['active', 'inactive']),
   "todayPaid": zod.number(),
-  "todayDue": zod.number()
+  "todayDue": zod.number(),
+  "createdAt": zod.string().optional(),
+  "notes": zod.string().optional()
 })
 export const ListMembersResponse = zod.array(ListMembersResponseItem)
 
@@ -150,7 +278,8 @@ export const CreateMemberBody = zod.object({
   "shares": zod.number().int(),
   "dailyAmount": zod.number(),
   "joiningDate": zod.string(),
-  "status": zod.string()
+  "status": zod.string(),
+  "notes": zod.string().optional()
 })
 
 export const CreateMemberResponse = zod.object({
@@ -164,7 +293,9 @@ export const CreateMemberResponse = zod.object({
   "joiningDate": zod.string(),
   "status": zod.enum(['active', 'inactive']),
   "todayPaid": zod.number(),
-  "todayDue": zod.number()
+  "todayDue": zod.number(),
+  "createdAt": zod.string().optional(),
+  "notes": zod.string().optional()
 })
 
 
@@ -174,6 +305,7 @@ export const importMembersBodyRowsMax = 500;
 
 export const ImportMembersBody = zod.object({
   "dryRun": zod.boolean(),
+  "cycleId": zod.number().int().optional(),
   "rows": zod.array(zod.object({
   "memberId": zod.string(),
   "name": zod.string(),
@@ -196,10 +328,102 @@ export const ImportMembersResponse = zod.object({
 })
 
 
+export const UpdateMemberParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const UpdateMemberBody = zod.object({
+  "name": zod.string().optional(),
+  "mobile": zod.string().optional(),
+  "address": zod.string().optional(),
+  "status": zod.enum(['active', 'inactive']).optional(),
+  "notes": zod.string().optional()
+})
+
+export const UpdateMemberResponse = zod.object({
+  "id": zod.number().int(),
+  "memberId": zod.string(),
+  "name": zod.string(),
+  "mobile": zod.string(),
+  "address": zod.string().optional(),
+  "shares": zod.number().int(),
+  "dailyAmount": zod.number(),
+  "joiningDate": zod.string(),
+  "status": zod.enum(['active', 'inactive']),
+  "todayPaid": zod.number(),
+  "todayDue": zod.number(),
+  "createdAt": zod.string().optional(),
+  "notes": zod.string().optional()
+})
+
+
+export const GetMemberHistoryParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const GetMemberHistoryResponse = zod.object({
+  "member": zod.object({
+  "id": zod.number().int(),
+  "memberId": zod.string(),
+  "name": zod.string(),
+  "mobile": zod.string(),
+  "address": zod.string().optional(),
+  "shares": zod.number().int(),
+  "dailyAmount": zod.number(),
+  "joiningDate": zod.string(),
+  "status": zod.enum(['active', 'inactive']),
+  "todayPaid": zod.number(),
+  "todayDue": zod.number(),
+  "createdAt": zod.string().optional(),
+  "notes": zod.string().optional()
+}),
+  "cycles": zod.array(zod.object({
+  "cycleId": zod.number().int(),
+  "cycleNumber": zod.number().int(),
+  "name": zod.string(),
+  "startDate": zod.string(),
+  "endDate": zod.string().nullish(),
+  "status": zod.string(),
+  "shares": zod.number().int(),
+  "dailyContribution": zod.number(),
+  "totalCollected": zod.number()
+})),
+  "payments": zod.array(zod.object({
+  "id": zod.number().int(),
+  "receiptId": zod.string(),
+  "memberId": zod.number().int(),
+  "cycleId": zod.number().int().nullish(),
+  "collectionDate": zod.string().optional(),
+  "shares": zod.number().int().optional(),
+  "notes": zod.string().optional(),
+  "memberName": zod.string(),
+  "amount": zod.number(),
+  "collectorName": zod.string(),
+  "verificationStatus": zod.string(),
+  "createdAt": zod.string(),
+  "status": zod.string()
+})),
+  "draws": zod.array(zod.object({
+  "id": zod.number().int(),
+  "cycleId": zod.number().int(),
+  "cycleNumber": zod.number().int(),
+  "drawNumber": zod.number().int(),
+  "drawDate": zod.string(),
+  "winningAmount": zod.number(),
+  "status": zod.string(),
+  "notes": zod.string().optional()
+}))
+})
+
+
 export const ListPaymentsResponseItem = zod.object({
   "id": zod.number().int(),
   "receiptId": zod.string(),
   "memberId": zod.number().int(),
+  "cycleId": zod.number().int().nullish(),
+  "collectionDate": zod.string().optional(),
+  "shares": zod.number().int().optional(),
+  "notes": zod.string().optional(),
   "memberName": zod.string(),
   "amount": zod.number(),
   "collectorName": zod.string(),
@@ -216,6 +440,9 @@ export const createPaymentBodyIdempotencyKeyMin = 8;
 
 export const CreatePaymentBody = zod.object({
   "memberId": zod.number().int(),
+  "cycleId": zod.number().int().optional(),
+  "collectionDate": zod.string().optional(),
+  "notes": zod.string().optional(),
   "amount": zod.number(),
   "verificationMethod": zod.enum(['PIN', 'COLLECTOR_CONFIRMATION']),
   "verificationCode": zod.string().optional(),
@@ -227,6 +454,10 @@ export const CreatePaymentResponse = zod.object({
   "id": zod.number().int(),
   "receiptId": zod.string(),
   "memberId": zod.number().int(),
+  "cycleId": zod.number().int().nullish(),
+  "collectionDate": zod.string().optional(),
+  "shares": zod.number().int().optional(),
+  "notes": zod.string().optional(),
   "memberName": zod.string(),
   "amount": zod.number(),
   "collectorName": zod.string(),
@@ -248,6 +479,10 @@ export const ReversePaymentResponse = zod.object({
   "id": zod.number().int(),
   "receiptId": zod.string(),
   "memberId": zod.number().int(),
+  "cycleId": zod.number().int().nullish(),
+  "collectionDate": zod.string().optional(),
+  "shares": zod.number().int().optional(),
+  "notes": zod.string().optional(),
   "memberName": zod.string(),
   "amount": zod.number(),
   "collectorName": zod.string(),
@@ -284,6 +519,57 @@ export const CreateSettlementResponse = zod.object({
   "collectorName": zod.string(),
   "reference": zod.string(),
   "createdAt": zod.string()
+})
+
+
+export const ListDrawsQueryParams = zod.object({
+  "cycleId": zod.coerce.number().int().optional(),
+  "memberId": zod.coerce.number().int().optional(),
+  "date": zod.coerce.string().optional(),
+  "drawNumber": zod.coerce.number().int().optional()
+})
+
+export const ListDrawsResponseItem = zod.object({
+  "id": zod.number().int(),
+  "cycleId": zod.number().int(),
+  "cycleNumber": zod.number().int(),
+  "cycleName": zod.string().optional(),
+  "drawNumber": zod.number().int(),
+  "drawDate": zod.string(),
+  "winnerMemberId": zod.number().int(),
+  "winnerMemberCode": zod.string(),
+  "winnerName": zod.string(),
+  "winningAmount": zod.number(),
+  "status": zod.string(),
+  "notes": zod.string().optional(),
+  "createdAt": zod.string().optional()
+})
+export const ListDrawsResponse = zod.array(ListDrawsResponseItem)
+
+
+export const CreateDrawBody = zod.object({
+  "cycleId": zod.number().int(),
+  "drawDate": zod.string(),
+  "winnerMemberId": zod.number().int(),
+  "winningAmount": zod.number(),
+  "status": zod.string().optional(),
+  "notes": zod.string().optional()
+})
+
+export const CreateDrawResponse = zod.object({
+  "id": zod.number().int(),
+  "cycleId": zod.number().int(),
+  "cycleNumber": zod.number().int(),
+  "cycleName": zod.string().optional(),
+  "drawNumber": zod.number().int(),
+  "drawDate": zod.string(),
+  "winnerMemberId": zod.number().int(),
+  "winnerMemberCode": zod.string(),
+  "winnerName": zod.string(),
+  "winningAmount": zod.number(),
+  "status": zod.string(),
+  "notes": zod.string().optional(),
+  "createdAt": zod.string().optional()
 })
 
 
@@ -380,7 +666,7 @@ export const UpdateSettingsResponse = zod.object({
 
 
 export const ExportReportQueryParams = zod.object({
-  "type": zod.coerce.string()
+  "type": zod.enum(['members', 'payments', 'collectors', 'settlements', 'audit', 'daily', 'weekly', 'monthly', 'due', 'collector'])
 })
 
 export const ExportReportResponse = zod.unknown()

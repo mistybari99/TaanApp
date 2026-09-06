@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from "react"
-import { useListMembers, useGetDashboard, useCreatePayment, getGetCurrentUserQueryKey, getGetDashboardQueryKey, getListPaymentsQueryKey, getListMembersQueryKey } from "@workspace/api-client-react"
+import { useListMembers, useGetDashboard, useCreatePayment, useListCycles, useListCycleMembers, getGetCurrentUserQueryKey, getGetDashboardQueryKey, getListPaymentsQueryKey, getListMembersQueryKey, getListCycleMembersQueryKey } from "@workspace/api-client-react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,11 +16,15 @@ export default function CollectorHome() {
   const [search, setSearch] = useState("")
   const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null)
   const [amount, setAmount] = useState<string>("")
+  const [notes, setNotes] = useState("")
   const [pin, setPin] = useState("")
   const [confirmDialog, setConfirmDialog] = useState(false)
   const [isDuplicateConfirm, setIsDuplicateConfirm] = useState(false)
   
   const { data: members, isLoading, refetch } = useListMembers({ search: search.length > 2 ? search : undefined })
+  const { data: cycles } = useListCycles()
+  const activeCycle = cycles?.find((cycle) => cycle.status === "ACTIVE") ?? cycles?.[0]
+  const { data: cycleMembers } = useListCycleMembers((activeCycle?.id ?? 0) as number, { query: { enabled: Boolean(activeCycle?.id), queryKey: getListCycleMembersQueryKey((activeCycle?.id ?? 0) as number) } })
   const { data: dashboard, refetch: refetchDashboard } = useGetDashboard({ query: { queryKey: getGetDashboardQueryKey(), refetchInterval: 15000 } })
   
   const { isOnline, addToQueue } = useSync()
@@ -29,11 +33,25 @@ export default function CollectorHome() {
   const receiptRef = useRef<ReceiptRef>(null)
 
   // Find selected member
-  const selectedMember = useMemo(() => members?.find(m => m.id === selectedMemberId), [members, selectedMemberId])
+  const cycleMemberOptions = useMemo(() => cycleMembers?.map((member) => ({
+    id: member.memberId,
+    memberId: member.memberCode,
+    name: member.name,
+    mobile: member.mobile,
+    dailyAmount: member.dailyContribution,
+    todayPaid: Math.max(0, member.dailyContribution - member.todayDue),
+  })), [cycleMembers])
+  const memberOptions = activeCycle ? cycleMemberOptions : members
+  const visibleMembers = useMemo(() => memberOptions?.filter((member) => {
+    if (!search.trim()) return true
+    const term = search.toLowerCase()
+    return member.name.toLowerCase().includes(term) || member.memberId.toLowerCase().includes(term)
+  }), [memberOptions, search])
+  const selectedMember = useMemo(() => memberOptions?.find(m => m.id === selectedMemberId), [memberOptions, selectedMemberId])
 
   const handleSelect = (id: number) => {
     setSelectedMemberId(id)
-    const member = members?.find(m => m.id === id)
+    const member = memberOptions?.find(m => m.id === id)
     if (member) {
       setAmount(member.dailyAmount.toString())
       if (member.todayPaid > 0) {
@@ -43,6 +61,7 @@ export default function CollectorHome() {
       }
     }
     setPin("")
+    setNotes("")
     setSearch("")
   }
 
@@ -56,7 +75,9 @@ export default function CollectorHome() {
 
     const payload = {
       memberId: selectedMember.id,
+      cycleId: activeCycle?.id,
       amount: numAmount,
+      notes: notes || undefined,
       verificationMethod: pin ? "PIN" as const : "COLLECTOR_CONFIRMATION" as const,
       verificationCode: pin || undefined,
       confirmDuplicate: isDuplicateConfirm,
@@ -84,6 +105,7 @@ export default function CollectorHome() {
         queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() });
         queryClient.invalidateQueries({ queryKey: getListPaymentsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getListMembersQueryKey() });
+        if (activeCycle?.id) queryClient.invalidateQueries({ queryKey: getListCycleMembersQueryKey(activeCycle.id) });
       } catch (error: any) {
         toast.error(error?.message || "পেমেন্ট সেভ করা যায়নি (Payment failed)");
         return;
@@ -93,6 +115,7 @@ export default function CollectorHome() {
     setSelectedMemberId(null);
     setAmount("");
     setPin("");
+    setNotes("");
 
   }
 
@@ -131,6 +154,7 @@ export default function CollectorHome() {
           </CardContent>
         </Card>
       </div>
+      {activeCycle && <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm"><span className="font-semibold">{activeCycle.name}</span><span className="text-muted-foreground"> · ৳{activeCycle.dailyPerShare}/শেয়ার/দিন · শুক্রবার ড্র</span></div>}
 
       {!selectedMemberId ? (
         <div className="space-y-4">
@@ -153,7 +177,7 @@ export default function CollectorHome() {
             ) : members?.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">কোন সদস্য পাওয়া যায়নি</div>
             ) : (
-              members?.slice(0, 10).map((member) => (
+              visibleMembers?.slice(0, 10).map((member) => (
                 <Card 
                   key={member.id} 
                   className={`cursor-pointer transition-colors active:scale-[0.98] ${member.todayPaid > 0 ? 'opacity-70 bg-muted/50' : 'hover:border-primary'}`}
@@ -220,6 +244,7 @@ export default function CollectorHome() {
                       </Button>
                     ))}
                   </div>
+                    <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="নোট (ঐচ্ছিক)" className="mt-3" />
                 </div>
 
                 <Button 

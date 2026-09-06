@@ -15,4 +15,5 @@ export interface MemberInput {
   dailyAmount: number;
   joiningDate: string;
   status: string;
+  notes?: string;
 }

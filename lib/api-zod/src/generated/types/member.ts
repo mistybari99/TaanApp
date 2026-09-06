@@ -19,4 +19,6 @@ export interface Member {
   status: MemberStatus;
   todayPaid: number;
   todayDue: number;
+  createdAt?: string;
+  notes?: string;
 }
