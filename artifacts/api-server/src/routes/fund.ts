@@ -477,10 +477,12 @@ router.post("/members/import", requireAuth, ownerOnly, async (req: AuthedRequest
     if (!Number.isFinite(Number(row.dailyAmount)) || Number(row.dailyAmount) <= 0) errors.push({ row: index + 2, message: "Daily amount must be positive" });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(row.joiningDate ?? ""))) errors.push({ row: index + 2, message: "Joining date must be YYYY-MM-DD" });
   });
-  const cycle = await pool.query("SELECT id,status,daily_per_share::float AS daily_per_share,tracking_start_date::text AS tracking_start_date FROM fund_cycles WHERE id=$1", [cycleId]);
-  if (!cycle.rows[0]) errors.push({ row: 1, message: "Selected cycle was not found" });
-  else if (cycle.rows[0].status !== "ACTIVE") errors.push({ row: 1, message: "Members can only be imported into an active cycle" });
-  else {
+  const cycle = cycleId
+    ? await pool.query("SELECT id,status,daily_per_share::float AS daily_per_share,tracking_start_date::text AS tracking_start_date FROM fund_cycles WHERE id=$1", [cycleId])
+    : { rows: [] as any[] };
+  if (cycleId && !cycle.rows[0]) errors.push({ row: 1, message: "Selected cycle was not found" });
+  else if (cycleId && cycle.rows[0].status !== "ACTIVE") errors.push({ row: 1, message: "Members can only be imported into an active cycle" });
+  else if (cycleId) {
     const tan = await tanConfigForCycle(pool, cycleId);
     if (tan) errors.push({ row: 1, message: "TAN is locked; member import cannot change the locked share total" });
   }
@@ -535,6 +537,28 @@ router.post("/members/import", requireAuth, ownerOnly, async (req: AuthedRequest
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    if (cycleId) {
+      const lockedCycle = await client.query(
+        `SELECT id,status,daily_per_share::float AS daily_per_share,tracking_start_date::text AS tracking_start_date
+           FROM fund_cycles WHERE id=$1 FOR UPDATE`,
+        [cycleId],
+      );
+      if (!lockedCycle.rows[0] || lockedCycle.rows[0].status !== "ACTIVE") {
+        throw new Error("The selected cycle is no longer active");
+      }
+      const tan = await tanConfigForCycle(client, cycleId, true);
+      const activity = await client.query(
+        `SELECT
+           (SELECT COUNT(*) FROM fund_payments WHERE cycle_id=$1) AS payments,
+           (SELECT COUNT(*) FROM fund_due_entries WHERE cycle_id=$1) AS dues,
+           (SELECT COUNT(*) FROM fund_share_transfers WHERE cycle_id=$1) AS transfers,
+           (SELECT COUNT(*) FROM fund_draws WHERE cycle_id=$1) AS draws`,
+        [cycleId],
+      );
+      if (tan || Object.values(activity.rows[0] ?? {}).some((value) => Number(value) > 0)) {
+        throw new Error("The selected cycle already has locked or financial activity");
+      }
+    }
     let imported = 0;
     for (const row of normalized) {
       let memberId = row.memberId;
@@ -544,8 +568,9 @@ router.post("/members/import", requireAuth, ownerOnly, async (req: AuthedRequest
         if (existing.rows[0]) {
           memberDbId = existing.rows[0].id;
           await client.query(
-            `UPDATE fund_members SET name=$2,mobile=COALESCE(NULLIF($3,''),mobile),business_name=$4,address=$5,nid=COALESCE(NULLIF($6,''),nid),notes=$7 WHERE id=$1`,
-            [memberDbId, row.name, row.mobile, row.businessName, row.address, row.nid, row.notes],
+            `UPDATE fund_members SET name=$2,mobile=COALESCE(NULLIF($3,''),mobile),business_name=$4,address=$5,nid=COALESCE(NULLIF($6,''),nid),
+              shares=$7,daily_amount=$8,joining_date=$9,status=$10,notes=$11 WHERE id=$1`,
+            [memberDbId, row.name, row.mobile, row.businessName, row.address, row.nid, row.shares, row.dailyAmount, row.joiningDate, row.status, row.notes],
           );
         }
         else {
@@ -569,8 +594,9 @@ router.post("/members/import", requireAuth, ownerOnly, async (req: AuthedRequest
         if (existing.rows[0]) {
           memberDbId = existing.rows[0].id;
           await client.query(
-            `UPDATE fund_members SET name=$2,mobile=COALESCE(NULLIF($3,''),mobile),business_name=$4,address=$5,nid=COALESCE(NULLIF($6,''),nid),notes=$7 WHERE id=$1`,
-            [memberDbId, row.name, row.mobile, row.businessName, row.address, row.nid, row.notes],
+            `UPDATE fund_members SET name=$2,mobile=COALESCE(NULLIF($3,''),mobile),business_name=$4,address=$5,nid=COALESCE(NULLIF($6,''),nid),
+              shares=$7,daily_amount=$8,joining_date=$9,status=$10,notes=$11 WHERE id=$1`,
+            [memberDbId, row.name, row.mobile, row.businessName, row.address, row.nid, row.shares, row.dailyAmount, row.joiningDate, row.status, row.notes],
           );
         }
         else {
@@ -764,6 +790,17 @@ router.patch("/cycles/:id", requireAuth, ownerOnly, async (req: AuthedRequest, r
     if (current.rows[0].posted_payments > 0 && b.trackingStartDate && b.trackingStartDate !== current.rows[0].tracking_start_date) {
       await client.query("ROLLBACK");
       return res.status(409).json({ error: "Tracking start date cannot change after payments are posted" });
+    }
+    if (
+      b.dailyPerShare !== undefined
+      && Number(b.dailyPerShare) !== Number(current.rows[0].daily_per_share)
+      && (
+        current.rows[0].posted_payments > 0
+        || (current.rows[0].tracking_start_date && todayIso() >= String(current.rows[0].tracking_start_date))
+      )
+    ) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Daily contribution cannot change after digital collection has started" });
     }
     const result = await client.query(`UPDATE fund_cycles SET name=COALESCE($2,name),end_date=COALESCE($3,end_date),
       tracking_start_date=COALESCE($4,tracking_start_date),daily_per_share=COALESCE($5,daily_per_share),status=$6,notes=COALESCE($7,notes)
@@ -1808,10 +1845,21 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
       await client.query("ROLLBACK");
       return res.status(409).json({ error: "A payment already exists today. Confirm to add another or partial payment." });
     }
-    const member = await client.query("SELECT id,name FROM fund_members WHERE id=$1 AND status='active' FOR SHARE", [memberId]);
+    const member = await client.query(
+      "SELECT id,name,assigned_collector_id FROM fund_members WHERE id=$1 AND status='active' FOR SHARE",
+      [memberId],
+    );
     if (!member.rows[0]) {
       await client.query("ROLLBACK");
       return res.status(404).json({ error: "Active member not found" });
+    }
+    if (
+      req.user?.role === "COLLECTOR"
+      && member.rows[0].assigned_collector_id !== null
+      && Number(member.rows[0].assigned_collector_id) !== req.user.id
+    ) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ error: "Collector is not assigned to this member" });
     }
     const cycleMember = await client.query("SELECT shares,daily_contribution::float AS daily_contribution FROM fund_cycle_members WHERE cycle_id=$1 AND member_id=$2 FOR SHARE", [selectedCycleId,Number(memberId)]);
     if (!cycleMember.rows[0]) {
@@ -1829,7 +1877,11 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
     const allocation = allocatePayment(Number(amount), previousDueOutstanding);
     const { previousDueApplied, currentPeriodApplied } = allocation;
     const receiptId = `IRF-${new Date().toISOString().slice(0,10).replaceAll("-","")}-${randomBytes(3).toString("hex").toUpperCase()}`;
-    const verification = verificationMethod === "PIN" && verificationCode ? "PIN VERIFIED" : "COLLECTOR CONFIRMED";
+    if (verificationMethod === "PIN") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "PIN verification is not configured; use collector confirmation" });
+    }
+    const verification = "COLLECTOR CONFIRMED";
     const r = await client.query(
       `INSERT INTO fund_payments(receipt_id,member_id,cycle_id,collection_date,shares,amount,collector_id,verification_status,notes,idempotency_key,previous_due_applied,current_period_applied,tan_period_id)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id,receipt_id AS "receiptId",member_id AS "memberId",cycle_id AS "cycleId",collection_date::text AS "collectionDate",shares,notes,amount::float,previous_due_applied::float AS "previousDueApplied",current_period_applied::float AS "currentPeriodApplied",verification_status AS "verificationStatus",created_at AS "createdAt",status`,
