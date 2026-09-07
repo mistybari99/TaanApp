@@ -699,7 +699,7 @@ components:
       required: [dryRun, rows]
       properties:
         dryRun: { type: boolean }
-        cycleId: { type: integer }
+        cycleId: { type: integer, nullable: true }
         confirmImport: { type: boolean }
         previewToken: { type: string }
         rows: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/MemberImportRow" } }

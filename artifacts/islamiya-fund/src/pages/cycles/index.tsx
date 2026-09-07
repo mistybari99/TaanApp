@@ -3,6 +3,7 @@ import {
   getListCycleMembersQueryKey,
   getListCyclesQueryKey,
   useGetCurrentUser,
+  useCreateCycle,
   getGetTanQueryKey,
   useGetTan,
   useLockTan,
@@ -17,11 +18,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { formatCurrency, formatDate } from "@/lib/utils"
+import { businessDate, formatCurrency, formatDate } from "@/lib/utils"
 import { toast } from "sonner"
 import { CheckCircle2, LockKeyhole, Users } from "lucide-react"
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = businessDate
 
 export default function CyclesPage() {
   const queryClient = useQueryClient()
@@ -33,8 +34,11 @@ export default function CyclesPage() {
   const [trackingStartDate, setTrackingStartDate] = useState("")
   const [tanStartDate, setTanStartDate] = useState("")
   const [drawsPerWeek, setDrawsPerWeek] = useState(4)
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [newCycle, setNewCycle] = useState({ name: "", startDate: today(), trackingStartDate: "", dailyPerShare: 100 })
   const [shareDrafts, setShareDrafts] = useState<Record<number, number>>({})
   const updateCycle = useUpdateCycle()
+  const createCycle = useCreateCycle()
   const upsertMember = useUpsertCycleMember()
   const lockTan = useLockTan()
   const selectedCycle = cycles?.find((cycle) => cycle.id === selectedCycleId) ?? cycles?.[0]
@@ -114,6 +118,30 @@ export default function CyclesPage() {
     })
   }
 
+  const handleCreateCycle = () => {
+    if (!newCycle.name.trim() || !newCycle.startDate || !newCycle.trackingStartDate || Number(newCycle.dailyPerShare) <= 0) {
+      toast.error("চক্রের নাম, শুরু, tracking date এবং positive daily amount দিন")
+      return
+    }
+    createCycle.mutate({
+      data: {
+        name: newCycle.name.trim(),
+        startDate: newCycle.startDate,
+        trackingStartDate: newCycle.trackingStartDate,
+        dailyPerShare: Number(newCycle.dailyPerShare),
+        status: "ACTIVE",
+      },
+    }, {
+      onSuccess: () => {
+        toast.success("নতুন cycle তৈরি হয়েছে")
+        setNewCycle({ name: "", startDate: today(), trackingStartDate: "", dailyPerShare: 100 })
+        setIsCreateOpen(false)
+        queryClient.invalidateQueries({ queryKey: getListCyclesQueryKey() })
+      },
+      onError: (error: any) => toast.error(error?.message || "Cycle তৈরি করা যায়নি"),
+    })
+  }
+
   const saveShares = (memberId: number) => {
     if (!activeId || tanData?.tan) return toast.error("TAN lock হওয়ার পরে সরাসরি share edit করা যায় না")
     const shares = Number(shareDrafts[memberId])
@@ -135,11 +163,24 @@ export default function CyclesPage() {
         <p className="text-muted-foreground">প্রতিটি চক্রের সদস্য, শেয়ার ও সংগ্রহ আলাদা থাকে</p>
       </div>
 
+      {user?.role === "OWNER" && isCreateOpen && (
+        <Card>
+          <CardHeader><CardTitle>নতুন Cycle তৈরি করুন</CardTitle><CardDescription>এখানে কোনো member বা TAN auto-create হবে না।</CardDescription></CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2"><Label>Cycle name</Label><Input value={newCycle.name} onChange={(event) => setNewCycle({ ...newCycle, name: event.target.value })} placeholder="Cycle #01" /></div>
+            <div className="space-y-2"><Label>Start date</Label><Input type="date" value={newCycle.startDate} onChange={(event) => setNewCycle({ ...newCycle, startDate: event.target.value })} /></div>
+            <div className="space-y-2"><Label>Digital tracking start</Label><Input type="date" value={newCycle.trackingStartDate} onChange={(event) => setNewCycle({ ...newCycle, trackingStartDate: event.target.value })} /></div>
+            <div className="space-y-2"><Label>Daily per share</Label><Input type="number" min={0.01} step="0.01" value={newCycle.dailyPerShare} onChange={(event) => setNewCycle({ ...newCycle, dailyPerShare: Number(event.target.value) })} /></div>
+            <div className="flex gap-2 sm:col-span-2"><Button onClick={handleCreateCycle} disabled={createCycle.isPending}>Cycle সংরক্ষণ</Button><Button variant="outline" onClick={() => setIsCreateOpen(false)}>বাতিল</Button></div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
         <Card>
           <CardHeader><CardTitle>চক্র তালিকা</CardTitle></CardHeader>
           <CardContent className="space-y-2">
-            {isLoading ? <p className="text-sm text-muted-foreground">লোড হচ্ছে...</p> : cycles?.length === 0 ? <p className="text-sm text-muted-foreground">এখনো কোনো চক্র নেই। Owner নতুন চক্র তৈরি করুন।</p> : cycles?.map((cycle) => (
+            {isLoading ? <p className="text-sm text-muted-foreground">লোড হচ্ছে...</p> : cycles?.length === 0 ? <div className="space-y-3"><p className="text-sm text-muted-foreground">এখনো কোনো চক্র নেই। আগে Member CSV import করুন, তারপর Owner প্রথম cycle তৈরি করুন।</p>{user?.role === "OWNER" && <Button className="w-full" onClick={() => setIsCreateOpen(true)}>প্রথম Cycle তৈরি করুন</Button>}</div> : cycles?.map((cycle) => (
               <button key={cycle.id} onClick={() => setSelectedCycleId(cycle.id)} className={`w-full text-left rounded-lg border p-3 transition-colors ${selectedCycle?.id === cycle.id ? "border-primary bg-primary/5" : "hover:bg-muted/60"}`}>
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-semibold">{cycle.name}</span>

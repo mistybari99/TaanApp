@@ -16,11 +16,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { formatCurrency, formatDate } from "@/lib/utils"
+import { businessDate, formatCurrency, formatDate } from "@/lib/utils"
 import { toast } from "sonner"
 import { Trophy } from "lucide-react"
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = businessDate
 
 export default function DrawsPage() {
   return <DrawSurface readOnly={false} />

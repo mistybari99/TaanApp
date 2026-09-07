@@ -1824,7 +1824,7 @@ router.get("/payments", requireAuth, async (req: AuthedRequest, res) => {
   res.json(r.rows);
 });
 router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
-  const { memberId, cycleId, collectionDate, amount, notes, verificationMethod, verificationCode, confirmDuplicate } = req.body;
+  const { memberId, cycleId, collectionDate, amount, notes, verificationMethod, confirmDuplicate } = req.body;
   const idempotencyKey = idempotency(req.body.idempotencyKey);
   if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) return res.status(400).json({ error: "Amount must be greater than zero" });
   const selectedCycleId = Number(cycleId);

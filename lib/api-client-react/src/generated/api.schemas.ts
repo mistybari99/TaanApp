@@ -514,7 +514,7 @@ export interface MemberImportRow {
 
 export interface MemberImportInput {
   dryRun: boolean;
-  cycleId?: number;
+  cycleId?: number | null;
   confirmImport?: boolean;
   previewToken?: string;
   /** @maxItems 500 */

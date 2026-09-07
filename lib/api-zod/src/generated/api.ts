@@ -650,7 +650,7 @@ export const importMembersBodyRowsMax = 500;
 
 export const ImportMembersBody = zod.object({
   "dryRun": zod.boolean(),
-  "cycleId": zod.number().int().optional(),
+  "cycleId": zod.number().int().nullish(),
   "confirmImport": zod.boolean().optional(),
   "previewToken": zod.string().optional(),
   "rows": zod.array(zod.object({

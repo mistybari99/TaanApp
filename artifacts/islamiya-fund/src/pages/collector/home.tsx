@@ -17,7 +17,6 @@ export default function CollectorHome() {
   const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null)
   const [amount, setAmount] = useState<string>("")
   const [notes, setNotes] = useState("")
-  const [pin, setPin] = useState("")
   const [confirmDialog, setConfirmDialog] = useState(false)
   const [isDuplicateConfirm, setIsDuplicateConfirm] = useState(false)
   
@@ -87,7 +86,6 @@ export default function CollectorHome() {
         setIsDuplicateConfirm(false)
       }
     }
-    setPin("")
     setNotes("")
     setSearch("")
   }
@@ -105,8 +103,7 @@ export default function CollectorHome() {
       cycleId: activeCycle?.id,
       amount: numAmount,
       notes: notes || undefined,
-      verificationMethod: pin ? "PIN" as const : "COLLECTOR_CONFIRMATION" as const,
-      verificationCode: pin || undefined,
+      verificationMethod: "COLLECTOR_CONFIRMATION" as const,
       confirmDuplicate: isDuplicateConfirm,
       idempotencyKey: crypto.randomUUID()
     };
@@ -141,7 +138,6 @@ export default function CollectorHome() {
     setConfirmDialog(false);
     setSelectedMemberId(null);
     setAmount("");
-    setPin("");
     setNotes("");
 
   }
@@ -391,19 +387,8 @@ export default function CollectorHome() {
               </div>
             )}
 
-            <div className="space-y-2 pt-2">
-              <Label className="text-sm text-left block">PIN কোড (যদি থাকে)</Label>
-              <Input 
-                type="password"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={4}
-                value={pin}
-                onChange={e => setPin(e.target.value)}
-                placeholder="****"
-                className="h-12 text-center text-xl tracking-[0.5em] font-mono"
-              />
-              <p className="text-xs text-muted-foreground text-left">পিন না দিলে কালেক্টর কনফার্মেশন ধরা হবে।</p>
+            <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-left">
+              এই paymentটি Collector confirmation হিসেবে সংরক্ষিত হবে। PIN verification এখনো সক্রিয় করা হয়নি।
             </div>
           </div>
           <DialogFooter className="flex-row gap-3 sm:justify-between">

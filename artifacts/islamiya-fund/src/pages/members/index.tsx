@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
-import { formatCurrency } from "@/lib/utils"
+import { businessDate, formatCurrency } from "@/lib/utils"
 import { Search, UserPlus, Upload, Download, AlertTriangle, WalletCards, Pencil, Check, X } from "lucide-react"
 import { downloadCsvTemplate, parseCsv } from "@/lib/csv"
 import { Link } from "wouter"
@@ -54,7 +54,7 @@ export default function MembersPage() {
     memberIds: [] as number[],
     amount: "",
     reason: "",
-    dueDate: new Date().toISOString().slice(0, 10),
+    dueDate: businessDate(),
   })
   const [dueMemberSearch, setDueMemberSearch] = useState("")
   const selectedDueCycle = activeCycles.find((cycle) => cycle.id === Number(dueEntry.cycleId))
@@ -133,7 +133,7 @@ export default function MembersPage() {
       memberIds: [],
       amount: "",
       reason: "",
-      dueDate: new Date().toISOString().slice(0, 10),
+      dueDate: businessDate(),
     })
     setDueMemberSearch("")
     setIsDueConfirmationOpen(false)
@@ -207,17 +207,12 @@ export default function MembersPage() {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!importCycleId) {
-      toast.error("আগে একটি active cycle নির্বাচন করুন")
-      e.target.value = ""
-      return
-    }
     try {
       const rows = await parseCsv(file);
       setImportRows(rows);
       // Run dry-run validation
       importMembers.mutate({
-        data: { dryRun: true, rows, cycleId: importCycleId ? Number(importCycleId) : undefined }
+         data: { dryRun: true, rows, cycleId: importCycleId ? Number(importCycleId) : undefined }
       }, {
         onSuccess: (data) => {
           setImportPreview(data);
@@ -274,12 +269,12 @@ export default function MembersPage() {
                   <Input type="file" accept=".csv" onChange={handleFileChange} className="mt-1" />
                 </div>
                 <div>
-                   <Label>চক্রে যোগ করুন (প্রয়োজনীয়)</Label>
+                   <Label>চক্রে যোগ করুন (ঐচ্ছিক)</Label>
                   <select className="h-10 mt-1 w-full rounded-md border bg-background px-3 text-sm" value={importCycleId} onChange={(event) => setImportCycleId(event.target.value)}>
-                     <option value="">active cycle নির্বাচন করুন</option>
+                      <option value="">শুধু member master data</option>
                     {cycles?.filter((cycle) => cycle.status === "ACTIVE").map((cycle) => <option key={cycle.id} value={cycle.id}>{cycle.name}</option>)}
                   </select>
-                   <p className="text-xs text-muted-foreground mt-1">Import শুধু নির্বাচিত cycle-এর সদস্য ও cycle-specific shares তৈরি/আপডেট করবে। পুরনো payment বা dues আসবে না।</p>
+                    <p className="text-xs text-muted-foreground mt-1">চক্র নির্বাচন করলে সদস্যটি সেই active cycle-এও যোগ হবে। খালি রাখলে শুধু member master data import হবে; পুরনো payment বা dues আসবে না।</p>
                 </div>
 
                 {importPreview && (
@@ -327,9 +322,9 @@ export default function MembersPage() {
                 <Button 
                    onClick={() => {
                      if (!importPreview || importPreview.errors.length > 0) return
-                      if (!window.confirm(`এই preview অনুমোদন করে ${importPreview.memberCount} জন সদস্য ও ${importPreview.totalShares} shares “${importCycle?.name ?? "selected cycle"}”-এ commit করবেন?`)) return
+                       if (!window.confirm(`এই preview অনুমোদন করে ${importPreview.memberCount} জন সদস্য ও ${importPreview.totalShares} shares ${importCycle ? `“${importCycle.name}”-এ` : "member master data হিসেবে"} commit করবেন?`)) return
                      importMembers.mutate({
-                       data: { dryRun: false, rows: importRows, cycleId: Number(importCycleId), confirmImport: true, previewToken: importPreview.previewToken }
+                        data: { dryRun: false, rows: importRows, cycleId: importCycleId ? Number(importCycleId) : undefined, confirmImport: true, previewToken: importPreview.previewToken }
                      }, {
                        onSuccess: (data) => {
                          toast.success(`${data.imported} জন সদস্য সফলভাবে যোগ করা হয়েছে`)
@@ -342,7 +337,7 @@ export default function MembersPage() {
                        onError: (err: any) => toast.error(err.message || "Import failed")
                      })
                    }} 
-                   disabled={importMembers.isPending || !importPreview || importPreview.errors.length > 0 || !importCycleId}
+                    disabled={importMembers.isPending || !importPreview || importPreview.errors.length > 0}
                 >
                    Preview অনুমোদন করে Commit
                 </Button>
