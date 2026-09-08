@@ -141,11 +141,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         href={item.href}
         onClick={() => setMoreOpen(false)}
         aria-current={active ? "page" : undefined}
+        aria-label={compact ? undefined : `${item.labelBn} (${item.labelEn})`}
         className={cn(
-          "group relative flex items-center rounded-xl transition-colors duration-150",
+          "group relative flex items-center transition-colors duration-150 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
           compact
             ? "min-h-14 min-w-0 flex-1 flex-col justify-center gap-0.5 px-1 text-center"
-             : "min-h-12 w-full gap-3 px-3",
+            : "min-h-16 w-full gap-3 rounded-xl px-4 py-3",
           active
             ? "bg-primary text-primary-foreground shadow-[0_5px_14px_hsl(var(--primary)/0.12)]"
             : compact
@@ -153,7 +154,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
         )}
       >
-        {active && !compact && <span className="absolute -left-3 h-6 w-1 rounded-r-full bg-secondary" />}
         <item.icon className={cn(compact ? "h-5 w-5" : "h-[1.15rem] w-[1.15rem]", "shrink-0")} />
         {compact ? (
           <span className="w-full truncate text-[10px] font-semibold leading-tight">{item.labelBn}</span>
@@ -163,7 +163,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="truncate text-[10px] opacity-70">{item.labelEn}</span>
           </span>
         )}
-        {withChevron && <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground/60" aria-hidden="true" />}
+        {withChevron && <ChevronRight className={cn("ml-auto h-4 w-4 shrink-0", active ? "text-primary-foreground/70" : "text-muted-foreground/60")} aria-hidden="true" />}
       </Link>
     )
   }
@@ -268,7 +268,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </nav>
 
       <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
-        <SheetContent side="right" className="w-[min(92vw,25rem)] overflow-y-auto border-l border-border bg-background px-5 pb-7 pt-6 md:hidden">
+        <SheetContent side="right" className="w-[min(92vw,25rem)] overflow-y-auto border-l border-border bg-background px-4 pb-[calc(1.75rem+env(safe-area-inset-bottom))] pt-6 sm:px-5 md:hidden">
           <SheetHeader className="pr-8 text-left">
             <SheetTitle className="text-xl font-extrabold text-primary">আরও <span className="font-semibold text-muted-foreground">· More</span></SheetTitle>
             <SheetDescription>কম ব্যবহৃত কাজ ও আপনার অ্যাকাউন্ট এক জায়গায়।</SheetDescription>
@@ -285,35 +285,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <ShieldCheck className="h-5 w-5 text-accent-foreground" />
           </div>
 
-          <div className="mt-7 space-y-7">
+          <div className="mt-8 space-y-8">
             {(["operate", "finance", "records", "admin"] as const).map((group) => {
               const items = moreItems.filter((item) => item.group === group)
               if (!items.length) return null
               return (
                 <section key={group}>
-                  <div className="mb-2 px-1">
+                  <div className="mb-3 px-1">
                     <p className="text-xs font-bold text-foreground">{groupLabels[group].bn}</p>
                     <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{groupLabels[group].en}</p>
                   </div>
-                  <div className="overflow-hidden rounded-2xl border border-border/70 bg-card">
-                    {items.map((item) => (
-                      <div key={item.href} className="border-b border-border/60 last:border-b-0">
-                        {renderNavItem(item, false, true)}
-                      </div>
-                    ))}
+                  <div className="divide-y divide-border/60 rounded-2xl border border-border/70 bg-card p-1">
+                    {items.map((item) => renderNavItem(item, false, true))}
                   </div>
                 </section>
               )
             })}
           </div>
 
-          <div className="mt-7 border-t border-border/70 pt-5">
+          <div className="mt-8 border-t border-border/70 pt-6">
             <button
               onClick={() => {
                 setMoreOpen(false)
                 setLogoutOpen(true)
               }}
-              className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-destructive transition-colors hover:bg-destructive/10"
+              aria-label="লগআউট (Sign out of this account)"
+              className="flex min-h-14 w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               <LogOut className="h-[1.15rem] w-[1.15rem]" />
               <span className="flex flex-col leading-tight">
