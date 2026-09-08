@@ -287,6 +287,26 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/DrawInput" } } }
       responses:
         "201": { description: Recorded, content: { application/json: { schema: { $ref: "#/components/schemas/Draw" } } } }
+  /draws/{id}/disbursement:
+    post:
+      operationId: createDrawDisbursement
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DrawDisbursementInput" } } }
+      responses:
+        "201": { description: Draw payout recorded, content: { application/json: { schema: { $ref: "#/components/schemas/Draw" } } } }
+  /draw-disbursements/{id}/reverse:
+    post:
+      operationId: reverseDrawDisbursement
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ReversalInput" } } }
+      responses:
+        "200": { description: Draw payout reversed, content: { application/json: { schema: { $ref: "#/components/schemas/Draw" } } } }
   /collectors:
     get:
       operationId: listCollectors
@@ -352,7 +372,7 @@ paths:
     get:
       operationId: exportReport
       parameters:
-        - { name: type, in: query, required: true, schema: { type: string, enum: [members, payments, collectors, settlements, audit, daily, weekly, monthly, due, collector] } }
+        - { name: type, in: query, required: true, schema: { type: string, enum: [members, payments, collectors, settlements, draws, audit, daily, weekly, monthly, due, collector] } }
       responses:
         "200": { description: CSV, content: { text/csv: { schema: { type: string } } } }
 components:
@@ -636,6 +656,27 @@ components:
         createdAt: { type: string }
         tanPeriodId: { type: integer, nullable: true }
         drawSlot: { type: integer, nullable: true }
+        payoutId: { type: integer, nullable: true }
+        payoutPayerId: { type: integer, nullable: true }
+        payoutPayerName: { type: string, nullable: true }
+        payoutAmount: { type: number, nullable: true }
+        payoutDate: { type: string, nullable: true }
+        payoutReference: { type: string, nullable: true }
+        payoutNote: { type: string, nullable: true }
+        payoutStatus: { type: string, enum: [PAID, REVERSED], nullable: true }
+        payoutCreatedAt: { type: string, nullable: true }
+        payoutReversedAt: { type: string, nullable: true }
+        payoutReversalReason: { type: string, nullable: true }
+    DrawDisbursementInput:
+      type: object
+      required: [payerUserId, amount, payoutDate, reference]
+      properties:
+        payerUserId: { type: integer, minimum: 1 }
+        amount: { type: number, exclusiveMinimum: 0 }
+        payoutDate: { type: string }
+        reference: { type: string, minLength: 1 }
+        note: { type: string }
+        idempotencyKey: { type: string, minLength: 8 }
     DrawInput:
       type: object
       required: [cycleId, drawDate, winnerMemberId, winningAmount]
@@ -922,7 +963,7 @@ components:
         reason: { type: string }
     CashCustodyBalance:
       type: object
-      required: [userId, name, role, postedPayments, acceptedIncoming, acceptedOutgoing, availableAmount]
+      required: [userId, name, role, postedPayments, acceptedIncoming, acceptedOutgoing, drawPayouts, availableAmount]
       properties:
         userId: { type: integer }
         name: { type: string }
@@ -930,6 +971,7 @@ components:
         postedPayments: { type: number }
         acceptedIncoming: { type: number }
         acceptedOutgoing: { type: number }
+        drawPayouts: { type: number }
         availableAmount: { type: number }
     AuditEntry:
       type: object
@@ -955,7 +997,7 @@ components:
       properties: { name: { type: string }, collected: { type: number }, payments: { type: integer }, cash: { type: number } }
     Dashboard:
       type: object
-      required: [trackingReady, trackingStartDate, isFridayClosingDay, isSaturdayOpeningDay, currentDrawDate, currentPeriodStart, currentPeriodEnd, totalMembers, todayTarget, currentCollectionDue, collected, due, collectorCash, officeDeposits, unsettledCash, paymentCount, performances, dueMembers, recentPayments, audit, previousDue, totalDue, transferValue, transferSettlementValue, drawCount]
+      required: [trackingReady, trackingStartDate, isFridayClosingDay, isSaturdayOpeningDay, currentDrawDate, currentPeriodStart, currentPeriodEnd, totalMembers, todayTarget, currentCollectionDue, collected, due, collectorCash, officeDeposits, unsettledCash, drawPayouts, netCashMovement, paymentCount, performances, dueMembers, recentPayments, audit, previousDue, totalDue, transferValue, transferSettlementValue, drawCount]
       properties:
         trackingReady: { type: boolean }
         trackingStartDate: { type: string, nullable: true }
@@ -977,6 +1019,8 @@ components:
         collectorCash: { type: number }
         officeDeposits: { type: number }
         unsettledCash: { type: number }
+        drawPayouts: { type: number }
+        netCashMovement: { type: number }
         paymentCount: { type: integer }
         performances: { type: array, items: { $ref: "#/components/schemas/CollectorPerformance" } }
         dueMembers: { type: array, items: { $ref: "#/components/schemas/Member" } }

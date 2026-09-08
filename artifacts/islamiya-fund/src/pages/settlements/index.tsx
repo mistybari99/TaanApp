@@ -218,7 +218,7 @@ export default function SettlementsPage() {
               </div>
               <div className="text-right">
                 <p className="font-extrabold text-primary">{formatCurrency(balance.availableAmount)}</p>
-                <p className="text-xs text-muted-foreground">in {formatCurrency(balance.acceptedIncoming)} · out {formatCurrency(balance.acceptedOutgoing)}</p>
+                <p className="text-xs text-muted-foreground">in {formatCurrency(balance.acceptedIncoming)} · out {formatCurrency(balance.acceptedOutgoing)} · draw payout {formatCurrency(balance.drawPayouts)}</p>
               </div>
             </div>
           ))}

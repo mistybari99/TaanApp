@@ -46,7 +46,7 @@ async function createFixture(): Promise<Fixture | null> {
     );
     const cycle = await client.query(
       `INSERT INTO fund_cycles(cycle_number,name,start_date,tracking_start_date,daily_per_share,draw_frequency,draw_day,status,notes)
-       VALUES((SELECT COALESCE(MAX(cycle_number),0)+1 FROM fund_cycles),$1,CURRENT_DATE,CURRENT_DATE,100,'WEEKLY','FRIDAY','ACTIVE',$2)
+       VALUES((SELECT COALESCE(MAX(cycle_number),0)+1 FROM fund_cycles),$1,CURRENT_DATE - interval '7 days',CURRENT_DATE - interval '7 days',100,'WEEKLY','FRIDAY','ACTIVE',$2)
        RETURNING id`,
       [`${prefix} cycle`, prefix],
     );
@@ -87,6 +87,8 @@ async function createFixture(): Promise<Fixture | null> {
 }
 
 async function cleanupFixture(fixture: Fixture) {
+  await pool.query("DELETE FROM fund_draw_disbursements WHERE cycle_id=$1", [fixture.cycleId]);
+  await pool.query("DELETE FROM fund_draws WHERE cycle_id=$1", [fixture.cycleId]);
   await pool.query("DELETE FROM fund_cash_handovers WHERE cycle_id=$1", [fixture.cycleId]);
   await pool.query("DELETE FROM fund_payments WHERE cycle_id=$1", [fixture.cycleId]);
   await pool.query("DELETE FROM fund_cycle_members WHERE cycle_id=$1", [fixture.cycleId]);
@@ -180,10 +182,85 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     const finalAcceptedBody = await finalAccepted.json() as { status: string };
     assert.equal(finalAcceptedBody.status, "ACCEPTED");
 
-    const replay = await request(baseUrl, "/api/cash-handovers", fixture.collectorToken, handoverPayload);
+    const drawDate = new Date();
+    drawDate.setUTCDate(drawDate.getUTCDate() - ((drawDate.getUTCDay() + 2) % 7));
+    const drawDateIso = drawDate.toISOString().slice(0, 10);
+    const draw = await request(baseUrl, "/api/draws", fixture.ownerToken, {
+      cycleId: fixture.cycleId,
+      drawDate: drawDateIso,
+      winnerMemberId: fixture.memberId,
+      winningAmount: 50,
+      idempotencyKey: `${prefix}-draw-1`,
+    });
+    assert.equal(draw.status, 201);
+    const drawBody = await draw.json() as { id: number; payoutStatus: string | null };
+    assert.equal(drawBody.payoutStatus, null);
+
+    const insufficient = await request(baseUrl, `/api/draws/${drawBody.id}/disbursement`, fixture.ownerToken, {
+      payerUserId: fixture.collectorId,
+      amount: 50,
+      payoutDate: drawDateIso,
+      reference: `${prefix}-insufficient`,
+      idempotencyKey: `${prefix}-payout-insufficient`,
+    });
+    assert.equal(insufficient.status, 409);
+
+    const payoutPayload = {
+      payerUserId: fixture.ownerId,
+      amount: 50,
+      payoutDate: drawDateIso,
+      reference: `${prefix}-payout-1`,
+      idempotencyKey: `${prefix}-payout-1`,
+    };
+    const payout = await request(baseUrl, `/api/draws/${drawBody.id}/disbursement`, fixture.ownerToken, payoutPayload);
+    assert.equal(payout.status, 201);
+    const payoutBody = await payout.json() as { payoutId: number; payoutStatus: string; payoutPayerId: number; payoutAmount: number };
+    assert.ok(payoutBody.payoutId);
+    assert.equal(payoutBody.payoutStatus, "PAID");
+    assert.equal(payoutBody.payoutPayerId, fixture.ownerId);
+    assert.equal(payoutBody.payoutAmount, 50);
+
+    const balancesAfterPayout = await request(baseUrl, "/api/cash-custody/balances", fixture.ownerToken);
+    assert.equal(balancesAfterPayout.status, 200);
+    const balanceRows = await balancesAfterPayout.json() as Array<{ userId: number; availableAmount: number; drawPayouts: number }>;
+    const ownerBalance = balanceRows.find((row) => row.userId === fixture.ownerId);
+    assert.equal(ownerBalance?.availableAmount, 150);
+    assert.equal(ownerBalance?.drawPayouts, 50);
+
+    const duplicate = await request(baseUrl, `/api/draws/${drawBody.id}/disbursement`, fixture.ownerToken, {
+      ...payoutPayload,
+      idempotencyKey: `${prefix}-payout-duplicate`,
+    });
+    assert.equal(duplicate.status, 409);
+
+    const replay = await request(baseUrl, `/api/draws/${drawBody.id}/disbursement`, fixture.ownerToken, payoutPayload);
     assert.equal(replay.status, 200);
-    const replayBody = await replay.json() as { id: number };
-    assert.equal(replayBody.id, submittedBody.id);
+
+    const drawWithPayout = await request(baseUrl, "/api/draws", fixture.ownerToken);
+    assert.equal(drawWithPayout.status, 200);
+    const listedDraws = await drawWithPayout.json() as Array<{ id: number; payoutId: number; payoutStatus: string }>;
+    const listed = listedDraws.find((row) => row.id === drawBody.id);
+    assert.equal(listed?.payoutStatus, "PAID");
+    assert.ok(listed?.payoutId);
+
+    const actualPayoutId = listed?.payoutId as number;
+    const reversal = await request(baseUrl, `/api/draw-disbursements/${actualPayoutId}/reverse`, fixture.ownerToken, {
+      reason: "Synthetic reversal coverage",
+    });
+    assert.equal(reversal.status, 200);
+    const reversalBody = await reversal.json() as { payoutStatus: string };
+    assert.equal(reversalBody.payoutStatus, "REVERSED");
+
+    const balancesAfterReversal = await request(baseUrl, "/api/cash-custody/balances", fixture.ownerToken);
+    const restoredRows = await balancesAfterReversal.json() as Array<{ userId: number; availableAmount: number; drawPayouts: number }>;
+    const restoredOwnerBalance = restoredRows.find((row) => row.userId === fixture.ownerId);
+    assert.equal(restoredOwnerBalance?.availableAmount, 200);
+    assert.equal(restoredOwnerBalance?.drawPayouts, 0);
+
+    const handoverReplay = await request(baseUrl, "/api/cash-handovers", fixture.collectorToken, handoverPayload);
+    assert.equal(handoverReplay.status, 200);
+    const handoverReplayBody = await handoverReplay.json() as { id: number };
+    assert.equal(handoverReplayBody.id, submittedBody.id);
   } finally {
     if (server) await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
     await cleanupFixture(fixture);

@@ -14,6 +14,7 @@ export const ExportReportType = {
   payments: 'payments',
   collectors: 'collectors',
   settlements: 'settlements',
+  draws: 'draws',
   audit: 'audit',
   daily: 'daily',
   weekly: 'weekly',

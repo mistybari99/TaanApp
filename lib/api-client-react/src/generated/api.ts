@@ -35,6 +35,7 @@ import type {
   CycleMemberInput,
   Dashboard,
   Draw,
+  DrawDisbursementInput,
   DrawInput,
   DueEntryInput,
   ExportReportParams,
@@ -2705,6 +2706,138 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getCreateDrawMutationOptions(options));
+    }
+
+export const getCreateDrawDisbursementUrl = (id: number,) => {
+
+
+
+
+  return `/api/draws/${id}/disbursement`
+}
+
+export const createDrawDisbursement = async (id: number,
+    drawDisbursementInput: DrawDisbursementInput, options?: Parameters<typeof customFetch>[1]): Promise<Draw> => {
+
+  return customFetch<Draw>(getCreateDrawDisbursementUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(drawDisbursementInput)
+  }
+);}
+
+
+
+
+
+export const getCreateDrawDisbursementMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDrawDisbursement>>, TError,{id: number;data: BodyType<DrawDisbursementInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createDrawDisbursement>>, TError,{id: number;data: BodyType<DrawDisbursementInput>}, TContext> => {
+
+const mutationKey = ['createDrawDisbursement'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createDrawDisbursement>>, {id: number;data: BodyType<DrawDisbursementInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createDrawDisbursement(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateDrawDisbursementMutationResult = NonNullable<Awaited<ReturnType<typeof createDrawDisbursement>>>
+    export type CreateDrawDisbursementMutationBody = BodyType<DrawDisbursementInput>
+    export type CreateDrawDisbursementMutationError = ErrorType<unknown>
+
+    export const useCreateDrawDisbursement = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createDrawDisbursement>>, TError,{id: number;data: BodyType<DrawDisbursementInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createDrawDisbursement>>,
+        TError,
+        {id: number;data: BodyType<DrawDisbursementInput>},
+        TContext
+      > => {
+      return useMutation(getCreateDrawDisbursementMutationOptions(options));
+    }
+
+export const getReverseDrawDisbursementUrl = (id: number,) => {
+
+
+
+
+  return `/api/draw-disbursements/${id}/reverse`
+}
+
+export const reverseDrawDisbursement = async (id: number,
+    reversalInput: ReversalInput, options?: Parameters<typeof customFetch>[1]): Promise<Draw> => {
+
+  return customFetch<Draw>(getReverseDrawDisbursementUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(reversalInput)
+  }
+);}
+
+
+
+
+
+export const getReverseDrawDisbursementMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reverseDrawDisbursement>>, TError,{id: number;data: BodyType<ReversalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reverseDrawDisbursement>>, TError,{id: number;data: BodyType<ReversalInput>}, TContext> => {
+
+const mutationKey = ['reverseDrawDisbursement'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reverseDrawDisbursement>>, {id: number;data: BodyType<ReversalInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  reverseDrawDisbursement(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReverseDrawDisbursementMutationResult = NonNullable<Awaited<ReturnType<typeof reverseDrawDisbursement>>>
+    export type ReverseDrawDisbursementMutationBody = BodyType<ReversalInput>
+    export type ReverseDrawDisbursementMutationError = ErrorType<unknown>
+
+    export const useReverseDrawDisbursement = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reverseDrawDisbursement>>, TError,{id: number;data: BodyType<ReversalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reverseDrawDisbursement>>,
+        TError,
+        {id: number;data: BodyType<ReversalInput>},
+        TContext
+      > => {
+      return useMutation(getReverseDrawDisbursementMutationOptions(options));
     }
 
 export const getListCollectorsUrl = () => {

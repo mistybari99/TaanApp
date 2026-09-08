@@ -341,6 +341,14 @@ export interface TransferSettlementInput {
   idempotencyKey?: string;
 }
 
+export type DrawPayoutStatus = typeof DrawPayoutStatus[keyof typeof DrawPayoutStatus] | null;
+
+
+export const DrawPayoutStatus = {
+  PAID: 'PAID',
+  REVERSED: 'REVERSED',
+} as const;
+
 export interface Draw {
   id: number;
   cycleId: number;
@@ -357,6 +365,30 @@ export interface Draw {
   createdAt?: string;
   tanPeriodId?: number | null;
   drawSlot?: number | null;
+  payoutId?: number | null;
+  payoutPayerId?: number | null;
+  payoutPayerName?: string | null;
+  payoutAmount?: number | null;
+  payoutDate?: string | null;
+  payoutReference?: string | null;
+  payoutNote?: string | null;
+  payoutStatus?: DrawPayoutStatus;
+  payoutCreatedAt?: string | null;
+  payoutReversedAt?: string | null;
+  payoutReversalReason?: string | null;
+}
+
+export interface DrawDisbursementInput {
+  /** @minimum 1 */
+  payerUserId: number;
+  /** @exclusiveMinimum 0 */
+  amount: number;
+  payoutDate: string;
+  /** @minLength 1 */
+  reference: string;
+  note?: string;
+  /** @minLength 8 */
+  idempotencyKey?: string;
 }
 
 export interface DrawInput {
@@ -728,6 +760,7 @@ export interface CashCustodyBalance {
   postedPayments: number;
   acceptedIncoming: number;
   acceptedOutgoing: number;
+  drawPayouts: number;
   availableAmount: number;
 }
 
@@ -780,6 +813,8 @@ export interface Dashboard {
   collectorCash: number;
   officeDeposits: number;
   unsettledCash: number;
+  drawPayouts: number;
+  netCashMovement: number;
   paymentCount: number;
   performances: CollectorPerformance[];
   dueMembers: Member[];
@@ -838,6 +873,7 @@ export const ExportReportType = {
   payments: 'payments',
   collectors: 'collectors',
   settlements: 'settlements',
+  draws: 'draws',
   audit: 'audit',
   daily: 'daily',
   weekly: 'weekly',

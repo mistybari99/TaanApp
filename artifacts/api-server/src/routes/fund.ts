@@ -301,6 +301,28 @@ const cashHandoverSelect = `
     LEFT JOIN fund_users au ON au.id=h.accepted_by
     LEFT JOIN fund_users ru ON ru.id=h.rejected_by
 `;
+const drawSelect = `
+  SELECT d.id,d.cycle_id AS "cycleId",c.cycle_number AS "cycleNumber",c.name AS "cycleName",
+    d.draw_number AS "drawNumber",d.draw_date::text AS "drawDate",m.id AS "winnerMemberId",
+    COALESCE(m.public_member_id,m.member_id) AS "winnerMemberCode",m.name AS "winnerName",
+    d.winning_amount::float AS "winningAmount",d.status,d.notes,d.created_at AS "createdAt",
+    d.tan_period_id AS "tanPeriodId",d.draw_slot AS "drawSlot",
+    pd.id AS "payoutId",pd.payer_user_id AS "payoutPayerId",pu.name AS "payoutPayerName",
+    pd.amount::float AS "payoutAmount",pd.payout_date::text AS "payoutDate",pd.reference AS "payoutReference",
+    pd.note AS "payoutNote",pd.status AS "payoutStatus",pd.created_at AS "payoutCreatedAt",
+    pd.reversed_at AS "payoutReversedAt",pd.reversal_reason AS "payoutReversalReason"
+  FROM fund_draws d
+    JOIN fund_cycles c ON c.id=d.cycle_id
+    JOIN fund_members m ON m.id=d.winner_member_id
+    LEFT JOIN LATERAL (
+      SELECT *
+      FROM fund_draw_disbursements
+      WHERE draw_id=d.id
+      ORDER BY created_at DESC,id DESC
+      LIMIT 1
+    ) pd ON true
+    LEFT JOIN fund_users pu ON pu.id=pd.payer_user_id
+`;
 
 async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
   const token = cookies(req)[COOKIE];
@@ -1713,13 +1735,180 @@ router.get("/draws", requireAuth, async (req, res) => {
   if (req.query.memberId) { values.push(Number(req.query.memberId)); clauses.push(`d.winner_member_id=$${values.length}`); }
   if (req.query.date) { values.push(String(req.query.date)); clauses.push(`d.draw_date=$${values.length}`); }
   if (req.query.drawNumber) { values.push(Number(req.query.drawNumber)); clauses.push(`d.draw_number=$${values.length}`); }
-  const result = await pool.query(`SELECT d.id,d.cycle_id AS "cycleId",c.cycle_number AS "cycleNumber",c.name AS "cycleName",
-    d.draw_number AS "drawNumber",d.draw_date::text AS "drawDate",m.id AS "winnerMemberId",COALESCE(m.public_member_id,m.member_id) AS "winnerMemberCode",
-    m.name AS "winnerName",d.winning_amount::float AS "winningAmount",d.status,d.notes,d.created_at AS "createdAt",
-    d.tan_period_id AS "tanPeriodId",d.draw_slot AS "drawSlot"
-    FROM fund_draws d JOIN fund_cycles c ON c.id=d.cycle_id JOIN fund_members m ON m.id=d.winner_member_id
+  const result = await pool.query(`${drawSelect}
     ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""} ORDER BY d.draw_date DESC,d.draw_number DESC`, values);
   return res.json(result.rows);
+});
+router.post("/draws/:id/disbursement", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const drawId = Number(req.params.id);
+  const payerUserId = Number(req.body?.payerUserId);
+  const amount = Number(req.body?.amount);
+  const payoutDate = String(req.body?.payoutDate ?? todayIso());
+  const reference = String(req.body?.reference ?? "").trim();
+  const idempotencyKey = idempotency(req.body?.idempotencyKey);
+  if (!Number.isInteger(drawId) || drawId <= 0 || !Number.isInteger(payerUserId) || payerUserId <= 0
+    || !Number.isFinite(amount) || amount <= 0 || !isIsoDate(payoutDate) || !reference) {
+    return res.status(400).json({ error: "A valid draw, payer, positive amount, payout date, and reference are required" });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await transactionLock(client, `draw-disbursement:${drawId}`);
+    if (idempotencyKey) {
+      const replay = await client.query(
+        `${drawSelect} WHERE pd.payer_user_id=$1 AND pd.idempotency_key=$2`,
+        [payerUserId, idempotencyKey],
+      );
+      if (replay.rows[0]) {
+        const existing = replay.rows[0];
+        if (Number(existing.id) !== drawId || !sameMoney(existing.payoutAmount, amount) || String(existing.payoutReference) !== reference) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({ error: "This idempotency key was already used for a different draw payout" });
+        }
+        await client.query("COMMIT");
+        return res.status(200).json(existing);
+      }
+    }
+    const drawResult = await client.query(
+      `SELECT d.id,d.cycle_id,d.draw_date::text AS draw_date,d.winner_member_id,d.winning_amount::float AS winning_amount,d.status,
+        c.tracking_start_date::text AS tracking_start_date
+       FROM fund_draws d JOIN fund_cycles c ON c.id=d.cycle_id
+       WHERE d.id=$1 FOR UPDATE OF d`,
+      [drawId],
+    );
+    const draw = drawResult.rows[0];
+    if (!draw) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Draw not found" });
+    }
+    if (draw.status !== "RECORDED") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Only a recorded draw can be paid" });
+    }
+    if (!sameMoney(amount, draw.winning_amount)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: `Payout amount must equal the draw amount of BDT ${money(draw.winning_amount).toFixed(2)}` });
+    }
+    if (payoutDate < String(draw.draw_date) || payoutDate > todayIso()
+      || (draw.tracking_start_date && payoutDate < String(draw.tracking_start_date))) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Payout date must be on or after the draw and digital tracking dates, and not in the future" });
+    }
+    const existingPayout = await client.query(
+      "SELECT id,status FROM fund_draw_disbursements WHERE draw_id=$1 AND status='PAID' FOR UPDATE",
+      [drawId],
+    );
+    if (existingPayout.rows[0]) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "This draw has already been paid", payoutId: existingPayout.rows[0].id });
+    }
+    const payer = await client.query(
+      "SELECT id,name,role FROM fund_users WHERE id=$1 AND active=true FOR SHARE",
+      [payerUserId],
+    );
+    if (!payer.rows[0] || !isCashCustodyRole(payer.rows[0].role)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Payer must be an active Owner, Collector, or Cash Receiver" });
+    }
+    await transactionLock(client, `cash-balance:${payerUserId}:${draw.cycle_id}`);
+    const available = await client.query(
+      `SELECT GREATEST(
+        COALESCE((SELECT SUM(p.amount) FROM fund_payments p
+          WHERE COALESCE(p.receiver_id,p.collector_id)=$1 AND p.cycle_id=$2 AND p.status='POSTED'),0)
+        + COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
+          WHERE h.to_user_id=$1 AND h.cycle_id=$2 AND h.status='ACCEPTED'),0)
+        - COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
+          WHERE h.from_user_id=$1 AND h.cycle_id=$2 AND h.status='ACCEPTED'),0)
+        - COALESCE((SELECT SUM(s.amount) FROM fund_settlements s
+          WHERE s.collector_id=$1 AND s.cycle_id=$2),0)
+        - COALESCE((SELECT SUM(pd.amount) FROM fund_draw_disbursements pd
+          WHERE pd.payer_user_id=$1 AND pd.cycle_id=$2 AND pd.status='PAID'),0),
+        0)::float AS "availableAmount"`,
+      [payerUserId, draw.cycle_id],
+    );
+    const availableAmount = money(available.rows[0]?.availableAmount);
+    if (amount > availableAmount) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({
+        error: "Payout amount cannot exceed the payer's available custody",
+        availableAmount,
+      });
+    }
+    const inserted = await client.query(
+      `INSERT INTO fund_draw_disbursements(draw_id,cycle_id,payer_user_id,winner_member_id,amount,payout_date,reference,note,status,created_by,idempotency_key)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,'PAID',$9,$10) RETURNING id`,
+      [drawId, draw.cycle_id, payerUserId, draw.winner_member_id, amount, payoutDate, reference, String(req.body?.note ?? "").trim(), req.user!.id, idempotencyKey],
+    );
+    const payoutId = inserted.rows[0].id;
+    await auditOn(client, req.user!.id, "DRAW_PAYOUT_RECORDED", `${reference}: BDT ${amount} paid by ${payer.rows[0].name}`, "draw_disbursement", String(payoutId), {
+      cycleId: Number(draw.cycle_id),
+      memberId: Number(draw.winner_member_id),
+      relatedTransactionId: String(payoutId),
+      reason: String(req.body?.note ?? "Draw payout recorded").trim(),
+      effectiveDate: payoutDate,
+      afterValue: { payoutId, drawId, payerUserId, winnerMemberId: draw.winner_member_id, amount, status: "PAID", reference },
+    });
+    const result = await client.query(`${drawSelect} WHERE d.id=$1`, [drawId]);
+    await client.query("COMMIT");
+    return res.status(201).json(result.rows[0]);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    req.log.error({ error }, "Draw payout failed");
+    return res.status(409).json({ error: "Draw payout could not be saved; no records were changed" });
+  } finally {
+    client.release();
+  }
+});
+router.post("/draw-disbursements/:id/reverse", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const payoutId = Number(req.params.id);
+  const reason = String(req.body?.reason ?? "").trim();
+  if (!Number.isInteger(payoutId) || payoutId <= 0 || !reason) {
+    return res.status(400).json({ error: "A valid payout and reversal reason are required" });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await transactionLock(client, `draw-disbursement-decision:${payoutId}`);
+    const current = await client.query(
+      `SELECT pd.id,pd.draw_id AS "drawId",pd.cycle_id AS "cycleId",pd.payer_user_id AS "payerUserId",
+        pd.status,pd.amount::float,pd.reference,d.winner_member_id AS "winnerMemberId"
+       FROM fund_draw_disbursements pd JOIN fund_draws d ON d.id=pd.draw_id
+       WHERE pd.id=$1 FOR UPDATE OF pd`,
+      [payoutId],
+    );
+    const payout = current.rows[0];
+    if (!payout) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Draw payout not found" });
+    }
+    if (payout.status === "REVERSED") {
+      const result = await client.query(`${drawSelect} WHERE d.id=$1`, [payout.drawId]);
+      await client.query("COMMIT");
+      return res.status(200).json(result.rows[0]);
+    }
+    await transactionLock(client, `cash-balance:${payout.payerUserId}:${payout.cycleId}`);
+    await client.query(
+      "UPDATE fund_draw_disbursements SET status='REVERSED',reversed_by=$2,reversed_at=now(),reversal_reason=$3 WHERE id=$1",
+      [payoutId, req.user!.id, reason],
+    );
+    await auditOn(client, req.user!.id, "DRAW_PAYOUT_REVERSED", `${payout.reference}: BDT ${payout.amount} payout reversed`, "draw_disbursement", String(payoutId), {
+      memberId: Number(payout.winnerMemberId),
+      cycleId: Number(payout.cycleId),
+      relatedTransactionId: String(payoutId),
+      reason,
+      beforeValue: { payoutId, drawId: payout.drawId, amount: money(payout.amount), status: "PAID" },
+      afterValue: { payoutId, drawId: payout.drawId, amount: money(payout.amount), status: "REVERSED", reason },
+    });
+    const result = await client.query(`${drawSelect} WHERE d.id=$1`, [payout.drawId]);
+    await client.query("COMMIT");
+    return res.json(result.rows[0]);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    req.log.error({ error }, "Draw payout reversal failed");
+    return res.status(409).json({ error: "Draw payout could not be reversed; no records were changed" });
+  } finally {
+    client.release();
+  }
 });
 router.post("/draws", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
   const b = req.body;
@@ -1740,9 +1929,7 @@ router.post("/draws", requireAuth, ownerOnly, async (req: AuthedRequest, res) =>
     await client.query("BEGIN");
     if (idempotencyKey) {
       await transactionLock(client, `draw:${cycleId}:${idempotencyKey}`);
-      const replay = await client.query(`SELECT d.id,d.cycle_id AS "cycleId",d.draw_number AS "drawNumber",d.draw_date::text AS "drawDate",
-        d.winner_member_id AS "winnerMemberId",d.winning_amount::float AS "winningAmount",d.status,d.notes,d.created_at AS "createdAt"
-        FROM fund_draws d WHERE d.cycle_id=$1 AND d.idempotency_key=$2`, [cycleId, idempotencyKey]);
+      const replay = await client.query(`${drawSelect} WHERE d.cycle_id=$1 AND d.idempotency_key=$2`, [cycleId, idempotencyKey]);
       if (replay.rows[0]) {
         const existing = replay.rows[0];
         if (Number(existing.winnerMemberId) !== winnerMemberId
@@ -1819,8 +2006,9 @@ router.post("/draws", requireAuth, ownerOnly, async (req: AuthedRequest, res) =>
       }
     }
     await auditOn(client, req.user!.id, "DRAW_RECORDED", `Recorded draw #${result.rows[0].drawNumber} for cycle ${cycleId}`, "draw", String(result.rows[0].id));
-    await client.query("COMMIT");
-    return res.status(201).json(result.rows[0]);
+     await client.query("COMMIT");
+     const fullDraw = await pool.query(`${drawSelect} WHERE d.id=$1`, [result.rows[0].id]);
+     return res.status(201).json(fullDraw.rows[0]);
   } catch (error) {
     await client.query("ROLLBACK");
     req.log.error({ error }, "Draw creation failed");
@@ -2086,12 +2274,15 @@ router.post("/settlements", requireAuth, async (req: AuthedRequest,res)=>{
       await client.query("ROLLBACK");
       return res.status(409).json({error:"Owner must set the digital tracking start date before recording settlements"});
     }
+    await transactionLock(client, `cash-balance:${req.user!.id}:${activeCycle.rows[0].id}`);
     const availableCash = await client.query(
       `SELECT GREATEST(
          COALESCE((SELECT SUM(amount) FROM fund_payments
                    WHERE collector_id=$1 AND cycle_id=$2 AND status='POSTED'),0)
-         - COALESCE((SELECT SUM(amount) FROM fund_settlements
-                     WHERE collector_id=$1 AND cycle_id=$2),0),
+          - COALESCE((SELECT SUM(amount) FROM fund_settlements
+                      WHERE collector_id=$1 AND cycle_id=$2),0)
+          - COALESCE((SELECT SUM(amount) FROM fund_draw_disbursements
+                      WHERE payer_user_id=$1 AND cycle_id=$2 AND status='PAID'),0),
          0
        )::float AS "availableAmount"`,
       [req.user!.id, activeCycle.rows[0].id],
@@ -2164,10 +2355,14 @@ router.get("/cash-custody/balances", requireAuth, async (req: AuthedRequest, res
         WHERE COALESCE(p.receiver_id,p.collector_id)=u.id AND p.cycle_id=$1 AND p.status='POSTED'),0)::float AS "postedPayments",
       COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
         WHERE h.to_user_id=u.id AND h.cycle_id=$1 AND h.status='ACCEPTED'),0)::float AS "acceptedIncoming",
-      (COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
-        WHERE h.from_user_id=u.id AND h.cycle_id=$1 AND h.status='ACCEPTED'),0)
-       + COALESCE((SELECT SUM(s.amount) FROM fund_settlements s
-        WHERE s.collector_id=u.id AND s.cycle_id=$1),0))::float AS "acceptedOutgoing",
+       (COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
+         WHERE h.from_user_id=u.id AND h.cycle_id=$1 AND h.status='ACCEPTED'),0)
+        + COALESCE((SELECT SUM(s.amount) FROM fund_settlements s
+         WHERE s.collector_id=u.id AND s.cycle_id=$1),0)
+        + COALESCE((SELECT SUM(pd.amount) FROM fund_draw_disbursements pd
+         WHERE pd.payer_user_id=u.id AND pd.cycle_id=$1 AND pd.status='PAID'),0))::float AS "acceptedOutgoing",
+       COALESCE((SELECT SUM(pd.amount) FROM fund_draw_disbursements pd
+         WHERE pd.payer_user_id=u.id AND pd.cycle_id=$1 AND pd.status='PAID'),0)::float AS "drawPayouts",
       GREATEST(
         COALESCE((SELECT SUM(p.amount) FROM fund_payments p
           WHERE COALESCE(p.receiver_id,p.collector_id)=u.id AND p.cycle_id=$1 AND p.status='POSTED'),0)
@@ -2175,8 +2370,10 @@ router.get("/cash-custody/balances", requireAuth, async (req: AuthedRequest, res
           WHERE h.to_user_id=u.id AND h.cycle_id=$1 AND h.status='ACCEPTED'),0)
         - COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
           WHERE h.from_user_id=u.id AND h.cycle_id=$1 AND h.status='ACCEPTED'),0)
-        - COALESCE((SELECT SUM(s.amount) FROM fund_settlements s
-          WHERE s.collector_id=u.id AND s.cycle_id=$1),0),0)::float AS "availableAmount"
+         - COALESCE((SELECT SUM(s.amount) FROM fund_settlements s
+           WHERE s.collector_id=u.id AND s.cycle_id=$1),0)
+         - COALESCE((SELECT SUM(pd.amount) FROM fund_draw_disbursements pd
+           WHERE pd.payer_user_id=u.id AND pd.cycle_id=$1 AND pd.status='PAID'),0),0)::float AS "availableAmount"
      FROM fund_users u
      WHERE u.active=true AND u.role IN ('OWNER','COLLECTOR','CASH_RECEIVER')
        AND ($2::int IS NULL OR u.id=$2)
@@ -2252,6 +2449,7 @@ router.post("/cash-handovers", requireAuth, async (req: AuthedRequest, res) => {
       res.status(403).json({ error: "Cash Receiver can only hand over final custody to the Owner" });
       return;
     }
+    await transactionLock(client, `cash-balance:${req.user.id}:${cycle.rows[0].id}`);
     const available = await client.query(
       `SELECT GREATEST(
         COALESCE((SELECT SUM(p.amount) FROM fund_payments p
@@ -2261,7 +2459,9 @@ router.post("/cash-handovers", requireAuth, async (req: AuthedRequest, res) => {
         - COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
           WHERE h.from_user_id=$1 AND h.cycle_id=$2 AND h.status='ACCEPTED'),0)
         - COALESCE((SELECT SUM(s.amount) FROM fund_settlements s
-          WHERE s.collector_id=$1 AND s.cycle_id=$2),0),
+          WHERE s.collector_id=$1 AND s.cycle_id=$2),0)
+        - COALESCE((SELECT SUM(pd.amount) FROM fund_draw_disbursements pd
+          WHERE pd.payer_user_id=$1 AND pd.cycle_id=$2 AND pd.status='PAID'),0),
         0)::float AS "availableAmount"`,
       [req.user.id, cycle.rows[0].id],
     );
@@ -2508,7 +2708,7 @@ router.patch("/settings",requireAuth,ownerOnly,async(req:AuthedRequest,res)=>{co
       ? await tanDashboardMemberRows(pool, activeCycleId, activeTanPeriod, activeTanDue)
       : [];
    if(req.user!.role==="COLLECTOR"){
-      const [members,payments,settlements,due,recent,reconciliation]=await Promise.all([
+       const [members,payments,settlements,due,recent,reconciliation,drawPayouts]=await Promise.all([
         pool.query(`SELECT COUNT(*)::int count,COALESCE(SUM(CASE WHEN ${readySql} THEN cm.daily_contribution ELSE 0 END),0)::float target
           FROM fund_members m JOIN fund_cycle_members cm ON cm.member_id=m.id AND cm.cycle_id=${activeCycleId}
           WHERE m.status='active' AND (m.assigned_collector_id=$1 OR m.assigned_collector_id IS NULL)`,[req.user!.id]),
@@ -2524,16 +2724,18 @@ router.patch("/settings",requireAuth,ownerOnly,async(req:AuthedRequest,res)=>{co
           ORDER BY m.member_id LIMIT 20`,[req.user!.id]),
         pool.query(`SELECT p.id,p.receipt_id AS "receiptId",COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name AS "memberName",p.amount::float,u.name AS "collectorName",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id WHERE p.collector_id=$1 AND p.cycle_id=${activeCycleId} ORDER BY p.created_at DESC LIMIT 8`,[req.user!.id])
          ,
-         pool.query(`SELECT
+          pool.query(`SELECT
            COALESCE(SUM(GREATEST(COALESCE((SELECT SUM(de.amount) FROM fund_due_entries de WHERE de.cycle_id=cm.cycle_id AND de.member_id=cm.member_id),0)
              - COALESCE((SELECT SUM(pp.previous_due_applied) FROM fund_payments pp WHERE pp.cycle_id=cm.cycle_id AND pp.member_id=cm.member_id AND pp.status='POSTED'),0),0)),0)::float AS "previousDue",
            COALESCE((SELECT SUM(t.accumulated_value) FROM fund_share_transfers t WHERE t.cycle_id=${activeCycleId}),0)::float AS "transferValue",
            COALESCE((SELECT SUM(s.amount) FROM fund_transfer_settlements s WHERE s.cycle_id=${activeCycleId} AND s.status='APPROVED'),0)::float AS "transferSettlementValue",
            COALESCE((SELECT COUNT(*) FROM fund_draws d WHERE d.cycle_id=${activeCycleId} AND d.status='RECORDED'),0)::int AS "drawCount"
            FROM fund_cycle_members cm JOIN fund_members m ON m.id=cm.member_id
-           WHERE cm.cycle_id=${activeCycleId} AND (m.assigned_collector_id=$1 OR m.assigned_collector_id IS NULL)`,[req.user!.id])
+            WHERE cm.cycle_id=${activeCycleId} AND (m.assigned_collector_id=$1 OR m.assigned_collector_id IS NULL)`,[req.user!.id]),
+          pool.query(`SELECT COALESCE(SUM(amount),0)::float AS amount FROM fund_draw_disbursements
+            WHERE payer_user_id=$1 AND cycle_id=${activeCycleId} AND payout_date='${businessDate}'::date AND status='PAID'`,[req.user!.id])
      ]);
-       const target=money(members.rows[0].target),collected=money(payments.rows[0].amount),deposits=money(settlements.rows[0].amount);
+        const target=money(members.rows[0].target),collected=money(payments.rows[0].amount),deposits=money(settlements.rows[0].amount),payouts=money(drawPayouts.rows[0]?.amount);
        const currentCollectionDue = activeTan
          ? tanCollectorRows.reduce((sum, member) => sum + money(member.currentPeriodDue), 0)
          : Math.max(0, target - collected);
@@ -2544,9 +2746,9 @@ router.patch("/settings",requireAuth,ownerOnly,async(req:AuthedRequest,res)=>{co
        const dueMembers = activeTan
          ? tanCollectorRows.filter((member) => money(member.totalDue) > 0).slice(0, 20)
          : due.rows.map(m => ({...m,todayDue:Math.max(0,money(m.dailyAmount)-money(m.todayPaid)),totalDue:Math.max(0,money(m.dailyAmount)-money(m.todayPaid))+money(m.previousDue)}));
-        return res.json({trackingReady,trackingStartDate,...periodSummary,totalMembers:members.rows[0].count,todayTarget:target,currentCollectionDue,collected,due:currentCollectionDue,previousDue,totalDue,transferValue:money(reconciliation.rows[0]?.transferValue),transferSettlementValue:money(reconciliation.rows[0]?.transferSettlementValue),drawCount:Number(reconciliation.rows[0]?.drawCount ?? 0),collectorCash:collected,officeDeposits:deposits,unsettledCash:collected-deposits,paymentCount:payments.rows[0].count,performances:[{name:req.user!.name,collected,payments:payments.rows[0].count,cash:collected-deposits}],dueMembers,recentPayments:recent.rows,audit:[]});
+         return res.json({trackingReady,trackingStartDate,...periodSummary,totalMembers:members.rows[0].count,todayTarget:target,currentCollectionDue,collected,due:currentCollectionDue,previousDue,totalDue,transferValue:money(reconciliation.rows[0]?.transferValue),transferSettlementValue:money(reconciliation.rows[0]?.transferSettlementValue),drawCount:Number(reconciliation.rows[0]?.drawCount ?? 0),collectorCash:collected,officeDeposits:deposits,unsettledCash:collected-deposits,drawPayouts:payouts,netCashMovement:collected-deposits-payouts,paymentCount:payments.rows[0].count,performances:[{name:req.user!.name,collected,payments:payments.rows[0].count,cash:collected-deposits-payouts}],dueMembers,recentPayments:recent.rows,audit:[]});
    }
-    const [members,payments,settlements,perf,due,recent,audits,reconciliation]=await Promise.all([
+     const [members,payments,settlements,perf,due,recent,audits,reconciliation,drawPayouts]=await Promise.all([
       pool.query(`SELECT COUNT(*)::int count,COALESCE(SUM(CASE WHEN ${readySql} THEN cm.daily_contribution ELSE 0 END),0)::float target
         FROM fund_members m JOIN fund_cycle_members cm ON cm.member_id=m.id AND cm.cycle_id=${activeCycleId} WHERE m.status='active'`),
       pool.query(`SELECT COALESCE(SUM(amount),0)::float amount,COUNT(*)::int count FROM fund_payments p WHERE p.cycle_id=${activeCycleId} AND collection_date='${businessDate}'::date AND status='POSTED'`),
@@ -2563,15 +2765,17 @@ router.patch("/settings",requireAuth,ownerOnly,async(req:AuthedRequest,res)=>{co
           COALESCE(m.public_member_id,m.member_id) AS "memberId",a.cycle_id AS "cycleId",a.related_transaction_id AS "relatedTransactionId",a.reason,a.effective_date::text AS "effectiveDate",
          a.before_value AS "beforeValue",a.after_value AS "afterValue",a.created_at AS "createdAt"
           FROM fund_audit a LEFT JOIN fund_users u ON u.id=a.actor_id LEFT JOIN fund_members m ON m.id=a.member_id ORDER BY a.created_at DESC LIMIT 8`),
-      pool.query(`SELECT
+       pool.query(`SELECT
         COALESCE(SUM(GREATEST(COALESCE((SELECT SUM(de.amount) FROM fund_due_entries de WHERE de.cycle_id=cm.cycle_id AND de.member_id=cm.member_id),0)
           - COALESCE((SELECT SUM(pp.previous_due_applied) FROM fund_payments pp WHERE pp.cycle_id=cm.cycle_id AND pp.member_id=cm.member_id AND pp.status='POSTED'),0),0)),0)::float AS "previousDue",
         COALESCE((SELECT SUM(t.accumulated_value) FROM fund_share_transfers t WHERE t.cycle_id=${activeCycleId}),0)::float AS "transferValue",
         COALESCE((SELECT SUM(s.amount) FROM fund_transfer_settlements s WHERE s.cycle_id=${activeCycleId} AND s.status='APPROVED'),0)::float AS "transferSettlementValue",
         COALESCE((SELECT COUNT(*) FROM fund_draws d WHERE d.cycle_id=${activeCycleId} AND d.status='RECORDED'),0)::int AS "drawCount"
-        FROM fund_cycle_members cm WHERE cm.cycle_id=${activeCycleId}`)
+         FROM fund_cycle_members cm WHERE cm.cycle_id=${activeCycleId}`),
+       pool.query(`SELECT COALESCE(SUM(amount),0)::float AS amount FROM fund_draw_disbursements
+         WHERE cycle_id=${activeCycleId} AND payout_date='${businessDate}'::date AND status='PAID'`)
    ]);
-  const target=money(members.rows[0].target), collected=money(payments.rows[0].amount), deposits=money(settlements.rows[0].amount);
+   const target=money(members.rows[0].target), collected=money(payments.rows[0].amount), deposits=money(settlements.rows[0].amount), payouts=money(drawPayouts.rows[0]?.amount);
   const currentCollectionDue = activeTan
     ? tanOwnerRows.reduce((sum, member) => sum + money(member.currentPeriodDue), 0)
     : Math.max(0, target - collected);
@@ -2582,7 +2786,7 @@ router.patch("/settings",requireAuth,ownerOnly,async(req:AuthedRequest,res)=>{co
   const dueMembers = activeTan
     ? tanOwnerRows.filter((member) => money(member.totalDue) > 0).slice(0, 20)
     : due.rows.map(m=>{const todayDue=Math.max(0,money(m.dailyAmount)-money(m.todayPaid)); return {...m,todayDue,totalDue:todayDue+money(m.previousDue)}});
-  return res.json({trackingReady,trackingStartDate,...periodSummary,totalMembers:members.rows[0].count,todayTarget:target,currentCollectionDue,collected,due:currentCollectionDue,previousDue,totalDue,transferValue:money(reconciliation.rows[0]?.transferValue),transferSettlementValue:money(reconciliation.rows[0]?.transferSettlementValue),drawCount:Number(reconciliation.rows[0]?.drawCount ?? 0),collectorCash:collected,officeDeposits:deposits,unsettledCash:collected-deposits,paymentCount:payments.rows[0].count,performances:perf.rows,dueMembers,recentPayments:recent.rows,audit:audits});
+   return res.json({trackingReady,trackingStartDate,...periodSummary,totalMembers:members.rows[0].count,todayTarget:target,currentCollectionDue,collected,due:currentCollectionDue,previousDue,totalDue,transferValue:money(reconciliation.rows[0]?.transferValue),transferSettlementValue:money(reconciliation.rows[0]?.transferSettlementValue),drawCount:Number(reconciliation.rows[0]?.drawCount ?? 0),collectorCash:collected,officeDeposits:deposits,unsettledCash:collected-deposits,drawPayouts:payouts,netCashMovement:collected-deposits-payouts,paymentCount:payments.rows[0].count,performances:perf.rows,dueMembers,recentPayments:recent.rows,audit:audits});
 });
 const csvCell = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
 const sendCsv = (res: Response, filename: string, headers: string[], rows: unknown[][]) => {
@@ -2618,6 +2822,13 @@ router.get("/reports/export", requireAuth, ownerOnly, async (req, res) => {
       WHERE s.cycle_id=${activeCycleId} ORDER BY s.created_at DESC`);
     return sendCsv(res, "settlements-backup", ["Settlement ID", "Collector ID", "Collector", "Date", "Deposited Amount", "Reference", "Notes"],
       r.rows.map((x) => [x.id, x.collector_id, x.collector_name, x.settlement_date, x.amount, x.reference, x.note]));
+  }
+
+  if (type === "draws") {
+    const r = await pool.query(`${drawSelect} WHERE d.cycle_id=$1 ORDER BY d.draw_date DESC,d.draw_number DESC`, [activeCycleId]);
+    return sendCsv(res, "draw-payouts-backup",
+      ["Draw ID", "Cycle ID", "Draw Date", "Draw Number", "Winner Member ID", "Winner", "Winning Amount", "Draw Status", "Payout Status", "Payout Date", "Payer", "Payout Amount", "Reference", "Payout Note", "Reversal Reason"],
+      r.rows.map((x) => [x.id, x.cycleId, x.drawDate, x.drawNumber, x.winnerMemberCode, x.winnerName, x.winningAmount, x.status, x.payoutStatus ?? "PENDING", x.payoutDate, x.payoutPayerName, x.payoutAmount, x.payoutReference, x.payoutNote, x.payoutReversalReason]));
   }
 
   if (type === "audit") {

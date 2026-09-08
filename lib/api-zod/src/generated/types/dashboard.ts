@@ -31,6 +31,8 @@ export interface Dashboard {
   collectorCash: number;
   officeDeposits: number;
   unsettledCash: number;
+  drawPayouts: number;
+  netCashMovement: number;
   paymentCount: number;
   performances: CollectorPerformance[];
   dueMembers: Member[];

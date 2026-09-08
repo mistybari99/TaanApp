@@ -3,13 +3,17 @@ import {
   getListDrawsQueryKey,
   getListCycleMembersQueryKey,
   getListCyclesQueryKey,
+  getListCashCustodyBalancesQueryKey,
   getGetTanQueryKey,
   useCreateDraw,
+  useCreateDrawDisbursement,
   useGetCurrentUser,
   useGetTan,
+  useListCashCustodyBalances,
   useListCycleMembers,
   useListCycles,
   useListDraws,
+  useReverseDrawDisbursement,
 } from "@workspace/api-client-react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -18,7 +22,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { businessDate, formatCurrency, formatDate } from "@/lib/utils"
 import { toast } from "sonner"
-import { Trophy } from "lucide-react"
+import { ArrowDownToLine, RotateCcw, Trophy } from "lucide-react"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 const today = businessDate
 
@@ -46,10 +51,18 @@ function DrawSurface({ readOnly }: { readOnly: boolean }) {
   }), [filters])
   const { data: draws, isLoading: drawsLoading } = useListDraws(drawQuery, { query: { queryKey: getListDrawsQueryKey(drawQuery) } })
   const createDraw = useCreateDraw()
+  const createDisbursement = useCreateDrawDisbursement()
+  const reverseDisbursement = useReverseDrawDisbursement()
+  const { data: custodyBalances } = useListCashCustodyBalances()
   const selectedCycle = cycles?.find((cycle) => cycle.id === cycleId) ?? cycles?.[0]
   const { data: tanData } = useGetTan((selectedCycle?.id ?? 0) as number, {
     query: { enabled: Boolean(selectedCycle?.id), queryKey: getGetTanQueryKey((selectedCycle?.id ?? 0) as number) },
   })
+  const [payoutDraw, setPayoutDraw] = useState<NonNullable<typeof draws>[number] | null>(null)
+  const [payoutPayerId, setPayoutPayerId] = useState("")
+  const [payoutDate, setPayoutDate] = useState(today())
+  const [payoutReference, setPayoutReference] = useState("")
+  const [payoutNote, setPayoutNote] = useState("")
 
   useEffect(() => {
     if (!cycleId && cycles?.[0]) setCycleId(cycles[0].id)
@@ -89,6 +102,59 @@ function DrawSurface({ readOnly }: { readOnly: boolean }) {
     return
   }
 
+  const openPayout = (draw: NonNullable<typeof draws>[number]) => {
+    setPayoutDraw(draw)
+    const eligible = (custodyBalances ?? []).find((balance) => balance.availableAmount >= draw.winningAmount)
+    setPayoutPayerId(String(draw.payoutPayerId ?? eligible?.userId ?? ""))
+    setPayoutDate(today())
+    setPayoutReference(`DRAW-${draw.drawNumber}-${draw.drawDate}`)
+    setPayoutNote("")
+  }
+
+  const closePayout = () => {
+    setPayoutDraw(null)
+    setPayoutPayerId("")
+    setPayoutReference("")
+    setPayoutNote("")
+  }
+
+  const handlePayout = () => {
+    if (!payoutDraw || !payoutPayerId || !payoutReference.trim()) return
+    createDisbursement.mutate({
+      id: payoutDraw.id,
+      data: {
+        payerUserId: Number(payoutPayerId),
+        amount: payoutDraw.winningAmount,
+        payoutDate,
+        reference: payoutReference.trim(),
+        note: payoutNote.trim() || undefined,
+        idempotencyKey: crypto.randomUUID(),
+      },
+    }, {
+      onSuccess: () => {
+        toast.success("ড্র payout cash custody থেকে বাদ হয়েছে")
+        queryClient.invalidateQueries({ queryKey: getListDrawsQueryKey(drawQuery) })
+        queryClient.invalidateQueries({ queryKey: getListCashCustodyBalancesQueryKey() })
+        queryClient.invalidateQueries({ queryKey: getGetTanQueryKey(selectedCycle?.id ?? 0) })
+        closePayout()
+      },
+      onError: (error: any) => toast.error(error?.message || "Draw payout সংরক্ষণ করা যায়নি"),
+    })
+  }
+
+  const handleReversePayout = (draw: NonNullable<typeof draws>[number]) => {
+    const reason = window.prompt("Payout reversal-এর কারণ লিখুন", "ভুল payer বা cash correction")
+    if (!reason?.trim() || !draw.payoutId) return
+    reverseDisbursement.mutate({ id: draw.payoutId, data: { reason: reason.trim() } }, {
+      onSuccess: () => {
+        toast.success("Draw payout reverse হয়েছে; balance আবার খোলা হয়েছে")
+        queryClient.invalidateQueries({ queryKey: getListDrawsQueryKey(drawQuery) })
+        queryClient.invalidateQueries({ queryKey: getListCashCustodyBalancesQueryKey() })
+      },
+      onError: (error: any) => toast.error(error?.message || "Payout reverse করা যায়নি"),
+    })
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -122,14 +188,40 @@ function DrawSurface({ readOnly }: { readOnly: boolean }) {
           </div>
           <div className="border rounded-lg overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-muted/50"><tr><th className="text-left p-3">তারিখ</th><th className="text-left p-3">চক্র</th><th className="text-left p-3">ড্র নং</th><th className="text-left p-3">বিজয়ী</th><th className="text-right p-3">পরিমাণ</th><th className="text-left p-3">স্ট্যাটাস</th></tr></thead>
+              <thead className="bg-muted/50"><tr><th className="text-left p-3">তারিখ</th><th className="text-left p-3">চক্র</th><th className="text-left p-3">ড্র নং</th><th className="text-left p-3">বিজয়ী</th><th className="text-right p-3">পরিমাণ</th><th className="text-left p-3">ড্র / payout</th><th className="text-left p-3">Action</th></tr></thead>
               <tbody>
-                {isLoading || drawsLoading ? <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">লোড হচ্ছে...</td></tr> : draws?.length === 0 ? <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">এখনো কোনো ড্র রেকর্ড নেই</td></tr> : draws?.map((draw) => <tr key={draw.id} className="border-t"><td className="p-3">{formatDate(draw.drawDate)}</td><td className="p-3">{draw.cycleName || `Cycle #${draw.cycleNumber}`}</td><td className="p-3">#{draw.drawNumber}</td><td className="p-3"><div className="font-medium">{draw.winnerName}</div><div className="text-xs text-muted-foreground">{draw.winnerMemberCode}</div></td><td className="p-3 text-right font-bold text-primary">{formatCurrency(draw.winningAmount)}</td><td className="p-3">{draw.status}</td></tr>)}
+                {isLoading || drawsLoading ? <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">লোড হচ্ছে...</td></tr> : draws?.length === 0 ? <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">এখনো কোনো ড্র রেকর্ড নেই</td></tr> : draws?.map((draw) => <tr key={draw.id} className="border-t"><td className="p-3">{formatDate(draw.drawDate)}</td><td className="p-3">{draw.cycleName || `Cycle #${draw.cycleNumber}`}</td><td className="p-3">#{draw.drawNumber}</td><td className="p-3"><div className="font-medium">{draw.winnerName}</div><div className="text-xs text-muted-foreground">{draw.winnerMemberCode}</div></td><td className="p-3 text-right font-bold text-primary">{formatCurrency(draw.winningAmount)}</td><td className="p-3"><div className="font-medium">{draw.payoutStatus === "PAID" ? "PAID" : draw.payoutStatus === "REVERSED" ? "REVERSED" : "Pending payout"}</div>{draw.payoutPayerName && <div className="text-xs text-muted-foreground">{draw.payoutPayerName} · {formatCurrency(draw.payoutAmount ?? 0)} · {draw.payoutReference}</div>}</td><td className="p-3">{!readOnly && user?.role === "OWNER" && draw.status === "RECORDED" && draw.payoutStatus !== "PAID" ? <Button size="sm" variant="outline" className="gap-1" onClick={() => openPayout(draw)}><ArrowDownToLine className="h-3.5 w-3.5" /> টাকা প্রদান</Button> : !readOnly && user?.role === "OWNER" && draw.payoutStatus === "PAID" ? <Button size="sm" variant="ghost" className="gap-1 text-destructive" onClick={() => handleReversePayout(draw)} disabled={reverseDisbursement.isPending}><RotateCcw className="h-3.5 w-3.5" /> Reverse</Button> : null}</td></tr>)}
               </tbody>
             </table>
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={Boolean(payoutDraw)} onOpenChange={(open) => !open && closePayout()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Draw winner-কে payout দিন</DialogTitle>
+            <DialogDescription>{payoutDraw?.winnerName} · {formatCurrency(payoutDraw?.winningAmount ?? 0)} — যে account বাস্তবে cash দিচ্ছে, সেটি নির্বাচন করুন।</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-3">
+            <div className="space-y-2">
+              <Label>Cash payer / custodian</Label>
+              <select value={payoutPayerId} onChange={(event) => setPayoutPayerId(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm">
+                <option value="">Account নির্বাচন করুন</option>
+                {(custodyBalances ?? []).map((balance) => <option key={balance.userId} value={balance.userId}>{balance.name} · {balance.role} · available {formatCurrency(balance.availableAmount)}</option>)}
+              </select>
+              {payoutDraw && custodyBalances?.find((balance) => balance.userId === Number(payoutPayerId))?.availableAmount! < payoutDraw.winningAmount && <p className="text-sm text-destructive">এই account-এ available custody কম; অন্য payer নির্বাচন করুন।</p>}
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2"><Label>পরিমাণ</Label><Input value={formatCurrency(payoutDraw?.winningAmount ?? 0)} readOnly /></div>
+              <div className="space-y-2"><Label>Payout date</Label><Input type="date" value={payoutDate} onChange={(event) => setPayoutDate(event.target.value)} /></div>
+            </div>
+            <div className="space-y-2"><Label>Reference</Label><Input value={payoutReference} onChange={(event) => setPayoutReference(event.target.value)} placeholder="DRAW-PAYOUT-..." /></div>
+            <div className="space-y-2"><Label>নোট (optional)</Label><Input value={payoutNote} onChange={(event) => setPayoutNote(event.target.value)} /></div>
+          </div>
+          <DialogFooter><Button onClick={handlePayout} disabled={createDisbursement.isPending || !payoutDraw || !payoutPayerId || !payoutReference.trim()}>{createDisbursement.isPending ? "সংরক্ষণ হচ্ছে..." : "Payout নিশ্চিত করুন"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

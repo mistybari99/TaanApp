@@ -14,5 +14,6 @@ export interface CashCustodyBalance {
   postedPayments: number;
   acceptedIncoming: number;
   acceptedOutgoing: number;
+  drawPayouts: number;
   availableAmount: number;
 }

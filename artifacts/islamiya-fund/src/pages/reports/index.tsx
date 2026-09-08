@@ -91,6 +91,7 @@ export default function ReportsPage() {
             ["payments", "পেমেন্ট (Payments)"],
             ["collectors", "কালেক্টর (Collectors)"],
             ["settlements", "জমা (Settlements)"],
+            ["draws", "ড্র payout (Draw Payouts)"],
             ["audit", "অডিট লগ (Audit Log)"],
             ["monthly", "মাসিক রিপোর্ট (Monthly Report)"],
           ].map(([type, label]) => (

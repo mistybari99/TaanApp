@@ -126,6 +126,28 @@ export default function OwnerDashboard() {
           </CardContent>
         </Card>
 
+        <Card className="bg-amber-50 border-amber-200">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-amber-900">ড্র payout</CardTitle>
+            <ArrowDownToLine className="h-4 w-4 text-amber-700" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-amber-900">{formatCurrency(dashboard.drawPayouts)}</div>
+            <p className="text-xs text-amber-800">Paid out today</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">নিট cash movement</CardTitle>
+            <Wallet className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold ${(dashboard.netCashMovement ?? 0) < 0 ? "text-destructive" : "text-primary"}`}>{formatCurrency(dashboard.netCashMovement)}</div>
+            <p className="text-xs text-muted-foreground">Collection − deposits − payouts</p>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">পেমেন্ট সংখ্যা</CardTitle>

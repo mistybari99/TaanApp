@@ -94,6 +94,8 @@ export const GetDashboardResponse = zod.object({
   "collectorCash": zod.number(),
   "officeDeposits": zod.number(),
   "unsettledCash": zod.number(),
+  "drawPayouts": zod.number(),
+  "netCashMovement": zod.number(),
   "paymentCount": zod.number().int(),
   "performances": zod.array(zod.object({
   "name": zod.string(),
@@ -1048,6 +1050,7 @@ export const ListCashCustodyBalancesResponseItem = zod.object({
   "postedPayments": zod.number(),
   "acceptedIncoming": zod.number(),
   "acceptedOutgoing": zod.number(),
+  "drawPayouts": zod.number(),
   "availableAmount": zod.number()
 })
 export const ListCashCustodyBalancesResponse = zod.array(ListCashCustodyBalancesResponseItem)
@@ -1159,7 +1162,18 @@ export const ListDrawsResponseItem = zod.object({
   "notes": zod.string().optional(),
   "createdAt": zod.string().optional(),
   "tanPeriodId": zod.number().int().nullish(),
-  "drawSlot": zod.number().int().nullish()
+  "drawSlot": zod.number().int().nullish(),
+  "payoutId": zod.number().int().nullish(),
+  "payoutPayerId": zod.number().int().nullish(),
+  "payoutPayerName": zod.string().nullish(),
+  "payoutAmount": zod.number().nullish(),
+  "payoutDate": zod.string().nullish(),
+  "payoutReference": zod.string().nullish(),
+  "payoutNote": zod.string().nullish(),
+  "payoutStatus": zod.enum(['PAID', 'REVERSED']).nullish(),
+  "payoutCreatedAt": zod.string().nullish(),
+  "payoutReversedAt": zod.string().nullish(),
+  "payoutReversalReason": zod.string().nullish()
 })
 export const ListDrawsResponse = zod.array(ListDrawsResponseItem)
 
@@ -1196,7 +1210,107 @@ export const CreateDrawResponse = zod.object({
   "notes": zod.string().optional(),
   "createdAt": zod.string().optional(),
   "tanPeriodId": zod.number().int().nullish(),
-  "drawSlot": zod.number().int().nullish()
+  "drawSlot": zod.number().int().nullish(),
+  "payoutId": zod.number().int().nullish(),
+  "payoutPayerId": zod.number().int().nullish(),
+  "payoutPayerName": zod.string().nullish(),
+  "payoutAmount": zod.number().nullish(),
+  "payoutDate": zod.string().nullish(),
+  "payoutReference": zod.string().nullish(),
+  "payoutNote": zod.string().nullish(),
+  "payoutStatus": zod.enum(['PAID', 'REVERSED']).nullish(),
+  "payoutCreatedAt": zod.string().nullish(),
+  "payoutReversedAt": zod.string().nullish(),
+  "payoutReversalReason": zod.string().nullish()
+})
+
+
+export const CreateDrawDisbursementParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+
+export const createDrawDisbursementBodyAmountExclusiveMin = 0;
+
+
+export const createDrawDisbursementBodyIdempotencyKeyMin = 8;
+
+
+
+export const CreateDrawDisbursementBody = zod.object({
+  "payerUserId": zod.number().int().min(1),
+  "amount": zod.number().gt(createDrawDisbursementBodyAmountExclusiveMin),
+  "payoutDate": zod.string(),
+  "reference": zod.string().min(1),
+  "note": zod.string().optional(),
+  "idempotencyKey": zod.string().min(createDrawDisbursementBodyIdempotencyKeyMin).optional()
+})
+
+export const CreateDrawDisbursementResponse = zod.object({
+  "id": zod.number().int(),
+  "cycleId": zod.number().int(),
+  "cycleNumber": zod.number().int(),
+  "cycleName": zod.string().optional(),
+  "drawNumber": zod.number().int(),
+  "drawDate": zod.string(),
+  "winnerMemberId": zod.number().int(),
+  "winnerMemberCode": zod.string(),
+  "winnerName": zod.string(),
+  "winningAmount": zod.number(),
+  "status": zod.string(),
+  "notes": zod.string().optional(),
+  "createdAt": zod.string().optional(),
+  "tanPeriodId": zod.number().int().nullish(),
+  "drawSlot": zod.number().int().nullish(),
+  "payoutId": zod.number().int().nullish(),
+  "payoutPayerId": zod.number().int().nullish(),
+  "payoutPayerName": zod.string().nullish(),
+  "payoutAmount": zod.number().nullish(),
+  "payoutDate": zod.string().nullish(),
+  "payoutReference": zod.string().nullish(),
+  "payoutNote": zod.string().nullish(),
+  "payoutStatus": zod.enum(['PAID', 'REVERSED']).nullish(),
+  "payoutCreatedAt": zod.string().nullish(),
+  "payoutReversedAt": zod.string().nullish(),
+  "payoutReversalReason": zod.string().nullish()
+})
+
+
+export const ReverseDrawDisbursementParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const ReverseDrawDisbursementBody = zod.object({
+  "reason": zod.string()
+})
+
+export const ReverseDrawDisbursementResponse = zod.object({
+  "id": zod.number().int(),
+  "cycleId": zod.number().int(),
+  "cycleNumber": zod.number().int(),
+  "cycleName": zod.string().optional(),
+  "drawNumber": zod.number().int(),
+  "drawDate": zod.string(),
+  "winnerMemberId": zod.number().int(),
+  "winnerMemberCode": zod.string(),
+  "winnerName": zod.string(),
+  "winningAmount": zod.number(),
+  "status": zod.string(),
+  "notes": zod.string().optional(),
+  "createdAt": zod.string().optional(),
+  "tanPeriodId": zod.number().int().nullish(),
+  "drawSlot": zod.number().int().nullish(),
+  "payoutId": zod.number().int().nullish(),
+  "payoutPayerId": zod.number().int().nullish(),
+  "payoutPayerName": zod.string().nullish(),
+  "payoutAmount": zod.number().nullish(),
+  "payoutDate": zod.string().nullish(),
+  "payoutReference": zod.string().nullish(),
+  "payoutNote": zod.string().nullish(),
+  "payoutStatus": zod.enum(['PAID', 'REVERSED']).nullish(),
+  "payoutCreatedAt": zod.string().nullish(),
+  "payoutReversedAt": zod.string().nullish(),
+  "payoutReversalReason": zod.string().nullish()
 })
 
 
@@ -1360,7 +1474,7 @@ export const UpdateSettingsResponse = zod.object({
 
 
 export const ExportReportQueryParams = zod.object({
-  "type": zod.enum(['members', 'payments', 'collectors', 'settlements', 'audit', 'daily', 'weekly', 'monthly', 'due', 'collector'])
+  "type": zod.enum(['members', 'payments', 'collectors', 'settlements', 'draws', 'audit', 'daily', 'weekly', 'monthly', 'due', 'collector'])
 })
 
 export const ExportReportResponse = zod.unknown()

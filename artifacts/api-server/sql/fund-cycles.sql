@@ -278,6 +278,33 @@ CREATE UNIQUE INDEX IF NOT EXISTS fund_draws_cycle_idempotency_idx
 CREATE UNIQUE INDEX IF NOT EXISTS fund_draws_tan_slot_idx
   ON fund_draws(tan_period_id, draw_slot)
   WHERE tan_period_id IS NOT NULL AND draw_slot IS NOT NULL;
+CREATE TABLE IF NOT EXISTS fund_draw_disbursements (
+  id serial PRIMARY KEY,
+  draw_id integer NOT NULL REFERENCES fund_draws(id) ON DELETE RESTRICT,
+  cycle_id integer NOT NULL REFERENCES fund_cycles(id) ON DELETE RESTRICT,
+  payer_user_id integer NOT NULL REFERENCES fund_users(id) ON DELETE RESTRICT,
+  winner_member_id integer NOT NULL REFERENCES fund_members(id) ON DELETE RESTRICT,
+  amount numeric NOT NULL CHECK (amount > 0),
+  payout_date date NOT NULL,
+  reference text NOT NULL,
+  note text NOT NULL DEFAULT '',
+  status text NOT NULL DEFAULT 'PAID' CHECK (status IN ('PAID', 'REVERSED')),
+  created_by integer NOT NULL REFERENCES fund_users(id) ON DELETE RESTRICT,
+  idempotency_key text,
+  reversed_by integer REFERENCES fund_users(id) ON DELETE RESTRICT,
+  reversed_at timestamptz,
+  reversal_reason text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS fund_draw_disbursements_payer_idempotency_idx
+  ON fund_draw_disbursements(payer_user_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
+ALTER TABLE fund_draw_disbursements DROP CONSTRAINT IF EXISTS fund_draw_disbursements_draw_id_key;
+CREATE UNIQUE INDEX IF NOT EXISTS fund_draw_disbursements_active_draw_idx
+  ON fund_draw_disbursements(draw_id)
+  WHERE status='PAID';
+CREATE INDEX IF NOT EXISTS fund_draw_disbursements_cycle_date_idx
+  ON fund_draw_disbursements(cycle_id, payout_date, created_at);
 CREATE INDEX IF NOT EXISTS fund_payments_tan_period_idx ON fund_payments(tan_period_id);
 CREATE INDEX IF NOT EXISTS fund_due_entries_tan_period_idx ON fund_due_entries(tan_period_id);
 CREATE INDEX IF NOT EXISTS fund_draws_tan_period_idx ON fund_draws(tan_period_id);
