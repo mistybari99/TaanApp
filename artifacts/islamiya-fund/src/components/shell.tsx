@@ -51,22 +51,21 @@ interface NavItem {
 }
 
 /*
- * This is the single source of truth for shell visibility. The role lists are
- * intentionally unchanged; mobile only changes how these same routes are
- * surfaced.
+ * This is the single source of truth for shell visibility. Mobile only changes
+ * how these same routes are surfaced.
  */
 const navItems: NavItem[] = [
   { href: "/owner", icon: LayoutDashboard, labelBn: "ড্যাশবোর্ড", labelEn: "Dashboard", roles: ["OWNER"], group: "operate", mobilePriority: 1 },
   { href: "/collector", icon: Wallet, labelBn: "সংগ্রহ", labelEn: "Collection", roles: ["COLLECTOR"], group: "operate", mobilePriority: 1 },
-  { href: "/members", icon: Users, labelBn: "সদস্য", labelEn: "Members", roles: ["OWNER", "COLLECTOR"], group: "operate", mobilePriority: 2 },
-  { href: "/cycles", icon: Repeat2, labelBn: "চক্র", labelEn: "Current Cycle", roles: ["OWNER", "COLLECTOR"], group: "operate", mobilePriority: 3 },
+  { href: "/members", icon: Users, labelBn: "সদস্য", labelEn: "Members", roles: ["OWNER", "COLLECTOR", "CASH_RECEIVER"], group: "operate", mobilePriority: 2 },
+  { href: "/cycles", icon: Repeat2, labelBn: "চক্র", labelEn: "Current Cycle", roles: ["OWNER", "COLLECTOR", "CASH_RECEIVER"], group: "operate", mobilePriority: 3 },
   { href: "/collectors", icon: UserSquare, labelBn: "কর্মী", labelEn: "Staff", roles: ["OWNER"], group: "admin" },
-  { href: "/payments", icon: Receipt, labelBn: "লেনদেন", labelEn: "Payments", roles: ["OWNER", "COLLECTOR"], group: "finance", mobilePriority: 4 },
-  { href: "/settlements", icon: ArrowDownToLine, labelBn: "জমা", labelEn: "Deposits", roles: ["OWNER", "COLLECTOR"], group: "finance" },
+  { href: "/payments", icon: Receipt, labelBn: "লেনদেন", labelEn: "Payments", roles: ["OWNER", "COLLECTOR", "CASH_RECEIVER"], group: "finance", mobilePriority: 4 },
+  { href: "/cash-custody", icon: ArrowDownToLine, labelBn: "নগদ custody", labelEn: "Cash custody", roles: ["OWNER", "COLLECTOR", "CASH_RECEIVER"], group: "finance" },
   { href: "/draws", icon: Trophy, labelBn: "শুক্রবার ড্র", labelEn: "Friday Draw", roles: ["OWNER"], group: "operate", mobilePriority: 5 },
-  { href: "/draw-history", icon: History, labelBn: "ড্র ইতিহাস", labelEn: "Draw History", roles: ["OWNER", "COLLECTOR"], group: "records" },
+  { href: "/draw-history", icon: History, labelBn: "ড্র ইতিহাস", labelEn: "Draw History", roles: ["OWNER", "COLLECTOR", "CASH_RECEIVER"], group: "records" },
   { href: "/share-transfers", icon: Repeat2, labelBn: "শেয়ার transfer", labelEn: "Share Transfers", roles: ["OWNER"], group: "finance" },
-  { href: "/member-history", icon: History, labelBn: "সদস্য ইতিহাস", labelEn: "Member History", roles: ["OWNER", "COLLECTOR"], group: "records" },
+  { href: "/member-history", icon: History, labelBn: "সদস্য ইতিহাস", labelEn: "Member History", roles: ["OWNER", "COLLECTOR", "CASH_RECEIVER"], group: "records" },
   { href: "/reports", icon: FileText, labelBn: "রিপোর্ট", labelEn: "Reports", roles: ["OWNER"], group: "records" },
   { href: "/settings", icon: Settings, labelBn: "সেটিংস", labelEn: "Settings", roles: ["OWNER"], group: "admin" },
   { href: "/status", icon: Activity, labelBn: "স্ট্যাটাস", labelEn: "Status", roles: ["OWNER"], group: "admin" },
@@ -102,6 +101,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (isLoading) return null
   if (!user) return <>{children}</>
 
+  const homeHref = user.role === "OWNER" ? "/owner" : user.role === "COLLECTOR" ? "/collector" : "/cash-custody"
   const allowedItems = navItems.filter((item) => item.roles.includes(user.role))
   const mobileItems = allowedItems
     .filter((item) => item.mobilePriority !== undefined)
@@ -172,7 +172,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-[100dvh] bg-background md:flex">
       <aside className="fixed inset-y-0 z-50 hidden w-[17rem] flex-col border-r border-border/80 bg-card/95 md:flex">
         <div className="flex h-[4.5rem] items-center border-b border-border/80 px-5">
-          <Link href={user.role === "OWNER" ? "/owner" : "/collector"} className="flex items-center gap-3">
+          <Link href={homeHref} className="flex items-center gap-3">
             <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-xs font-extrabold tracking-tight text-primary-foreground shadow-sm">
               IS
               <span className="absolute -bottom-1 -right-1 h-2.5 w-2.5 rounded-full border-2 border-card bg-secondary" />
@@ -227,7 +227,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <main className="app-main min-h-[100dvh] flex-1 md:ml-[17rem]">
         <header className="sticky top-0 z-40 flex h-[4.25rem] items-center justify-between border-b border-border/70 bg-background/95 px-4 backdrop-blur-md md:hidden">
-          <Link href={user.role === "OWNER" ? "/owner" : "/collector"} className="flex items-center gap-2.5">
+          <Link href={homeHref} className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-[0.7rem] bg-primary text-[11px] font-extrabold text-primary-foreground">IS</div>
             <div className="leading-none">
               <p className="text-[15px] font-extrabold tracking-[-0.03em] text-primary">ISLAMIYA</p>

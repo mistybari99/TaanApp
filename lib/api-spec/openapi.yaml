@@ -228,6 +228,48 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/SettlementInput" } } }
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Settlement" } } } }
+  /cash-handovers:
+    get:
+      operationId: listCashHandovers
+      responses:
+        "200": { description: Cash custody handovers, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/CashHandover" } } } } }
+    post:
+      operationId: createCashHandover
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CashHandoverInput" } } }
+      responses:
+        "201": { description: Handover submitted, content: { application/json: { schema: { $ref: "#/components/schemas/CashHandover" } } } }
+  /cash-handover-recipients:
+    get:
+      operationId: listCashHandoverRecipients
+      responses:
+        "200": { description: Active custody receivers, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/User" } } } } }
+  /cash-custody/balances:
+    get:
+      operationId: listCashCustodyBalances
+      responses:
+        "200": { description: Current cash custody balances, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/CashCustodyBalance" } } } } }
+  /cash-handovers/{id}/accept:
+    post:
+      operationId: acceptCashHandover
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/CashHandoverDecisionInput" } } }
+      responses:
+        "200": { description: Handover accepted, content: { application/json: { schema: { $ref: "#/components/schemas/CashHandover" } } } }
+  /cash-handovers/{id}/reject:
+    post:
+      operationId: rejectCashHandover
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CashHandoverDecisionInput" } } }
+      responses:
+        "200": { description: Handover rejected, content: { application/json: { schema: { $ref: "#/components/schemas/CashHandover" } } } }
   /draws:
     get:
       operationId: listDraws
@@ -267,6 +309,28 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/CollectorUpdate" } } }
       responses:
         "200": { description: Collector updated, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
+  /cash-receivers:
+    get:
+      operationId: listCashReceivers
+      responses:
+        "200": { description: Cash receivers, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/User" } } } } }
+    post:
+      operationId: createCashReceiver
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CashReceiverInput" } } }
+      responses:
+        "201": { description: Cash receiver created, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
+  /cash-receivers/{id}:
+    patch:
+      operationId: updateCashReceiver
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CashReceiverUpdate" } } }
+      responses:
+        "200": { description: Cash receiver updated, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
   /audit:
     get:
       operationId: listAudit
@@ -311,7 +375,7 @@ components:
         id: { type: integer }
         name: { type: string }
         username: { type: string }
-        role: { type: string, enum: [OWNER, COLLECTOR] }
+        role: { type: string, enum: [OWNER, COLLECTOR, CASH_RECEIVER] }
         active: { type: boolean }
     OnboardingStatus:
       type: object
@@ -335,6 +399,19 @@ components:
         username: { type: string, minLength: 3 }
         password: { type: string, minLength: 8 }
     CollectorUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 2 }
+        active: { type: boolean }
+        password: { type: string, minLength: 8 }
+    CashReceiverInput:
+      type: object
+      required: [name, username, password]
+      properties:
+        name: { type: string, minLength: 2 }
+        username: { type: string, minLength: 3 }
+        password: { type: string, minLength: 8 }
+    CashReceiverUpdate:
       type: object
       properties:
         name: { type: string, minLength: 2 }
@@ -758,6 +835,8 @@ components:
         memberName: { type: string }
         amount: { type: number }
         collectorName: { type: string }
+        receiverName: { type: string, nullable: true }
+        receiptSource: { type: string, enum: [COLLECTOR, OWNER_DIRECT, CASH_RECEIVER_DIRECT] }
         verificationStatus: { type: string }
         previousDueApplied: { type: number }
         currentPeriodApplied: { type: number }
@@ -772,7 +851,7 @@ components:
         collectionDate: { type: string }
         notes: { type: string }
         amount: { type: number }
-        verificationMethod: { type: string, enum: [PIN, COLLECTOR_CONFIRMATION] }
+        verificationMethod: { type: string, enum: [PIN, COLLECTOR_CONFIRMATION, OWNER_CONFIRMATION, CASH_RECEIVER_CONFIRMATION] }
         verificationCode: { type: string }
         confirmDuplicate: { type: boolean }
         idempotencyKey: { type: string, minLength: 8 }
@@ -794,6 +873,64 @@ components:
       type: object
       required: [amount, reference]
       properties: { amount: { type: number }, reference: { type: string }, note: { type: string }, idempotencyKey: { type: string, minLength: 8 } }
+    CashHandover:
+      type: object
+      required: [id, cycleId, fromUserId, fromUserName, fromRole, toUserId, toUserName, toRole, amount, collectionDate, receiptCount, reference, note, status, submittedBy, createdAt]
+      properties:
+        id: { type: integer }
+        cycleId: { type: integer }
+        fromUserId: { type: integer }
+        fromUserName: { type: string }
+        fromRole: { type: string, enum: [OWNER, COLLECTOR, CASH_RECEIVER] }
+        toUserId: { type: integer }
+        toUserName: { type: string }
+        toRole: { type: string, enum: [OWNER, COLLECTOR, CASH_RECEIVER] }
+        amount: { type: number }
+        collectionDate: { type: string }
+        receiptStart: { type: string, nullable: true }
+        receiptEnd: { type: string, nullable: true }
+        receiptCount: { type: integer }
+        reference: { type: string }
+        note: { type: string }
+        status: { type: string, enum: [SUBMITTED, ACCEPTED, REJECTED, VOID] }
+        submittedBy: { type: integer }
+        acceptedBy: { type: integer, nullable: true }
+        acceptedByName: { type: string, nullable: true }
+        acceptedAt: { type: string, nullable: true }
+        rejectedBy: { type: integer, nullable: true }
+        rejectedByName: { type: string, nullable: true }
+        rejectedAt: { type: string, nullable: true }
+        rejectionReason: { type: string, nullable: true }
+        createdAt: { type: string }
+    CashHandoverInput:
+      type: object
+      required: [toUserId, amount, collectionDate, reference]
+      properties:
+        toUserId: { type: integer, minimum: 1 }
+        amount: { type: number, exclusiveMinimum: 0 }
+        collectionDate: { type: string }
+        receiptStart: { type: string }
+        receiptEnd: { type: string }
+        receiptCount: { type: integer, minimum: 0 }
+        reference: { type: string, minLength: 1 }
+        note: { type: string }
+        idempotencyKey: { type: string, minLength: 8 }
+    CashHandoverDecisionInput:
+      type: object
+      properties:
+        countedAmount: { type: number, minimum: 0 }
+        reason: { type: string }
+    CashCustodyBalance:
+      type: object
+      required: [userId, name, role, postedPayments, acceptedIncoming, acceptedOutgoing, availableAmount]
+      properties:
+        userId: { type: integer }
+        name: { type: string }
+        role: { type: string, enum: [OWNER, COLLECTOR, CASH_RECEIVER] }
+        postedPayments: { type: number }
+        acceptedIncoming: { type: number }
+        acceptedOutgoing: { type: number }
+        availableAmount: { type: number }
     AuditEntry:
       type: object
       required: [id, actor, action, detail, createdAt]

@@ -22,6 +22,7 @@ export type UserRole = typeof UserRole[keyof typeof UserRole];
 export const UserRole = {
   OWNER: 'OWNER',
   COLLECTOR: 'COLLECTOR',
+  CASH_RECEIVER: 'CASH_RECEIVER',
 } as const;
 
 export interface User {
@@ -58,6 +59,23 @@ export interface CollectorInput {
 }
 
 export interface CollectorUpdate {
+  /** @minLength 2 */
+  name?: string;
+  active?: boolean;
+  /** @minLength 8 */
+  password?: string;
+}
+
+export interface CashReceiverInput {
+  /** @minLength 2 */
+  name: string;
+  /** @minLength 3 */
+  username: string;
+  /** @minLength 8 */
+  password: string;
+}
+
+export interface CashReceiverUpdate {
   /** @minLength 2 */
   name?: string;
   active?: boolean;
@@ -447,6 +465,15 @@ export interface MemberCycleSummary {
   totalDue?: number;
 }
 
+export type PaymentReceiptSource = typeof PaymentReceiptSource[keyof typeof PaymentReceiptSource];
+
+
+export const PaymentReceiptSource = {
+  COLLECTOR: 'COLLECTOR',
+  OWNER_DIRECT: 'OWNER_DIRECT',
+  CASH_RECEIVER_DIRECT: 'CASH_RECEIVER_DIRECT',
+} as const;
+
 export interface Payment {
   id: number;
   receiptId: string;
@@ -458,6 +485,8 @@ export interface Payment {
   memberName: string;
   amount: number;
   collectorName: string;
+  receiverName?: string | null;
+  receiptSource?: PaymentReceiptSource;
   verificationStatus: string;
   previousDueApplied?: number;
   currentPeriodApplied?: number;
@@ -566,6 +595,8 @@ export type PaymentInputVerificationMethod = typeof PaymentInputVerificationMeth
 export const PaymentInputVerificationMethod = {
   PIN: 'PIN',
   COLLECTOR_CONFIRMATION: 'COLLECTOR_CONFIRMATION',
+  OWNER_CONFIRMATION: 'OWNER_CONFIRMATION',
+  CASH_RECEIVER_CONFIRMATION: 'CASH_RECEIVER_CONFIRMATION',
 } as const;
 
 export interface PaymentInput {
@@ -600,6 +631,104 @@ export interface SettlementInput {
   note?: string;
   /** @minLength 8 */
   idempotencyKey?: string;
+}
+
+export type CashHandoverFromRole = typeof CashHandoverFromRole[keyof typeof CashHandoverFromRole];
+
+
+export const CashHandoverFromRole = {
+  OWNER: 'OWNER',
+  COLLECTOR: 'COLLECTOR',
+  CASH_RECEIVER: 'CASH_RECEIVER',
+} as const;
+
+export type CashHandoverToRole = typeof CashHandoverToRole[keyof typeof CashHandoverToRole];
+
+
+export const CashHandoverToRole = {
+  OWNER: 'OWNER',
+  COLLECTOR: 'COLLECTOR',
+  CASH_RECEIVER: 'CASH_RECEIVER',
+} as const;
+
+export type CashHandoverStatus = typeof CashHandoverStatus[keyof typeof CashHandoverStatus];
+
+
+export const CashHandoverStatus = {
+  SUBMITTED: 'SUBMITTED',
+  ACCEPTED: 'ACCEPTED',
+  REJECTED: 'REJECTED',
+  VOID: 'VOID',
+} as const;
+
+export interface CashHandover {
+  id: number;
+  cycleId: number;
+  fromUserId: number;
+  fromUserName: string;
+  fromRole: CashHandoverFromRole;
+  toUserId: number;
+  toUserName: string;
+  toRole: CashHandoverToRole;
+  amount: number;
+  collectionDate: string;
+  receiptStart?: string | null;
+  receiptEnd?: string | null;
+  receiptCount: number;
+  reference: string;
+  note: string;
+  status: CashHandoverStatus;
+  submittedBy: number;
+  acceptedBy?: number | null;
+  acceptedByName?: string | null;
+  acceptedAt?: string | null;
+  rejectedBy?: number | null;
+  rejectedByName?: string | null;
+  rejectedAt?: string | null;
+  rejectionReason?: string | null;
+  createdAt: string;
+}
+
+export interface CashHandoverInput {
+  /** @minimum 1 */
+  toUserId: number;
+  /** @exclusiveMinimum 0 */
+  amount: number;
+  collectionDate: string;
+  receiptStart?: string;
+  receiptEnd?: string;
+  /** @minimum 0 */
+  receiptCount?: number;
+  /** @minLength 1 */
+  reference: string;
+  note?: string;
+  /** @minLength 8 */
+  idempotencyKey?: string;
+}
+
+export interface CashHandoverDecisionInput {
+  /** @minimum 0 */
+  countedAmount?: number;
+  reason?: string;
+}
+
+export type CashCustodyBalanceRole = typeof CashCustodyBalanceRole[keyof typeof CashCustodyBalanceRole];
+
+
+export const CashCustodyBalanceRole = {
+  OWNER: 'OWNER',
+  COLLECTOR: 'COLLECTOR',
+  CASH_RECEIVER: 'CASH_RECEIVER',
+} as const;
+
+export interface CashCustodyBalance {
+  userId: number;
+  name: string;
+  role: CashCustodyBalanceRole;
+  postedPayments: number;
+  acceptedIncoming: number;
+  acceptedOutgoing: number;
+  availableAmount: number;
 }
 
 export type AuditEntryBeforeValue = { [key: string]: unknown } | null;

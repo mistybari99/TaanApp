@@ -26,3 +26,9 @@ Each TAN period must have member-level obligation snapshots; Previous Due is the
 **Why:** Share transfers or later membership edits must not rewrite a member's historical obligation, while payments still need deterministic Previous Due → current-period allocation.
 
 **How to apply:** Create obligation snapshots when locking a TAN, use the current period snapshot for Current Collection, and exclude reversed payments from posted allocation totals.
+
+Adding a new authenticated fund role also requires expanding legacy database role constraints, not only TypeScript/OpenAPI enums.
+
+**Why:** The API can type-check while PostgreSQL still rejects the new role at insert time.
+
+**How to apply:** Inspect CHECK constraints on fund user roles during additive migrations and update them without rewriting existing users or audit history.

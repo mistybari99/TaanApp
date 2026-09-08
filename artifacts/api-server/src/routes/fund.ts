@@ -4,7 +4,8 @@ import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypt
 
 const router = Router();
 const COOKIE = "irf_session";
-type AuthUser = { id: number; name: string; username: string; role: "OWNER" | "COLLECTOR" };
+type FundRole = "OWNER" | "COLLECTOR" | "CASH_RECEIVER";
+type AuthUser = { id: number; name: string; username: string; role: FundRole };
 type AuthedRequest = Request & { user?: AuthUser };
 
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
@@ -121,6 +122,8 @@ const addDays = (date: string, days: number) => {
   return value.toISOString().slice(0, 10);
 };
 const validStatus = (value: unknown, allowed: readonly string[]) => allowed.includes(String(value ?? ""));
+const cashCustodyRoles: readonly FundRole[] = ["OWNER", "COLLECTOR", "CASH_RECEIVER"];
+const isCashCustodyRole = (value: unknown): value is FundRole => cashCustodyRoles.includes(value as FundRole);
 
 type TanPeriodRow = {
   tanConfigId: number;
@@ -281,6 +284,22 @@ const collectorTransferSelect = `
     JOIN fund_cycles c ON c.id=t.cycle_id
     JOIN fund_members fm ON fm.id=t.from_member_id
     JOIN fund_members tm ON tm.id=t.to_member_id
+`;
+const cashHandoverSelect = `
+  SELECT h.id,h.cycle_id AS "cycleId",
+    h.from_user_id AS "fromUserId",fu.name AS "fromUserName",fu.role AS "fromRole",
+    h.to_user_id AS "toUserId",tu.name AS "toUserName",tu.role AS "toRole",
+    h.amount::float,h.collection_date::text AS "collectionDate",
+    h.receipt_start AS "receiptStart",h.receipt_end AS "receiptEnd",h.receipt_count AS "receiptCount",
+    h.reference,h.note,h.status,h.submitted_by AS "submittedBy",
+    h.accepted_by AS "acceptedBy",au.name AS "acceptedByName",h.accepted_at AS "acceptedAt",
+    h.rejected_by AS "rejectedBy",ru.name AS "rejectedByName",h.rejected_at AS "rejectedAt",
+    h.rejection_reason AS "rejectionReason",h.created_at AS "createdAt"
+  FROM fund_cash_handovers h
+    JOIN fund_users fu ON fu.id=h.from_user_id
+    JOIN fund_users tu ON tu.id=h.to_user_id
+    LEFT JOIN fund_users au ON au.id=h.accepted_by
+    LEFT JOIN fund_users ru ON ru.id=h.rejected_by
 `;
 
 async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
@@ -1815,17 +1834,24 @@ router.get("/payments", requireAuth, async (req: AuthedRequest, res) => {
   const activeCycle = await pool.query("SELECT id FROM fund_cycles WHERE status='ACTIVE' LIMIT 1");
   const params: unknown[] = [Number(activeCycle.rows[0]?.id ?? 0)];
   const clauses = ["p.cycle_id=$1"];
-  if (req.user?.role === "COLLECTOR") { params.push(req.user.id); clauses.push(`p.collector_id=$${params.length}`); }
+  if (req.user?.role === "COLLECTOR") { params.push(req.user.id); clauses.push(`COALESCE(p.receiver_id,p.collector_id)=$${params.length}`); }
   const r = await pool.query(
     `SELECT p.id,p.receipt_id AS "receiptId",COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name AS "memberName",p.cycle_id AS "cycleId",
        p.collection_date::text AS "collectionDate",p.shares,p.notes,p.amount::float,
-       u.name AS "collectorName",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status
-      FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id
+       u.name AS "collectorName",ru.name AS "receiverName",p.receipt_source AS "receiptSource",
+       p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status
+      FROM fund_payments p JOIN fund_members m ON m.id=p.member_id
+       JOIN fund_users u ON u.id=p.collector_id
+       LEFT JOIN fund_users ru ON ru.id=COALESCE(p.receiver_id,p.collector_id)
       WHERE ${clauses.join(" AND ")} ORDER BY p.created_at DESC LIMIT 500`, params);
   res.json(r.rows);
 });
 router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
   const { memberId, cycleId, collectionDate, amount, notes, verificationMethod, confirmDuplicate } = req.body;
+  if (!req.user || !isCashCustodyRole(req.user.role)) {
+    res.status(403).json({ error: "This account cannot receive payments" });
+    return;
+  }
   const idempotencyKey = idempotency(req.body.idempotencyKey);
   if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) return res.status(400).json({ error: "Amount must be greater than zero" });
   const selectedCycleId = Number(cycleId);
@@ -1836,7 +1862,7 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
     await client.query("BEGIN");
     if (idempotencyKey) {
       await transactionLock(client, `payment:${req.user!.id}:${idempotencyKey}`);
-      const replay = await client.query(`SELECT p.id,p.receipt_id AS "receiptId",p.member_id AS "_memberDbId",COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name AS "memberName",p.cycle_id AS "cycleId",p.collection_date::text AS "collectionDate",p.shares,p.notes,p.amount::float,p.previous_due_applied::float AS "previousDueApplied",p.current_period_applied::float AS "currentPeriodApplied",u.name AS "collectorName",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id WHERE p.collector_id=$1 AND p.idempotency_key=$2`, [req.user!.id,idempotencyKey]);
+      const replay = await client.query(`SELECT p.id,p.receipt_id AS "receiptId",p.member_id AS "_memberDbId",COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name AS "memberName",p.cycle_id AS "cycleId",p.collection_date::text AS "collectionDate",p.shares,p.notes,p.amount::float,p.previous_due_applied::float AS "previousDueApplied",p.current_period_applied::float AS "currentPeriodApplied",u.name AS "collectorName",ru.name AS "receiverName",p.receipt_source AS "receiptSource",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id LEFT JOIN fund_users ru ON ru.id=COALESCE(p.receiver_id,p.collector_id) WHERE COALESCE(p.receiver_id,p.collector_id)=$1 AND p.idempotency_key=$2`, [req.user!.id,idempotencyKey]);
       if (replay.rows[0]) {
         const existing = replay.rows[0];
         if (Number(existing._memberDbId) !== Number(memberId)
@@ -1900,6 +1926,19 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
       await client.query("ROLLBACK");
       return res.status(403).json({ error: "Collector is not assigned to this member" });
     }
+    const expectedVerification = req.user.role === "OWNER"
+      ? "OWNER_CONFIRMATION"
+      : req.user.role === "CASH_RECEIVER"
+        ? "CASH_RECEIVER_CONFIRMATION"
+        : "COLLECTOR_CONFIRMATION";
+    if (verificationMethod === "PIN") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "PIN verification is not configured; use collector confirmation" });
+    }
+    if (String(verificationMethod ?? "") !== expectedVerification) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: `Use ${expectedVerification} for this receiver account` });
+    }
     const cycleMember = await client.query("SELECT shares,daily_contribution::float AS daily_contribution FROM fund_cycle_members WHERE cycle_id=$1 AND member_id=$2 FOR SHARE", [selectedCycleId,Number(memberId)]);
     if (!cycleMember.rows[0]) {
       await client.query("ROLLBACK");
@@ -1916,19 +1955,26 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
     const allocation = allocatePayment(Number(amount), previousDueOutstanding);
     const { previousDueApplied, currentPeriodApplied } = allocation;
     const receiptId = `IRF-${paidDate.replaceAll("-","")}-${randomBytes(3).toString("hex").toUpperCase()}`;
-    if (verificationMethod === "PIN") {
-      await client.query("ROLLBACK");
-      return res.status(400).json({ error: "PIN verification is not configured; use collector confirmation" });
-    }
-    const verification = "COLLECTOR CONFIRMED";
+    const receiptSource = req.user.role === "OWNER" ? "OWNER_DIRECT" : req.user.role === "CASH_RECEIVER" ? "CASH_RECEIVER_DIRECT" : "COLLECTOR";
+    const verification = req.user.role === "OWNER"
+      ? "OWNER CONFIRMED"
+      : req.user.role === "CASH_RECEIVER"
+        ? "CASH RECEIVER CONFIRMED"
+        : "COLLECTOR CONFIRMED";
     const r = await client.query(
-      `INSERT INTO fund_payments(receipt_id,member_id,cycle_id,collection_date,shares,amount,collector_id,verification_status,notes,idempotency_key,previous_due_applied,current_period_applied,tan_period_id)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id,receipt_id AS "receiptId",member_id AS "memberId",cycle_id AS "cycleId",collection_date::text AS "collectionDate",shares,notes,amount::float,previous_due_applied::float AS "previousDueApplied",current_period_applied::float AS "currentPeriodApplied",verification_status AS "verificationStatus",created_at AS "createdAt",status`,
-      [receiptId,memberId,selectedCycleId,paidDate,Number(cycleMember.rows[0].shares),amount,req.user!.id,verification,notes ?? "",idempotencyKey ?? null,previousDueApplied,currentPeriodApplied,tanPeriodId],
+      `INSERT INTO fund_payments(receipt_id,member_id,cycle_id,collection_date,shares,amount,collector_id,receiver_id,receipt_source,verification_status,notes,idempotency_key,previous_due_applied,current_period_applied,tan_period_id)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id,receipt_id AS "receiptId",member_id AS "memberId",cycle_id AS "cycleId",collection_date::text AS "collectionDate",shares,notes,amount::float,previous_due_applied::float AS "previousDueApplied",current_period_applied::float AS "currentPeriodApplied",verification_status AS "verificationStatus",created_at AS "createdAt",status`,
+      [receiptId,memberId,selectedCycleId,paidDate,Number(cycleMember.rows[0].shares),amount,req.user.id,receiptSource,verification,notes ?? "",idempotencyKey ?? null,previousDueApplied,currentPeriodApplied,tanPeriodId],
     );
-    await auditOn(client, req.user!.id, "PAYMENT_POSTED", `${receiptId}: BDT ${amount}; previous due ${previousDueApplied}`, "payment", String(r.rows[0].id));
+    await auditOn(client, req.user.id, "PAYMENT_POSTED", `${receiptId}: BDT ${amount}; previous due ${previousDueApplied}; receiver ${req.user.role}`, "payment", String(r.rows[0].id));
     await client.query("COMMIT");
-    return res.status(201).json({ ...r.rows[0], memberName: member.rows[0].name, collectorName: req.user!.name });
+    return res.status(201).json({
+      ...r.rows[0],
+      memberName: member.rows[0].name,
+      collectorName: req.user.name,
+      receiverName: req.user.name,
+      receiptSource,
+    });
   } catch (error) {
     await client.query("ROLLBACK");
     req.log.error({ error }, "Payment failed");
@@ -2080,6 +2126,303 @@ router.post("/settlements", requireAuth, async (req: AuthedRequest,res)=>{
     client.release();
   }
 });
+
+router.get("/cash-handovers", requireAuth, async (req: AuthedRequest, res) => {
+  const params: unknown[] = [];
+  const clauses = ["h.cycle_id=(SELECT id FROM fund_cycles WHERE status='ACTIVE' LIMIT 1)"];
+  if (req.user?.role === "COLLECTOR") {
+    params.push(req.user.id);
+    clauses.push(`h.from_user_id=$${params.length}`);
+  } else if (req.user?.role === "CASH_RECEIVER") {
+    params.push(req.user.id);
+    clauses.push(`(h.from_user_id=$${params.length} OR h.to_user_id=$${params.length})`);
+  }
+  const result = await pool.query(
+    `${cashHandoverSelect} WHERE ${clauses.join(" AND ")} ORDER BY h.created_at DESC LIMIT 300`,
+    params,
+  );
+  res.json(result.rows);
+});
+
+router.get("/cash-handover-recipients", requireAuth, async (_req, res) => {
+  const result = await pool.query(
+    "SELECT id,name,username,role,active FROM fund_users WHERE active=true AND role IN ('OWNER','CASH_RECEIVER') ORDER BY CASE WHEN role='OWNER' THEN 0 ELSE 1 END,name",
+  );
+  res.json(result.rows);
+});
+
+router.get("/cash-custody/balances", requireAuth, async (req: AuthedRequest, res) => {
+  const activeCycle = await pool.query("SELECT id FROM fund_cycles WHERE status='ACTIVE' LIMIT 1");
+  const cycleId = Number(activeCycle.rows[0]?.id ?? 0);
+  if (!cycleId) {
+    res.json([]);
+    return;
+  }
+  const result = await pool.query(
+    `SELECT u.id AS "userId",u.name,u.role,
+      COALESCE((SELECT SUM(p.amount) FROM fund_payments p
+        WHERE COALESCE(p.receiver_id,p.collector_id)=u.id AND p.cycle_id=$1 AND p.status='POSTED'),0)::float AS "postedPayments",
+      COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
+        WHERE h.to_user_id=u.id AND h.cycle_id=$1 AND h.status='ACCEPTED'),0)::float AS "acceptedIncoming",
+      (COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
+        WHERE h.from_user_id=u.id AND h.cycle_id=$1 AND h.status='ACCEPTED'),0)
+       + COALESCE((SELECT SUM(s.amount) FROM fund_settlements s
+        WHERE s.collector_id=u.id AND s.cycle_id=$1),0))::float AS "acceptedOutgoing",
+      GREATEST(
+        COALESCE((SELECT SUM(p.amount) FROM fund_payments p
+          WHERE COALESCE(p.receiver_id,p.collector_id)=u.id AND p.cycle_id=$1 AND p.status='POSTED'),0)
+        + COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
+          WHERE h.to_user_id=u.id AND h.cycle_id=$1 AND h.status='ACCEPTED'),0)
+        - COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
+          WHERE h.from_user_id=u.id AND h.cycle_id=$1 AND h.status='ACCEPTED'),0)
+        - COALESCE((SELECT SUM(s.amount) FROM fund_settlements s
+          WHERE s.collector_id=u.id AND s.cycle_id=$1),0),0)::float AS "availableAmount"
+     FROM fund_users u
+     WHERE u.active=true AND u.role IN ('OWNER','COLLECTOR','CASH_RECEIVER')
+       AND ($2::int IS NULL OR u.id=$2)
+     ORDER BY CASE WHEN u.role='OWNER' THEN 0 WHEN u.role='CASH_RECEIVER' THEN 1 ELSE 2 END,u.name`,
+    [cycleId, req.user?.role === "COLLECTOR" || req.user?.role === "CASH_RECEIVER" ? req.user.id : null],
+  );
+  res.json(result.rows);
+});
+
+router.post("/cash-handovers", requireAuth, async (req: AuthedRequest, res) => {
+  if (!req.user || !["COLLECTOR", "CASH_RECEIVER"].includes(req.user.role)) {
+    res.status(403).json({ error: "Only a Collector or Cash Receiver can submit a cash handover" });
+    return;
+  }
+  const b = req.body as Record<string, unknown>;
+  const toUserId = Number(b.toUserId);
+  const amount = Number(b.amount);
+  const collectionDate = isIsoDate(b.collectionDate) ? b.collectionDate : todayIso();
+  const reference = String(b.reference ?? "").trim();
+  const receiptCount = b.receiptCount == null ? 0 : Number(b.receiptCount);
+  const idempotencyKey = idempotency(b.idempotencyKey);
+  if (!Number.isInteger(toUserId) || toUserId <= 0 || !Number.isFinite(amount) || amount <= 0 || !reference) {
+    res.status(400).json({ error: "A valid receiver, positive amount, and reference are required" });
+    return;
+  }
+  if (!Number.isInteger(receiptCount) || receiptCount < 0) {
+    res.status(400).json({ error: "Receipt count must be a whole number" });
+    return;
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const lockScope = `cash-handover:${req.user.id}:${idempotencyKey ?? `${toUserId}:${reference}`}`;
+    await transactionLock(client, lockScope);
+    if (idempotencyKey) {
+      const replay = await client.query(`${cashHandoverSelect} WHERE h.from_user_id=$1 AND h.idempotency_key=$2`, [req.user.id, idempotencyKey]);
+      if (replay.rows[0]) {
+        const existing = replay.rows[0];
+        if (!sameMoney(existing.amount, amount) || Number(existing.toUserId) !== toUserId || String(existing.reference) !== reference) {
+          await client.query("ROLLBACK");
+          res.status(409).json({ error: "This idempotency key was already used for a different handover" });
+          return;
+        }
+        await client.query("COMMIT");
+        res.status(200).json(existing);
+        return;
+      }
+    }
+    const cycle = await client.query("SELECT id,tracking_start_date::text AS tracking_start_date FROM fund_cycles WHERE status='ACTIVE' LIMIT 1 FOR UPDATE");
+    if (!cycle.rows[0]) {
+      await client.query("ROLLBACK");
+      res.status(409).json({ error: "An active cycle is required before recording a cash handover" });
+      return;
+    }
+    if (!cycle.rows[0].tracking_start_date) {
+      await client.query("ROLLBACK");
+      res.status(409).json({ error: "Owner must set the digital tracking start date before recording cash handovers" });
+      return;
+    }
+    if (collectionDate < cycle.rows[0].tracking_start_date || collectionDate > todayIso()) {
+      await client.query("ROLLBACK");
+      res.status(400).json({ error: "Collection date must be on or after the digital tracking start and not in the future" });
+      return;
+    }
+    const receiver = await client.query("SELECT id,name,role FROM fund_users WHERE id=$1 AND active=true FOR SHARE", [toUserId]);
+    if (!receiver.rows[0] || !isCashCustodyRole(receiver.rows[0].role) || !["OWNER", "CASH_RECEIVER"].includes(receiver.rows[0].role)) {
+      await client.query("ROLLBACK");
+      res.status(400).json({ error: "Handover receiver must be an active Owner or Cash Receiver" });
+      return;
+    }
+    if (req.user.role === "CASH_RECEIVER" && receiver.rows[0].role !== "OWNER") {
+      await client.query("ROLLBACK");
+      res.status(403).json({ error: "Cash Receiver can only hand over final custody to the Owner" });
+      return;
+    }
+    const available = await client.query(
+      `SELECT GREATEST(
+        COALESCE((SELECT SUM(p.amount) FROM fund_payments p
+          WHERE COALESCE(p.receiver_id,p.collector_id)=$1 AND p.cycle_id=$2 AND p.status='POSTED'),0)
+        + COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
+          WHERE h.to_user_id=$1 AND h.cycle_id=$2 AND h.status='ACCEPTED'),0)
+        - COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
+          WHERE h.from_user_id=$1 AND h.cycle_id=$2 AND h.status='ACCEPTED'),0)
+        - COALESCE((SELECT SUM(s.amount) FROM fund_settlements s
+          WHERE s.collector_id=$1 AND s.cycle_id=$2),0),
+        0)::float AS "availableAmount"`,
+      [req.user.id, cycle.rows[0].id],
+    );
+    const availableAmount = money(available.rows[0]?.availableAmount);
+    if (amount > availableAmount) {
+      await client.query("ROLLBACK");
+      res.status(409).json({
+        error: "Handover amount cannot exceed the sender's available custody",
+        availableAmount,
+      });
+      return;
+    }
+    const inserted = await client.query(
+      `INSERT INTO fund_cash_handovers(cycle_id,from_user_id,to_user_id,amount,collection_date,receipt_start,receipt_end,receipt_count,reference,note,status,submitted_by,idempotency_key)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'SUBMITTED',$2,$11)
+       RETURNING id`,
+      [
+        cycle.rows[0].id,
+        req.user.id,
+        toUserId,
+        amount,
+        collectionDate,
+        String(b.receiptStart ?? "").trim() || null,
+        String(b.receiptEnd ?? "").trim() || null,
+        receiptCount,
+        reference,
+        String(b.note ?? "").trim(),
+        idempotencyKey,
+      ],
+    );
+    const handoverId = inserted.rows[0].id;
+    await auditOn(client, req.user.id, "CASH_HANDOVER_SUBMITTED", `${reference}: BDT ${amount} submitted to ${receiver.rows[0].name}`, "cash_handover", String(handoverId), {
+      cycleId: cycle.rows[0].id,
+      relatedTransactionId: reference,
+      effectiveDate: collectionDate,
+      afterValue: { handoverId, fromUserId: req.user.id, toUserId, amount, status: "SUBMITTED" },
+    });
+    const result = await client.query(`${cashHandoverSelect} WHERE h.id=$1`, [handoverId]);
+    await client.query("COMMIT");
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    req.log.error({ error }, "Cash handover submission failed");
+    res.status(409).json({ error: "Cash handover could not be saved; no records were changed" });
+  } finally {
+    client.release();
+  }
+});
+
+router.post("/cash-handovers/:id/accept", requireAuth, async (req: AuthedRequest, res) => {
+  if (!req.user || !["OWNER", "CASH_RECEIVER"].includes(req.user.role)) {
+    res.status(403).json({ error: "Only the Owner or Cash Receiver can accept a handover" });
+    return;
+  }
+  const id = Number(req.params.id);
+  const countedAmount = req.body?.countedAmount == null ? null : Number(req.body.countedAmount);
+  if (!Number.isInteger(id) || id <= 0 || (countedAmount !== null && (!Number.isFinite(countedAmount) || countedAmount < 0))) {
+    res.status(400).json({ error: "A valid handover and counted amount are required" });
+    return;
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await transactionLock(client, `cash-handover-decision:${id}`);
+    const current = await client.query(`${cashHandoverSelect} WHERE h.id=$1 FOR UPDATE OF h`, [id]);
+    const handover = current.rows[0];
+    if (!handover) {
+      await client.query("ROLLBACK");
+      res.status(404).json({ error: "Cash handover not found" });
+      return;
+    }
+    if (Number(handover.toUserId) !== req.user.id) {
+      await client.query("ROLLBACK");
+      res.status(403).json({ error: "Only the named receiver can accept this handover" });
+      return;
+    }
+    if (handover.status !== "SUBMITTED") {
+      await client.query("ROLLBACK");
+      res.status(handover.status === "ACCEPTED" ? 200 : 409).json(handover.status === "ACCEPTED" ? handover : { error: `Handover is already ${handover.status.toLowerCase()}` });
+      return;
+    }
+    if (countedAmount !== null && !sameMoney(countedAmount, handover.amount)) {
+      await client.query("ROLLBACK");
+      res.status(409).json({ error: "Counted cash does not match the submitted amount; reject and submit a correction instead", expectedAmount: money(handover.amount), countedAmount });
+      return;
+    }
+    await client.query("UPDATE fund_cash_handovers SET status='ACCEPTED',accepted_by=$2,accepted_at=now() WHERE id=$1", [id, req.user.id]);
+    await auditOn(client, req.user.id, "CASH_HANDOVER_ACCEPTED", `${handover.reference}: BDT ${handover.amount} accepted from ${handover.fromUserName}`, "cash_handover", String(id), {
+      cycleId: Number(handover.cycleId),
+      relatedTransactionId: handover.reference,
+      effectiveDate: handover.collectionDate,
+      beforeValue: { status: "SUBMITTED", amount: money(handover.amount) },
+      afterValue: { status: "ACCEPTED", acceptedBy: req.user.id, countedAmount: countedAmount ?? money(handover.amount) },
+    });
+    const result = await client.query(`${cashHandoverSelect} WHERE h.id=$1`, [id]);
+    await client.query("COMMIT");
+    res.json(result.rows[0]);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    req.log.error({ error }, "Cash handover acceptance failed");
+    res.status(409).json({ error: "Cash handover could not be accepted; no records were changed" });
+  } finally {
+    client.release();
+  }
+});
+
+router.post("/cash-handovers/:id/reject", requireAuth, async (req: AuthedRequest, res) => {
+  if (!req.user || !["OWNER", "CASH_RECEIVER"].includes(req.user.role)) {
+    res.status(403).json({ error: "Only the Owner or Cash Receiver can reject a handover" });
+    return;
+  }
+  const id = Number(req.params.id);
+  const reason = String(req.body?.reason ?? "").trim();
+  if (!Number.isInteger(id) || id <= 0 || !reason) {
+    res.status(400).json({ error: "A handover and rejection reason are required" });
+    return;
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await transactionLock(client, `cash-handover-decision:${id}`);
+    const current = await client.query(`${cashHandoverSelect} WHERE h.id=$1 FOR UPDATE OF h`, [id]);
+    const handover = current.rows[0];
+    if (!handover) {
+      await client.query("ROLLBACK");
+      res.status(404).json({ error: "Cash handover not found" });
+      return;
+    }
+    if (Number(handover.toUserId) !== req.user.id) {
+      await client.query("ROLLBACK");
+      res.status(403).json({ error: "Only the named receiver can reject this handover" });
+      return;
+    }
+    if (handover.status !== "SUBMITTED") {
+      await client.query("ROLLBACK");
+      res.status(409).json({ error: `Handover is already ${handover.status.toLowerCase()}` });
+      return;
+    }
+    await client.query(
+      "UPDATE fund_cash_handovers SET status='REJECTED',rejected_by=$2,rejected_at=now(),rejection_reason=$3 WHERE id=$1",
+      [id, req.user.id, reason],
+    );
+    await auditOn(client, req.user.id, "CASH_HANDOVER_REJECTED", `${handover.reference}: ${reason}`, "cash_handover", String(id), {
+      cycleId: Number(handover.cycleId),
+      relatedTransactionId: handover.reference,
+      effectiveDate: handover.collectionDate,
+      beforeValue: { status: "SUBMITTED", amount: money(handover.amount) },
+      afterValue: { status: "REJECTED", rejectedBy: req.user.id, reason },
+    });
+    const result = await client.query(`${cashHandoverSelect} WHERE h.id=$1`, [id]);
+    await client.query("COMMIT");
+    res.json(result.rows[0]);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    req.log.error({ error }, "Cash handover rejection failed");
+    res.status(409).json({ error: "Cash handover could not be rejected; no records were changed" });
+  } finally {
+    client.release();
+  }
+});
+
 router.get("/collectors",requireAuth,ownerOnly,async(_req,res)=>{const r=await pool.query("SELECT id,name,username,role,active FROM fund_users WHERE role='COLLECTOR' ORDER BY active DESC,name");res.json(r.rows);});
 router.post("/collectors",requireAuth,ownerOnly,async(req:AuthedRequest,res)=>{
   const b=req.body;
@@ -2098,6 +2441,42 @@ router.patch("/collectors/:id",requireAuth,ownerOnly,async(req:AuthedRequest,res
   if(b.active===false)await pool.query("DELETE FROM fund_sessions WHERE user_id=$1",[id]);
   await audit(req.user!.id,"COLLECTOR_UPDATED",`Updated collector ${current.rows[0].username}`,"user",String(id));
   return res.json(r.rows[0]);
+});
+router.get("/cash-receivers", requireAuth, ownerOnly, async (_req, res) => {
+  const result = await pool.query("SELECT id,name,username,role,active FROM fund_users WHERE role='CASH_RECEIVER' ORDER BY active DESC,name");
+  res.json(result.rows);
+});
+router.post("/cash-receivers", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const b = req.body;
+  if (!b.name || !b.username || String(b.password ?? "").length < 8) {
+    res.status(400).json({ error: "Name, username and an 8-character password are required" });
+    return;
+  }
+  try {
+    const result = await pool.query(
+      "INSERT INTO fund_users(name,username,password_hash,role) VALUES($1,$2,$3,'CASH_RECEIVER') RETURNING id,name,username,role,active",
+      [b.name, b.username, hashPassword(b.password)],
+    );
+    await audit(req.user!.id, "CASH_RECEIVER_CREATED", `Created cash receiver ${b.username}`, "user", String(result.rows[0].id));
+    res.status(201).json(result.rows[0]);
+  } catch {
+    res.status(409).json({ error: "Username already exists" });
+  }
+});
+router.patch("/cash-receivers/:id", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const b = req.body;
+  const current = await pool.query("SELECT id,name,username,role,active FROM fund_users WHERE id=$1 AND role='CASH_RECEIVER'", [id]);
+  if (!current.rows[0]) {
+    res.status(404).json({ error: "Cash receiver not found" });
+    return;
+  }
+  const result = await pool.query(
+    "UPDATE fund_users SET name=COALESCE($2,name),active=COALESCE($3,active),password_hash=COALESCE($4,password_hash) WHERE id=$1 RETURNING id,name,username,role,active",
+    [id, b.name ?? null, b.active ?? null, b.password ? hashPassword(b.password) : null],
+  );
+  await audit(req.user!.id, "CASH_RECEIVER_UPDATED", `Updated cash receiver ${current.rows[0].username}`, "user", String(id));
+  res.json(result.rows[0]);
 });
 router.get("/audit",requireAuth,ownerOnly,async(_req,res)=>{const r=await pool.query(`SELECT a.id,COALESCE(u.name,'System') actor,a.action,a.detail,a.entity_type AS "entityType",a.entity_id AS "entityId",
   COALESCE(m.public_member_id,m.member_id) AS "memberId",a.cycle_id AS "cycleId",a.related_transaction_id AS "relatedTransactionId",a.reason,a.effective_date::text AS "effectiveDate",

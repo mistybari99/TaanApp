@@ -12,4 +12,5 @@ export type UserRole = typeof UserRole[keyof typeof UserRole];
 export const UserRole = {
   OWNER: 'OWNER',
   COLLECTOR: 'COLLECTOR',
+  CASH_RECEIVER: 'CASH_RECEIVER',
 } as const;

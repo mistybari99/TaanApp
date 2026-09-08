@@ -5,6 +5,7 @@
  * ISLAMIYA Revolving Fund API
  * OpenAPI spec version: 1.0.0
  */
+import type { PaymentReceiptSource } from './paymentReceiptSource';
 
 export interface Payment {
   id: number;
@@ -17,6 +18,8 @@ export interface Payment {
   memberName: string;
   amount: number;
   collectorName: string;
+  receiverName?: string | null;
+  receiptSource?: PaymentReceiptSource;
   verificationStatus: string;
   previousDueApplied?: number;
   currentPeriodApplied?: number;

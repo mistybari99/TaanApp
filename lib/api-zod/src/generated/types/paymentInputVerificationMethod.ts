@@ -12,4 +12,6 @@ export type PaymentInputVerificationMethod = typeof PaymentInputVerificationMeth
 export const PaymentInputVerificationMethod = {
   PIN: 'PIN',
   COLLECTOR_CONFIRMATION: 'COLLECTOR_CONFIRMATION',
+  OWNER_CONFIRMATION: 'OWNER_CONFIRMATION',
+  CASH_RECEIVER_CONFIRMATION: 'CASH_RECEIVER_CONFIRMATION',
 } as const;

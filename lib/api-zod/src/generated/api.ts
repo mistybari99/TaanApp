@@ -24,7 +24,7 @@ export const LoginResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
   "username": zod.string(),
-  "role": zod.enum(['OWNER', 'COLLECTOR']),
+  "role": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
   "active": zod.boolean().optional()
 })
 
@@ -33,7 +33,7 @@ export const GetCurrentUserResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
   "username": zod.string(),
-  "role": zod.enum(['OWNER', 'COLLECTOR']),
+  "role": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
   "active": zod.boolean().optional()
 })
 
@@ -68,7 +68,7 @@ export const InitializeFundResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
   "username": zod.string(),
-  "role": zod.enum(['OWNER', 'COLLECTOR']),
+  "role": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
   "active": zod.boolean().optional()
 })
 
@@ -132,6 +132,8 @@ export const GetDashboardResponse = zod.object({
   "memberName": zod.string(),
   "amount": zod.number(),
   "collectorName": zod.string(),
+  "receiverName": zod.string().nullish(),
+  "receiptSource": zod.enum(['COLLECTOR', 'OWNER_DIRECT', 'CASH_RECEIVER_DIRECT']).optional(),
   "verificationStatus": zod.string(),
   "previousDueApplied": zod.number().optional(),
   "currentPeriodApplied": zod.number().optional(),
@@ -779,6 +781,8 @@ export const GetMemberHistoryResponse = zod.object({
   "memberName": zod.string(),
   "amount": zod.number(),
   "collectorName": zod.string(),
+  "receiverName": zod.string().nullish(),
+  "receiptSource": zod.enum(['COLLECTOR', 'OWNER_DIRECT', 'CASH_RECEIVER_DIRECT']).optional(),
   "verificationStatus": zod.string(),
   "previousDueApplied": zod.number().optional(),
   "currentPeriodApplied": zod.number().optional(),
@@ -837,6 +841,8 @@ export const ListPaymentsResponseItem = zod.object({
   "memberName": zod.string(),
   "amount": zod.number(),
   "collectorName": zod.string(),
+  "receiverName": zod.string().nullish(),
+  "receiptSource": zod.enum(['COLLECTOR', 'OWNER_DIRECT', 'CASH_RECEIVER_DIRECT']).optional(),
   "verificationStatus": zod.string(),
   "previousDueApplied": zod.number().optional(),
   "currentPeriodApplied": zod.number().optional(),
@@ -856,7 +862,7 @@ export const CreatePaymentBody = zod.object({
   "collectionDate": zod.string().optional(),
   "notes": zod.string().optional(),
   "amount": zod.number(),
-  "verificationMethod": zod.enum(['PIN', 'COLLECTOR_CONFIRMATION']),
+  "verificationMethod": zod.enum(['PIN', 'COLLECTOR_CONFIRMATION', 'OWNER_CONFIRMATION', 'CASH_RECEIVER_CONFIRMATION']),
   "verificationCode": zod.string().optional(),
   "confirmDuplicate": zod.boolean(),
   "idempotencyKey": zod.string().min(createPaymentBodyIdempotencyKeyMin).optional()
@@ -873,6 +879,8 @@ export const CreatePaymentResponse = zod.object({
   "memberName": zod.string(),
   "amount": zod.number(),
   "collectorName": zod.string(),
+  "receiverName": zod.string().nullish(),
+  "receiptSource": zod.enum(['COLLECTOR', 'OWNER_DIRECT', 'CASH_RECEIVER_DIRECT']).optional(),
   "verificationStatus": zod.string(),
   "previousDueApplied": zod.number().optional(),
   "currentPeriodApplied": zod.number().optional(),
@@ -900,6 +908,8 @@ export const ReversePaymentResponse = zod.object({
   "memberName": zod.string(),
   "amount": zod.number(),
   "collectorName": zod.string(),
+  "receiverName": zod.string().nullish(),
+  "receiptSource": zod.enum(['COLLECTOR', 'OWNER_DIRECT', 'CASH_RECEIVER_DIRECT']).optional(),
   "verificationStatus": zod.string(),
   "previousDueApplied": zod.number().optional(),
   "currentPeriodApplied": zod.number().optional(),
@@ -936,6 +946,193 @@ export const CreateSettlementResponse = zod.object({
   "amount": zod.number(),
   "collectorName": zod.string(),
   "reference": zod.string(),
+  "createdAt": zod.string()
+})
+
+
+export const ListCashHandoversResponseItem = zod.object({
+  "id": zod.number().int(),
+  "cycleId": zod.number().int(),
+  "fromUserId": zod.number().int(),
+  "fromUserName": zod.string(),
+  "fromRole": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
+  "toUserId": zod.number().int(),
+  "toUserName": zod.string(),
+  "toRole": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
+  "amount": zod.number(),
+  "collectionDate": zod.string(),
+  "receiptStart": zod.string().nullish(),
+  "receiptEnd": zod.string().nullish(),
+  "receiptCount": zod.number().int(),
+  "reference": zod.string(),
+  "note": zod.string(),
+  "status": zod.enum(['SUBMITTED', 'ACCEPTED', 'REJECTED', 'VOID']),
+  "submittedBy": zod.number().int(),
+  "acceptedBy": zod.number().int().nullish(),
+  "acceptedByName": zod.string().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "rejectedBy": zod.number().int().nullish(),
+  "rejectedByName": zod.string().nullish(),
+  "rejectedAt": zod.string().nullish(),
+  "rejectionReason": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+export const ListCashHandoversResponse = zod.array(ListCashHandoversResponseItem)
+
+
+
+export const createCashHandoverBodyAmountExclusiveMin = 0;
+
+export const createCashHandoverBodyReceiptCountMin = 0;
+
+
+export const createCashHandoverBodyIdempotencyKeyMin = 8;
+
+
+
+export const CreateCashHandoverBody = zod.object({
+  "toUserId": zod.number().int().min(1),
+  "amount": zod.number().gt(createCashHandoverBodyAmountExclusiveMin),
+  "collectionDate": zod.string(),
+  "receiptStart": zod.string().optional(),
+  "receiptEnd": zod.string().optional(),
+  "receiptCount": zod.number().int().min(createCashHandoverBodyReceiptCountMin).optional(),
+  "reference": zod.string().min(1),
+  "note": zod.string().optional(),
+  "idempotencyKey": zod.string().min(createCashHandoverBodyIdempotencyKeyMin).optional()
+})
+
+export const CreateCashHandoverResponse = zod.object({
+  "id": zod.number().int(),
+  "cycleId": zod.number().int(),
+  "fromUserId": zod.number().int(),
+  "fromUserName": zod.string(),
+  "fromRole": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
+  "toUserId": zod.number().int(),
+  "toUserName": zod.string(),
+  "toRole": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
+  "amount": zod.number(),
+  "collectionDate": zod.string(),
+  "receiptStart": zod.string().nullish(),
+  "receiptEnd": zod.string().nullish(),
+  "receiptCount": zod.number().int(),
+  "reference": zod.string(),
+  "note": zod.string(),
+  "status": zod.enum(['SUBMITTED', 'ACCEPTED', 'REJECTED', 'VOID']),
+  "submittedBy": zod.number().int(),
+  "acceptedBy": zod.number().int().nullish(),
+  "acceptedByName": zod.string().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "rejectedBy": zod.number().int().nullish(),
+  "rejectedByName": zod.string().nullish(),
+  "rejectedAt": zod.string().nullish(),
+  "rejectionReason": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+
+
+export const ListCashHandoverRecipientsResponseItem = zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "role": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
+  "active": zod.boolean().optional()
+})
+export const ListCashHandoverRecipientsResponse = zod.array(ListCashHandoverRecipientsResponseItem)
+
+
+export const ListCashCustodyBalancesResponseItem = zod.object({
+  "userId": zod.number().int(),
+  "name": zod.string(),
+  "role": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
+  "postedPayments": zod.number(),
+  "acceptedIncoming": zod.number(),
+  "acceptedOutgoing": zod.number(),
+  "availableAmount": zod.number()
+})
+export const ListCashCustodyBalancesResponse = zod.array(ListCashCustodyBalancesResponseItem)
+
+
+export const AcceptCashHandoverParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const acceptCashHandoverBodyCountedAmountMin = 0;
+
+
+
+export const AcceptCashHandoverBody = zod.object({
+  "countedAmount": zod.number().min(acceptCashHandoverBodyCountedAmountMin).optional(),
+  "reason": zod.string().optional()
+})
+
+export const AcceptCashHandoverResponse = zod.object({
+  "id": zod.number().int(),
+  "cycleId": zod.number().int(),
+  "fromUserId": zod.number().int(),
+  "fromUserName": zod.string(),
+  "fromRole": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
+  "toUserId": zod.number().int(),
+  "toUserName": zod.string(),
+  "toRole": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
+  "amount": zod.number(),
+  "collectionDate": zod.string(),
+  "receiptStart": zod.string().nullish(),
+  "receiptEnd": zod.string().nullish(),
+  "receiptCount": zod.number().int(),
+  "reference": zod.string(),
+  "note": zod.string(),
+  "status": zod.enum(['SUBMITTED', 'ACCEPTED', 'REJECTED', 'VOID']),
+  "submittedBy": zod.number().int(),
+  "acceptedBy": zod.number().int().nullish(),
+  "acceptedByName": zod.string().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "rejectedBy": zod.number().int().nullish(),
+  "rejectedByName": zod.string().nullish(),
+  "rejectedAt": zod.string().nullish(),
+  "rejectionReason": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+
+
+export const RejectCashHandoverParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const rejectCashHandoverBodyCountedAmountMin = 0;
+
+
+
+export const RejectCashHandoverBody = zod.object({
+  "countedAmount": zod.number().min(rejectCashHandoverBodyCountedAmountMin).optional(),
+  "reason": zod.string().optional()
+})
+
+export const RejectCashHandoverResponse = zod.object({
+  "id": zod.number().int(),
+  "cycleId": zod.number().int(),
+  "fromUserId": zod.number().int(),
+  "fromUserName": zod.string(),
+  "fromRole": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
+  "toUserId": zod.number().int(),
+  "toUserName": zod.string(),
+  "toRole": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
+  "amount": zod.number(),
+  "collectionDate": zod.string(),
+  "receiptStart": zod.string().nullish(),
+  "receiptEnd": zod.string().nullish(),
+  "receiptCount": zod.number().int(),
+  "reference": zod.string(),
+  "note": zod.string(),
+  "status": zod.enum(['SUBMITTED', 'ACCEPTED', 'REJECTED', 'VOID']),
+  "submittedBy": zod.number().int(),
+  "acceptedBy": zod.number().int().nullish(),
+  "acceptedByName": zod.string().nullish(),
+  "acceptedAt": zod.string().nullish(),
+  "rejectedBy": zod.number().int().nullish(),
+  "rejectedByName": zod.string().nullish(),
+  "rejectedAt": zod.string().nullish(),
+  "rejectionReason": zod.string().nullish(),
   "createdAt": zod.string()
 })
 
@@ -1007,7 +1204,7 @@ export const ListCollectorsResponseItem = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
   "username": zod.string(),
-  "role": zod.enum(['OWNER', 'COLLECTOR']),
+  "role": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
   "active": zod.boolean().optional()
 })
 export const ListCollectorsResponse = zod.array(ListCollectorsResponseItem)
@@ -1031,7 +1228,7 @@ export const CreateCollectorResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
   "username": zod.string(),
-  "role": zod.enum(['OWNER', 'COLLECTOR']),
+  "role": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
   "active": zod.boolean().optional()
 })
 
@@ -1056,7 +1253,65 @@ export const UpdateCollectorResponse = zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
   "username": zod.string(),
-  "role": zod.enum(['OWNER', 'COLLECTOR']),
+  "role": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
+  "active": zod.boolean().optional()
+})
+
+
+export const ListCashReceiversResponseItem = zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "role": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
+  "active": zod.boolean().optional()
+})
+export const ListCashReceiversResponse = zod.array(ListCashReceiversResponseItem)
+
+
+export const createCashReceiverBodyNameMin = 2;
+
+export const createCashReceiverBodyUsernameMin = 3;
+
+export const createCashReceiverBodyPasswordMin = 8;
+
+
+
+export const CreateCashReceiverBody = zod.object({
+  "name": zod.string().min(createCashReceiverBodyNameMin),
+  "username": zod.string().min(createCashReceiverBodyUsernameMin),
+  "password": zod.string().min(createCashReceiverBodyPasswordMin)
+})
+
+export const CreateCashReceiverResponse = zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "role": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
+  "active": zod.boolean().optional()
+})
+
+
+export const UpdateCashReceiverParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const updateCashReceiverBodyNameMin = 2;
+
+export const updateCashReceiverBodyPasswordMin = 8;
+
+
+
+export const UpdateCashReceiverBody = zod.object({
+  "name": zod.string().min(updateCashReceiverBodyNameMin).optional(),
+  "active": zod.boolean().optional(),
+  "password": zod.string().min(updateCashReceiverBodyPasswordMin).optional()
+})
+
+export const UpdateCashReceiverResponse = zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "username": zod.string(),
+  "role": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
   "active": zod.boolean().optional()
 })
 

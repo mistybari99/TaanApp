@@ -60,6 +60,7 @@ export function Router() {
                 <Route path="/collectors" component={CollectorsPage} />
                 <Route path="/payments" component={PaymentsPage} />
                 <Route path="/settlements" component={SettlementsPage} />
+                <Route path="/cash-custody" component={SettlementsPage} />
                 <Route path="/draws" component={DrawsPage} />
                 <Route path="/draw-history" component={DrawHistoryPage} />
                 <Route path="/reports" component={ReportsPage} />

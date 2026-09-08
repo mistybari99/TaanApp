@@ -23,6 +23,12 @@ import type {
   AuditEntry,
   BatchDueEntryInput,
   BatchDueEntryResult,
+  CashCustodyBalance,
+  CashHandover,
+  CashHandoverDecisionInput,
+  CashHandoverInput,
+  CashReceiverInput,
+  CashReceiverUpdate,
   CollectorInput,
   CollectorUpdate,
   CycleMember,
@@ -2148,6 +2154,416 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       return useMutation(getCreateSettlementMutationOptions(options));
     }
 
+export const getListCashHandoversUrl = () => {
+
+
+
+
+  return `/api/cash-handovers`
+}
+
+export const listCashHandovers = async ( options?: Parameters<typeof customFetch>[1]): Promise<CashHandover[]> => {
+
+  return customFetch<CashHandover[]>(getListCashHandoversUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCashHandoversQueryKey = () => {
+    return [
+    `/api/cash-handovers`
+    ] as const;
+    }
+
+
+export const getListCashHandoversQueryOptions = <TData = Awaited<ReturnType<typeof listCashHandovers>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCashHandovers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCashHandoversQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCashHandovers>>> = ({ signal }) => listCashHandovers({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCashHandovers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCashHandoversQueryResult = NonNullable<Awaited<ReturnType<typeof listCashHandovers>>>
+export type ListCashHandoversQueryError = ErrorType<unknown>
+
+
+
+export function useListCashHandovers<TData = Awaited<ReturnType<typeof listCashHandovers>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCashHandovers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCashHandoversQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateCashHandoverUrl = () => {
+
+
+
+
+  return `/api/cash-handovers`
+}
+
+export const createCashHandover = async (cashHandoverInput: CashHandoverInput, options?: Parameters<typeof customFetch>[1]): Promise<CashHandover> => {
+
+  return customFetch<CashHandover>(getCreateCashHandoverUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(cashHandoverInput)
+  }
+);}
+
+
+
+
+
+export const getCreateCashHandoverMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCashHandover>>, TError,{data: BodyType<CashHandoverInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCashHandover>>, TError,{data: BodyType<CashHandoverInput>}, TContext> => {
+
+const mutationKey = ['createCashHandover'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCashHandover>>, {data: BodyType<CashHandoverInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCashHandover(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCashHandoverMutationResult = NonNullable<Awaited<ReturnType<typeof createCashHandover>>>
+    export type CreateCashHandoverMutationBody = BodyType<CashHandoverInput>
+    export type CreateCashHandoverMutationError = ErrorType<unknown>
+
+    export const useCreateCashHandover = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCashHandover>>, TError,{data: BodyType<CashHandoverInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCashHandover>>,
+        TError,
+        {data: BodyType<CashHandoverInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCashHandoverMutationOptions(options));
+    }
+
+export const getListCashHandoverRecipientsUrl = () => {
+
+
+
+
+  return `/api/cash-handover-recipients`
+}
+
+export const listCashHandoverRecipients = async ( options?: Parameters<typeof customFetch>[1]): Promise<User[]> => {
+
+  return customFetch<User[]>(getListCashHandoverRecipientsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCashHandoverRecipientsQueryKey = () => {
+    return [
+    `/api/cash-handover-recipients`
+    ] as const;
+    }
+
+
+export const getListCashHandoverRecipientsQueryOptions = <TData = Awaited<ReturnType<typeof listCashHandoverRecipients>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCashHandoverRecipients>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCashHandoverRecipientsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCashHandoverRecipients>>> = ({ signal }) => listCashHandoverRecipients({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCashHandoverRecipients>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCashHandoverRecipientsQueryResult = NonNullable<Awaited<ReturnType<typeof listCashHandoverRecipients>>>
+export type ListCashHandoverRecipientsQueryError = ErrorType<unknown>
+
+
+
+export function useListCashHandoverRecipients<TData = Awaited<ReturnType<typeof listCashHandoverRecipients>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCashHandoverRecipients>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCashHandoverRecipientsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListCashCustodyBalancesUrl = () => {
+
+
+
+
+  return `/api/cash-custody/balances`
+}
+
+export const listCashCustodyBalances = async ( options?: Parameters<typeof customFetch>[1]): Promise<CashCustodyBalance[]> => {
+
+  return customFetch<CashCustodyBalance[]>(getListCashCustodyBalancesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCashCustodyBalancesQueryKey = () => {
+    return [
+    `/api/cash-custody/balances`
+    ] as const;
+    }
+
+
+export const getListCashCustodyBalancesQueryOptions = <TData = Awaited<ReturnType<typeof listCashCustodyBalances>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCashCustodyBalances>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCashCustodyBalancesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCashCustodyBalances>>> = ({ signal }) => listCashCustodyBalances({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCashCustodyBalances>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCashCustodyBalancesQueryResult = NonNullable<Awaited<ReturnType<typeof listCashCustodyBalances>>>
+export type ListCashCustodyBalancesQueryError = ErrorType<unknown>
+
+
+
+export function useListCashCustodyBalances<TData = Awaited<ReturnType<typeof listCashCustodyBalances>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCashCustodyBalances>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCashCustodyBalancesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAcceptCashHandoverUrl = (id: number,) => {
+
+
+
+
+  return `/api/cash-handovers/${id}/accept`
+}
+
+export const acceptCashHandover = async (id: number,
+    cashHandoverDecisionInput?: CashHandoverDecisionInput, options?: Parameters<typeof customFetch>[1]): Promise<CashHandover> => {
+
+  return customFetch<CashHandover>(getAcceptCashHandoverUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(cashHandoverDecisionInput)
+  }
+);}
+
+
+
+
+
+export const getAcceptCashHandoverMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptCashHandover>>, TError,{id: number;data?: BodyType<CashHandoverDecisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof acceptCashHandover>>, TError,{id: number;data?: BodyType<CashHandoverDecisionInput>}, TContext> => {
+
+const mutationKey = ['acceptCashHandover'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof acceptCashHandover>>, {id: number;data?: BodyType<CashHandoverDecisionInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  acceptCashHandover(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AcceptCashHandoverMutationResult = NonNullable<Awaited<ReturnType<typeof acceptCashHandover>>>
+    export type AcceptCashHandoverMutationBody = BodyType<CashHandoverDecisionInput> | undefined
+    export type AcceptCashHandoverMutationError = ErrorType<unknown>
+
+    export const useAcceptCashHandover = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptCashHandover>>, TError,{id: number;data?: BodyType<CashHandoverDecisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof acceptCashHandover>>,
+        TError,
+        {id: number;data?: BodyType<CashHandoverDecisionInput>},
+        TContext
+      > => {
+      return useMutation(getAcceptCashHandoverMutationOptions(options));
+    }
+
+export const getRejectCashHandoverUrl = (id: number,) => {
+
+
+
+
+  return `/api/cash-handovers/${id}/reject`
+}
+
+export const rejectCashHandover = async (id: number,
+    cashHandoverDecisionInput: CashHandoverDecisionInput, options?: Parameters<typeof customFetch>[1]): Promise<CashHandover> => {
+
+  return customFetch<CashHandover>(getRejectCashHandoverUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(cashHandoverDecisionInput)
+  }
+);}
+
+
+
+
+
+export const getRejectCashHandoverMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectCashHandover>>, TError,{id: number;data: BodyType<CashHandoverDecisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rejectCashHandover>>, TError,{id: number;data: BodyType<CashHandoverDecisionInput>}, TContext> => {
+
+const mutationKey = ['rejectCashHandover'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rejectCashHandover>>, {id: number;data: BodyType<CashHandoverDecisionInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  rejectCashHandover(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RejectCashHandoverMutationResult = NonNullable<Awaited<ReturnType<typeof rejectCashHandover>>>
+    export type RejectCashHandoverMutationBody = BodyType<CashHandoverDecisionInput>
+    export type RejectCashHandoverMutationError = ErrorType<unknown>
+
+    export const useRejectCashHandover = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rejectCashHandover>>, TError,{id: number;data: BodyType<CashHandoverDecisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof rejectCashHandover>>,
+        TError,
+        {id: number;data: BodyType<CashHandoverDecisionInput>},
+        TContext
+      > => {
+      return useMutation(getRejectCashHandoverMutationOptions(options));
+    }
+
 export const getListDrawsUrl = (params?: ListDrawsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -2491,6 +2907,208 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getUpdateCollectorMutationOptions(options));
+    }
+
+export const getListCashReceiversUrl = () => {
+
+
+
+
+  return `/api/cash-receivers`
+}
+
+export const listCashReceivers = async ( options?: Parameters<typeof customFetch>[1]): Promise<User[]> => {
+
+  return customFetch<User[]>(getListCashReceiversUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCashReceiversQueryKey = () => {
+    return [
+    `/api/cash-receivers`
+    ] as const;
+    }
+
+
+export const getListCashReceiversQueryOptions = <TData = Awaited<ReturnType<typeof listCashReceivers>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCashReceivers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCashReceiversQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCashReceivers>>> = ({ signal }) => listCashReceivers({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCashReceivers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCashReceiversQueryResult = NonNullable<Awaited<ReturnType<typeof listCashReceivers>>>
+export type ListCashReceiversQueryError = ErrorType<unknown>
+
+
+
+export function useListCashReceivers<TData = Awaited<ReturnType<typeof listCashReceivers>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCashReceivers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCashReceiversQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateCashReceiverUrl = () => {
+
+
+
+
+  return `/api/cash-receivers`
+}
+
+export const createCashReceiver = async (cashReceiverInput: CashReceiverInput, options?: Parameters<typeof customFetch>[1]): Promise<User> => {
+
+  return customFetch<User>(getCreateCashReceiverUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(cashReceiverInput)
+  }
+);}
+
+
+
+
+
+export const getCreateCashReceiverMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCashReceiver>>, TError,{data: BodyType<CashReceiverInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCashReceiver>>, TError,{data: BodyType<CashReceiverInput>}, TContext> => {
+
+const mutationKey = ['createCashReceiver'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCashReceiver>>, {data: BodyType<CashReceiverInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCashReceiver(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCashReceiverMutationResult = NonNullable<Awaited<ReturnType<typeof createCashReceiver>>>
+    export type CreateCashReceiverMutationBody = BodyType<CashReceiverInput>
+    export type CreateCashReceiverMutationError = ErrorType<unknown>
+
+    export const useCreateCashReceiver = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCashReceiver>>, TError,{data: BodyType<CashReceiverInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCashReceiver>>,
+        TError,
+        {data: BodyType<CashReceiverInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCashReceiverMutationOptions(options));
+    }
+
+export const getUpdateCashReceiverUrl = (id: number,) => {
+
+
+
+
+  return `/api/cash-receivers/${id}`
+}
+
+export const updateCashReceiver = async (id: number,
+    cashReceiverUpdate: CashReceiverUpdate, options?: Parameters<typeof customFetch>[1]): Promise<User> => {
+
+  return customFetch<User>(getUpdateCashReceiverUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(cashReceiverUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateCashReceiverMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCashReceiver>>, TError,{id: number;data: BodyType<CashReceiverUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCashReceiver>>, TError,{id: number;data: BodyType<CashReceiverUpdate>}, TContext> => {
+
+const mutationKey = ['updateCashReceiver'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCashReceiver>>, {id: number;data: BodyType<CashReceiverUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateCashReceiver(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCashReceiverMutationResult = NonNullable<Awaited<ReturnType<typeof updateCashReceiver>>>
+    export type UpdateCashReceiverMutationBody = BodyType<CashReceiverUpdate>
+    export type UpdateCashReceiverMutationError = ErrorType<unknown>
+
+    export const useUpdateCashReceiver = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCashReceiver>>, TError,{id: number;data: BodyType<CashReceiverUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCashReceiver>>,
+        TError,
+        {id: number;data: BodyType<CashReceiverUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateCashReceiverMutationOptions(options));
     }
 
 export const getListAuditUrl = () => {

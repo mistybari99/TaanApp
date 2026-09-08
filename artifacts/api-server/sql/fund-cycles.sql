@@ -297,3 +297,57 @@ CREATE INDEX IF NOT EXISTS fund_cycle_member_share_history_lookup_idx
   ON fund_cycle_member_share_history(cycle_id, member_id, effective_date, created_at);
 CREATE INDEX IF NOT EXISTS fund_due_entries_member_date_idx
   ON fund_due_entries(cycle_id, member_id, due_date, created_at);
+
+-- Cash custody is additive to the legacy collector settlement model.
+-- Existing payments and settlements remain readable and historical.
+ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS receiver_id integer;
+ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS receipt_source text NOT NULL DEFAULT 'COLLECTOR';
+UPDATE fund_payments SET receiver_id = collector_id WHERE receiver_id IS NULL;
+ALTER TABLE fund_payments DROP CONSTRAINT IF EXISTS fund_payments_receipt_source_check;
+ALTER TABLE fund_payments ADD CONSTRAINT fund_payments_receipt_source_check
+  CHECK (receipt_source IN ('COLLECTOR', 'OWNER_DIRECT', 'CASH_RECEIVER_DIRECT')) NOT VALID;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fund_payments_receiver_fkey') THEN
+    ALTER TABLE fund_payments ADD CONSTRAINT fund_payments_receiver_fkey
+      FOREIGN KEY (receiver_id) REFERENCES fund_users(id) ON DELETE RESTRICT NOT VALID;
+  END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS fund_payments_receiver_cycle_idx ON fund_payments(receiver_id, cycle_id, status);
+
+CREATE TABLE IF NOT EXISTS fund_cash_handovers (
+  id serial PRIMARY KEY,
+  cycle_id integer NOT NULL REFERENCES fund_cycles(id) ON DELETE RESTRICT,
+  from_user_id integer NOT NULL REFERENCES fund_users(id) ON DELETE RESTRICT,
+  to_user_id integer NOT NULL REFERENCES fund_users(id) ON DELETE RESTRICT,
+  amount numeric NOT NULL CHECK (amount > 0),
+  collection_date date NOT NULL,
+  receipt_start text,
+  receipt_end text,
+  receipt_count integer NOT NULL DEFAULT 0 CHECK (receipt_count >= 0),
+  reference text NOT NULL,
+  note text NOT NULL DEFAULT '',
+  status text NOT NULL DEFAULT 'SUBMITTED',
+  submitted_by integer NOT NULL REFERENCES fund_users(id) ON DELETE RESTRICT,
+  accepted_by integer REFERENCES fund_users(id) ON DELETE RESTRICT,
+  accepted_at timestamptz,
+  rejected_by integer REFERENCES fund_users(id) ON DELETE RESTRICT,
+  rejected_at timestamptz,
+  rejection_reason text,
+  idempotency_key text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (from_user_id <> to_user_id),
+  CHECK (status IN ('SUBMITTED', 'ACCEPTED', 'REJECTED', 'VOID'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS fund_cash_handovers_from_idempotency_idx
+  ON fund_cash_handovers(from_user_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS fund_cash_handovers_cycle_created_idx
+  ON fund_cash_handovers(cycle_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS fund_cash_handovers_to_status_idx
+  ON fund_cash_handovers(to_user_id, status, created_at DESC);
+
+-- Expand the legacy user role check without rewriting existing Owner/Collector users.
+ALTER TABLE fund_users DROP CONSTRAINT IF EXISTS fund_users_role_check;
+ALTER TABLE fund_users ADD CONSTRAINT fund_users_role_check
+  CHECK (role IN ('OWNER', 'COLLECTOR', 'CASH_RECEIVER'));
