@@ -339,7 +339,10 @@ export const ListCycleMembersResponseItem = zod.object({
   "todayDue": zod.number(),
   "currentPeriodDue": zod.number().optional(),
   "previousDue": zod.number().optional(),
-  "totalDue": zod.number().optional()
+  "totalDue": zod.number().optional(),
+  "drawEntitlementTotal": zod.number().int().optional(),
+  "drawEntitlementUsed": zod.number().int().optional(),
+  "drawEntitlementRemaining": zod.number().int().optional()
 })
 export const ListCycleMembersResponse = zod.array(ListCycleMembersResponseItem)
 
@@ -373,7 +376,10 @@ export const UpsertCycleMemberResponse = zod.object({
   "todayDue": zod.number(),
   "currentPeriodDue": zod.number().optional(),
   "previousDue": zod.number().optional(),
-  "totalDue": zod.number().optional()
+  "totalDue": zod.number().optional(),
+  "drawEntitlementTotal": zod.number().int().optional(),
+  "drawEntitlementUsed": zod.number().int().optional(),
+  "drawEntitlementRemaining": zod.number().int().optional()
 })
 
 
@@ -770,7 +776,10 @@ export const GetMemberHistoryResponse = zod.object({
   "dailyContribution": zod.number(),
   "totalCollected": zod.number(),
   "previousDue": zod.number().optional(),
-  "totalDue": zod.number().optional()
+  "totalDue": zod.number().optional(),
+  "drawEntitlementTotal": zod.number().int().optional(),
+  "drawEntitlementUsed": zod.number().int().optional(),
+  "drawEntitlementRemaining": zod.number().int().optional()
 })),
   "payments": zod.array(zod.object({
   "id": zod.number().int(),
@@ -799,7 +808,8 @@ export const GetMemberHistoryResponse = zod.object({
   "drawDate": zod.string(),
   "winningAmount": zod.number(),
   "status": zod.string(),
-  "notes": zod.string().optional()
+  "notes": zod.string().optional(),
+  "entitlementNumber": zod.number().int().nullish()
 })),
   "transfers": zod.array(zod.object({
   "id": zod.number().int(),
@@ -1183,6 +1193,8 @@ export const ListDrawsResponseItem = zod.object({
   "createdAt": zod.string().optional(),
   "tanPeriodId": zod.number().int().nullish(),
   "drawSlot": zod.number().int().nullish(),
+  "entitlementId": zod.number().int().nullish(),
+  "entitlementNumber": zod.number().int().nullish(),
   "payoutId": zod.number().int().nullish(),
   "payoutPayerId": zod.number().int().nullish(),
   "payoutPayerName": zod.string().nullish(),
@@ -1231,6 +1243,8 @@ export const CreateDrawResponse = zod.object({
   "createdAt": zod.string().optional(),
   "tanPeriodId": zod.number().int().nullish(),
   "drawSlot": zod.number().int().nullish(),
+  "entitlementId": zod.number().int().nullish(),
+  "entitlementNumber": zod.number().int().nullish(),
   "payoutId": zod.number().int().nullish(),
   "payoutPayerId": zod.number().int().nullish(),
   "payoutPayerName": zod.string().nullish(),
@@ -1282,6 +1296,8 @@ export const CreateDrawDisbursementResponse = zod.object({
   "createdAt": zod.string().optional(),
   "tanPeriodId": zod.number().int().nullish(),
   "drawSlot": zod.number().int().nullish(),
+  "entitlementId": zod.number().int().nullish(),
+  "entitlementNumber": zod.number().int().nullish(),
   "payoutId": zod.number().int().nullish(),
   "payoutPayerId": zod.number().int().nullish(),
   "payoutPayerName": zod.string().nullish(),
@@ -1320,6 +1336,8 @@ export const ReverseDrawDisbursementResponse = zod.object({
   "createdAt": zod.string().optional(),
   "tanPeriodId": zod.number().int().nullish(),
   "drawSlot": zod.number().int().nullish(),
+  "entitlementId": zod.number().int().nullish(),
+  "entitlementNumber": zod.number().int().nullish(),
   "payoutId": zod.number().int().nullish(),
   "payoutPayerId": zod.number().int().nullish(),
   "payoutPayerName": zod.string().nullish(),

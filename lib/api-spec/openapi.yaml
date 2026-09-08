@@ -525,6 +525,9 @@ components:
         currentPeriodDue: { type: number }
         previousDue: { type: number }
         totalDue: { type: number }
+        drawEntitlementTotal: { type: integer }
+        drawEntitlementUsed: { type: integer }
+        drawEntitlementRemaining: { type: integer }
     CycleMemberInput:
       type: object
       required: [memberId, shares]
@@ -656,6 +659,8 @@ components:
         createdAt: { type: string }
         tanPeriodId: { type: integer, nullable: true }
         drawSlot: { type: integer, nullable: true }
+        entitlementId: { type: integer, nullable: true }
+        entitlementNumber: { type: integer, nullable: true }
         payoutId: { type: integer, nullable: true }
         payoutPayerId: { type: integer, nullable: true }
         payoutPayerName: { type: string, nullable: true }
@@ -770,6 +775,9 @@ components:
         totalCollected: { type: number }
         previousDue: { type: number }
         totalDue: { type: number }
+        drawEntitlementTotal: { type: integer }
+        drawEntitlementUsed: { type: integer }
+        drawEntitlementRemaining: { type: integer }
     MemberDrawHistory:
       type: object
       required: [id, cycleId, cycleNumber, drawNumber, drawDate, winningAmount, status]
@@ -782,6 +790,7 @@ components:
         winningAmount: { type: number }
         status: { type: string }
         notes: { type: string }
+        entitlementNumber: { type: integer, nullable: true }
     MemberInput:
       type: object
       required: [name, mobile, shares, dailyAmount, joiningDate, status]

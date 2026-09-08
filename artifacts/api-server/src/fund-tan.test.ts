@@ -116,6 +116,13 @@ test("TAN schedule preserves 108-share math and protects legacy financial writes
        VALUES($1,$2,4,108,27,100,10800,10800,2700,$3) RETURNING id`,
       [cycleId, startDate, ownerId],
     );
+    for (const memberId of memberIds) {
+      await client.query(
+        `INSERT INTO fund_tan_member_draw_entitlements(tan_config_id,cycle_id,member_id,allocated_entitlements)
+         VALUES($1,$2,$3,27)`,
+        [tanConfig.rows[0].id, cycleId, memberId],
+      );
+    }
     for (let index = 0; index < 27; index += 1) {
       const periodStart = addDays(startDate, index * 7);
       const periodEnd = addDays(periodStart, 6);
@@ -178,9 +185,35 @@ test("TAN schedule preserves 108-share math and protects legacy financial writes
     const period = await client.query("SELECT id,draw_date FROM fund_tan_periods WHERE tan_config_id=(SELECT id FROM fund_tan_configs WHERE cycle_id=$1) ORDER BY sequence_no LIMIT 1", [cycleId]);
     const drawDate = period.rows[0].draw_date;
     await client.query(
-      `INSERT INTO fund_draws(cycle_id,draw_number,draw_date,winner_member_id,winning_amount,status,notes,tan_period_id,draw_slot)
-       VALUES($1,1,$2,$3,2700,'RECORDED',$4,$5,1)`,
-      [cycleId, drawDate, memberIds[0], prefix, period.rows[0].id],
+      `INSERT INTO fund_draws(cycle_id,draw_number,draw_date,winner_member_id,winning_amount,status,notes,tan_period_id,draw_slot,entitlement_id,entitlement_number)
+       VALUES($1,1,$2,$3,2700,'RECORDED',$4,$5,1,
+         (SELECT id FROM fund_tan_member_draw_entitlements WHERE tan_config_id=$6 AND member_id=$3),1)`,
+      [cycleId, drawDate, memberIds[0], prefix, period.rows[0].id, tanConfig.rows[0].id],
+    );
+    await client.query(
+      `UPDATE fund_tan_member_draw_entitlements
+       SET consumed_entitlements=1,updated_at=now()
+       WHERE tan_config_id=$1 AND member_id=$2`,
+      [tanConfig.rows[0].id, memberIds[0]],
+    );
+    const memberResponse = await fetch(`${baseUrl}/api/cycles/${cycleId}/members`, {
+      headers: { cookie: `irf_session=${token}` },
+    });
+    assert.equal(memberResponse.status, 200);
+    const memberRows = await memberResponse.json() as Array<{
+      memberId: number;
+      drawEntitlementTotal: number;
+      drawEntitlementUsed: number;
+      drawEntitlementRemaining: number;
+    }>;
+    const firstMember = memberRows.find((row) => row.memberId === memberIds[0]);
+    assert.deepEqual(
+      {
+        total: firstMember?.drawEntitlementTotal,
+        used: firstMember?.drawEntitlementUsed,
+        remaining: firstMember?.drawEntitlementRemaining,
+      },
+      { total: 27, used: 1, remaining: 26 },
     );
     await assert.rejects(
       client.query(
@@ -196,6 +229,7 @@ test("TAN schedule preserves 108-share math and protects legacy financial writes
     client.release();
     if (cycleId) {
       await pool.query("DELETE FROM fund_draws WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_tan_member_draw_entitlements WHERE cycle_id=$1", [cycleId]);
       await pool.query("DELETE FROM fund_tan_periods WHERE cycle_id=$1", [cycleId]);
       await pool.query("DELETE FROM fund_tan_configs WHERE cycle_id=$1", [cycleId]);
       await pool.query("DELETE FROM fund_cycle_members WHERE cycle_id=$1", [cycleId]);
@@ -331,6 +365,7 @@ test("TAN rollover carries closed-period debt and reversal restores it", async (
     client.release();
     if (cycleId) {
       await pool.query("DELETE FROM fund_payments WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_tan_member_draw_entitlements WHERE cycle_id=$1", [cycleId]);
       await pool.query("DELETE FROM fund_tan_period_member_obligations WHERE cycle_id=$1", [cycleId]);
       await pool.query("DELETE FROM fund_tan_periods WHERE cycle_id=$1", [cycleId]);
       await pool.query("DELETE FROM fund_tan_configs WHERE cycle_id=$1", [cycleId]);

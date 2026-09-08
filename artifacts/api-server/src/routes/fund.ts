@@ -311,6 +311,7 @@ const drawSelect = `
     COALESCE(m.public_member_id,m.member_id) AS "winnerMemberCode",m.name AS "winnerName",
     d.winning_amount::float AS "winningAmount",d.status,d.notes,d.created_at AS "createdAt",
     d.tan_period_id AS "tanPeriodId",d.draw_slot AS "drawSlot",
+    d.entitlement_id AS "entitlementId",d.entitlement_number AS "entitlementNumber",
     pd.id AS "payoutId",pd.payer_user_id AS "payoutPayerId",pu.name AS "payoutPayerName",
     pd.amount::float AS "payoutAmount",pd.payout_date::text AS "payoutDate",pd.reference AS "payoutReference",
     pd.note AS "payoutNote",pd.status AS "payoutStatus",pd.created_at AS "payoutCreatedAt",
@@ -746,6 +747,23 @@ router.get("/members/:id/history", requireAuth, async (req: AuthedRequest, res) 
   const [cycles, payments, draws, transfers] = await Promise.all([
     pool.query(`SELECT c.id AS "cycleId",c.cycle_number AS "cycleNumber",c.name,c.start_date::text AS "startDate",c.end_date::text AS "endDate",
       c.status,cm.shares,cm.daily_contribution::float AS "dailyContribution",
+      COALESCE((
+        SELECT e.allocated_entitlements
+        FROM fund_tan_member_draw_entitlements e
+        JOIN fund_tan_configs cfg ON cfg.id=e.tan_config_id
+        WHERE e.cycle_id=c.id AND e.member_id=cm.member_id
+        ORDER BY cfg.id DESC LIMIT 1
+      ),cm.shares)::int AS "drawEntitlementTotal",
+      COALESCE((
+        SELECT e.consumed_entitlements
+        FROM fund_tan_member_draw_entitlements e
+        JOIN fund_tan_configs cfg ON cfg.id=e.tan_config_id
+        WHERE e.cycle_id=c.id AND e.member_id=cm.member_id
+        ORDER BY cfg.id DESC LIMIT 1
+      ),(
+        SELECT COUNT(*) FROM fund_draws d
+        WHERE d.cycle_id=c.id AND d.winner_member_id=cm.member_id AND d.status <> 'VOID'
+      ))::int AS "drawEntitlementUsed",
      COALESCE(SUM(p.amount) FILTER(WHERE p.status='POSTED'),0)::float AS "totalCollected",
      GREATEST(COALESCE((SELECT SUM(de.amount) FROM fund_due_entries de WHERE de.cycle_id=c.id AND de.member_id=cm.member_id),0)
        - COALESCE((SELECT SUM(pp.previous_due_applied) FROM fund_payments pp WHERE pp.cycle_id=c.id AND pp.member_id=cm.member_id AND pp.status='POSTED'),0),0)::float AS "previousDue"
@@ -758,9 +776,10 @@ router.get("/members/:id/history", requireAuth, async (req: AuthedRequest, res) 
        FROM fund_payments p LEFT JOIN fund_users u ON u.id=p.collector_id
        LEFT JOIN fund_users ru ON ru.id=COALESCE(p.receiver_id,p.collector_id)
        WHERE p.member_id=$1 ORDER BY p.created_at DESC LIMIT 500`, [id]),
-    pool.query(`SELECT d.id,d.cycle_id AS "cycleId",c.cycle_number AS "cycleNumber",d.draw_number AS "drawNumber",
-      d.draw_date::text AS "drawDate",d.winning_amount::float AS "winningAmount",d.status,d.notes
-      FROM fund_draws d JOIN fund_cycles c ON c.id=d.cycle_id WHERE d.winner_member_id=$1 ORDER BY d.draw_date DESC`, [id]),
+      pool.query(`SELECT d.id,d.cycle_id AS "cycleId",c.cycle_number AS "cycleNumber",d.draw_number AS "drawNumber",
+       d.draw_date::text AS "drawDate",d.winning_amount::float AS "winningAmount",d.status,d.notes,
+       d.entitlement_number AS "entitlementNumber"
+       FROM fund_draws d JOIN fund_cycles c ON c.id=d.cycle_id WHERE d.winner_member_id=$1 ORDER BY d.draw_date DESC`, [id]),
      req.user?.role === "OWNER"
        ? pool.query(`${transferSelect} WHERE t.from_member_id=$1 OR t.to_member_id=$1 ORDER BY t.transfer_date DESC,t.created_at DESC`, [id])
        : pool.query(`${collectorTransferSelect} WHERE (t.from_member_id=$1 OR t.to_member_id=$1) AND (fm.assigned_collector_id=$2 OR fm.assigned_collector_id IS NULL OR tm.assigned_collector_id=$2 OR tm.assigned_collector_id IS NULL) ORDER BY t.transfer_date DESC,t.created_at DESC`, [id, req.user!.id]),
@@ -1029,6 +1048,14 @@ router.post("/cycles/:id/tan/lock", requireAuth, ownerOnly, async (req: AuthedRe
       "SELECT member_id AS \"memberId\",shares FROM fund_cycle_members WHERE cycle_id=$1 ORDER BY member_id",
       [cycleId],
     );
+    for (const member of memberSnapshots.rows) {
+      await client.query(
+        `INSERT INTO fund_tan_member_draw_entitlements(tan_config_id,cycle_id,member_id,allocated_entitlements)
+         VALUES($1,$2,$3,$4)
+         ON CONFLICT(tan_config_id,member_id) DO NOTHING`,
+        [tanConfigId, cycleId, member.memberId, member.shares],
+      );
+    }
     for (let index = 0; index < totalDrawDates; index += 1) {
       const periodStart = addDays(tanStartDate, index * 7);
       const periodEnd = addDays(periodStart, 6);
@@ -1071,8 +1098,12 @@ router.get("/cycles/:id/members", requireAuth, async (req: AuthedRequest, res) =
   const params: unknown[] = [Number(req.params.id)];
   let access = "";
   if (req.user?.role === "COLLECTOR") { params.push(req.user.id); access = " AND (m.assigned_collector_id=$2 OR m.assigned_collector_id IS NULL)"; }
+  const entitlementConfigParam = params.push(Number(tan?.tanConfigId ?? 0));
   const result = await pool.query(`SELECT cm.id,cm.cycle_id AS "cycleId",m.id AS "memberId",COALESCE(m.public_member_id,m.member_id) AS "memberCode",m.name,m.mobile,m.business_name AS "businessName",
     m.status,cm.shares,cm.daily_contribution::float AS "dailyContribution",
+     COALESCE((SELECT e.allocated_entitlements FROM fund_tan_member_draw_entitlements e WHERE e.tan_config_id=$${entitlementConfigParam} AND e.member_id=cm.member_id),cm.shares)::int AS "drawEntitlementTotal",
+     COALESCE((SELECT e.consumed_entitlements FROM fund_tan_member_draw_entitlements e WHERE e.tan_config_id=$${entitlementConfigParam} AND e.member_id=cm.member_id),
+       (SELECT COUNT(*) FROM fund_draws d WHERE d.cycle_id=cm.cycle_id AND d.winner_member_id=cm.member_id AND d.status <> 'VOID'))::int AS "drawEntitlementUsed",
     COALESCE(SUM(p.amount) FILTER(WHERE p.status='POSTED'),0)::float AS "totalCollected",
      CASE WHEN c.status='ACTIVE' AND c.tracking_start_date IS NOT NULL AND '${todayIso()}'::date >= c.tracking_start_date
       THEN GREATEST(cm.daily_contribution-COALESCE(SUM(p.amount) FILTER(WHERE p.collection_date='${todayIso()}'::date AND p.status='POSTED'),0),0)
@@ -1087,7 +1118,18 @@ router.get("/cycles/:id/members", requireAuth, async (req: AuthedRequest, res) =
     const previousDue = tan ? money(tanMemberDue?.previousDue) : money(member.previousDue);
     const currentPeriodDue = tan ? money(tanMemberDue?.currentPeriodDue) : 0;
     const todayDue = tan ? currentPeriodDue : money(member.todayDue);
-    return { ...member, previousDue, currentPeriodDue, todayDue, totalDue: todayDue + previousDue };
+      const drawEntitlementTotal = Number(member.drawEntitlementTotal ?? member.shares);
+      const drawEntitlementUsed = Number(member.drawEntitlementUsed ?? 0);
+      return {
+        ...member,
+        drawEntitlementTotal,
+        drawEntitlementUsed,
+        drawEntitlementRemaining: Math.max(0, drawEntitlementTotal - drawEntitlementUsed),
+        previousDue,
+        currentPeriodDue,
+        todayDue,
+        totalDue: todayDue + previousDue,
+      };
   }));
 });
 router.post("/cycles/:id/members", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
@@ -1532,6 +1574,38 @@ router.post("/share-transfers", requireAuth, ownerOnly, async (req: AuthedReques
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "Transfer quantity cannot exceed the source member's available shares", currentShares: sourceShares });
     }
+    let sourceRemainingEntitlements = sourceShares;
+    if (tan) {
+      await client.query(
+        `INSERT INTO fund_tan_member_draw_entitlements(tan_config_id,cycle_id,member_id,allocated_entitlements)
+         VALUES($1,$2,$3,$4)
+         ON CONFLICT(tan_config_id,member_id) DO NOTHING`,
+        [tan.tanConfigId, cycleId, fromMemberId, sourceShares],
+      );
+      await client.query(
+        `INSERT INTO fund_tan_member_draw_entitlements(tan_config_id,cycle_id,member_id,allocated_entitlements)
+         VALUES($1,$2,$3,0)
+         ON CONFLICT(tan_config_id,member_id) DO NOTHING`,
+        [tan.tanConfigId, cycleId, toMemberId],
+      );
+      const entitlementRows = await client.query(
+        `SELECT member_id AS "memberId",allocated_entitlements AS "allocatedEntitlements",consumed_entitlements AS "consumedEntitlements"
+         FROM fund_tan_member_draw_entitlements
+         WHERE tan_config_id=$1 AND member_id IN ($2,$3)
+         FOR UPDATE`,
+        [tan.tanConfigId, fromMemberId, toMemberId],
+      );
+      const sourceEntitlement = entitlementRows.rows.find((row) => Number(row.memberId) === fromMemberId);
+      sourceRemainingEntitlements = Number(sourceEntitlement?.allocatedEntitlements ?? sourceShares)
+        - Number(sourceEntitlement?.consumedEntitlements ?? 0);
+      if (quantity > sourceRemainingEntitlements) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          error: "Transfer quantity cannot exceed the source member's remaining draw entitlements",
+          remainingDrawEntitlements: sourceRemainingEntitlements,
+        });
+      }
+    }
     const winner = await client.query(
       "SELECT EXISTS(SELECT 1 FROM fund_draws WHERE cycle_id=$1 AND winner_member_id=$2 AND status <> 'VOID') AS is_winner",
       [cycleId, fromMemberId],
@@ -1577,6 +1651,20 @@ router.post("/share-transfers", requireAuth, ownerOnly, async (req: AuthedReques
          daily_contribution=(fund_cycle_members.shares+EXCLUDED.shares)*$4::numeric`,
       [cycleId,toMemberId,quantity,money(cycle.rows[0].daily_per_share)],
     );
+    if (tan) {
+      await client.query(
+        `UPDATE fund_tan_member_draw_entitlements
+         SET allocated_entitlements=allocated_entitlements-$3::int,updated_at=now()
+         WHERE tan_config_id=$1 AND member_id=$2`,
+        [tan.tanConfigId, fromMemberId, quantity],
+      );
+      await client.query(
+        `UPDATE fund_tan_member_draw_entitlements
+         SET allocated_entitlements=allocated_entitlements+$3::int,updated_at=now()
+         WHERE tan_config_id=$1 AND member_id=$2`,
+        [tan.tanConfigId, toMemberId, quantity],
+      );
+    }
     await client.query(
       `INSERT INTO fund_cycle_member_share_history(cycle_id,member_id,previous_shares,new_shares,effective_date,reason,related_transfer_id,changed_by)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8),($1,$9,$10,$11,$5,$12,$7,$8)`,
@@ -1966,6 +2054,8 @@ router.post("/draws", requireAuth, ownerOnly, async (req: AuthedRequest, res) =>
     const tan = await tanConfigForCycle(client, cycleId, true);
     let tanPeriodId: number | null = null;
     let drawSlot = requestedDrawSlot;
+    let entitlementId: number | null = null;
+    let entitlementNumber: number | null = null;
     if (tan) {
       const tanPeriod = await tanPeriodForDate(client, cycleId, drawDate, true);
       if (!tanPeriod || !tanPeriodIsLive(tanPeriod) || drawDate !== todayIso() || !isFriday(drawDate)) {
@@ -1995,12 +2085,52 @@ router.post("/draws", requireAuth, ownerOnly, async (req: AuthedRequest, res) =>
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "Winner must participate in the selected cycle" });
     }
+    if (tan && status === "RECORDED") {
+      await client.query(
+        `INSERT INTO fund_tan_member_draw_entitlements(tan_config_id,cycle_id,member_id,allocated_entitlements)
+         SELECT $1,cm.cycle_id,cm.member_id,cm.shares
+         FROM fund_cycle_members cm
+         WHERE cm.cycle_id=$2 AND cm.member_id=$3
+         ON CONFLICT(tan_config_id,member_id) DO NOTHING`,
+        [tan.tanConfigId, cycleId, winnerMemberId],
+      );
+      const entitlement = await client.query(
+        `SELECT id,allocated_entitlements AS "allocatedEntitlements",consumed_entitlements AS "consumedEntitlements"
+         FROM fund_tan_member_draw_entitlements
+         WHERE tan_config_id=$1 AND member_id=$2
+         FOR UPDATE`,
+        [tan.tanConfigId, winnerMemberId],
+      );
+      if (!entitlement.rows[0]) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "Draw entitlement ledger is not initialized for this member" });
+      }
+      const allocated = Number(entitlement.rows[0].allocatedEntitlements);
+      const consumed = Number(entitlement.rows[0].consumedEntitlements);
+      if (consumed >= allocated) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          error: "This member has used all draw entitlements for the current TAN",
+          totalDrawEntitlements: allocated,
+          usedDrawEntitlements: consumed,
+          remainingDrawEntitlements: 0,
+        });
+      }
+      entitlementId = Number(entitlement.rows[0].id);
+      entitlementNumber = consumed + 1;
+    }
     const next = await client.query("SELECT COALESCE(MAX(draw_number),0)+1 AS number FROM fund_draws WHERE cycle_id=$1", [cycleId]);
-    const result = await client.query(`INSERT INTO fund_draws(cycle_id,draw_number,draw_date,winner_member_id,winning_amount,status,notes,idempotency_key,tan_period_id,draw_slot)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,cycle_id AS "cycleId",draw_number AS "drawNumber",draw_date::text AS "drawDate",
+    const result = await client.query(`INSERT INTO fund_draws(cycle_id,draw_number,draw_date,winner_member_id,winning_amount,status,notes,idempotency_key,tan_period_id,draw_slot,entitlement_id,entitlement_number)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id,cycle_id AS "cycleId",draw_number AS "drawNumber",draw_date::text AS "drawDate",
       winner_member_id AS "winnerMemberId",winning_amount::float AS "winningAmount",status,notes,created_at AS "createdAt",
-      tan_period_id AS "tanPeriodId",draw_slot AS "drawSlot"`,
-      [cycleId,Number(next.rows[0].number),drawDate,winnerMemberId,Number(b.winningAmount),status,b.notes ?? "",idempotencyKey,tanPeriodId,drawSlot]);
+      tan_period_id AS "tanPeriodId",draw_slot AS "drawSlot",entitlement_id AS "entitlementId",entitlement_number AS "entitlementNumber"`,
+      [cycleId,Number(next.rows[0].number),drawDate,winnerMemberId,Number(b.winningAmount),status,b.notes ?? "",idempotencyKey,tanPeriodId,drawSlot,entitlementId,entitlementNumber]);
+    if (entitlementId) {
+      await client.query(
+        "UPDATE fund_tan_member_draw_entitlements SET consumed_entitlements=consumed_entitlements+1,updated_at=now() WHERE id=$1",
+        [entitlementId],
+      );
+    }
     if (tanPeriodId) {
       const tanPeriod = await client.query("SELECT tan_config_id,sequence_no FROM fund_tan_periods WHERE id=$1 FOR UPDATE", [tanPeriodId]);
       const count = await client.query("SELECT COUNT(*)::int AS count FROM fund_draws WHERE tan_period_id=$1 AND status='RECORDED'", [tanPeriodId]);

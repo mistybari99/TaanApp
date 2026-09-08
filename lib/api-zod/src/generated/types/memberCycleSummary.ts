@@ -18,4 +18,7 @@ export interface MemberCycleSummary {
   totalCollected: number;
   previousDue?: number;
   totalDue?: number;
+  drawEntitlementTotal?: number;
+  drawEntitlementUsed?: number;
+  drawEntitlementRemaining?: number;
 }

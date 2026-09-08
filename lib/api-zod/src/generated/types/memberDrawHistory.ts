@@ -15,4 +15,5 @@ export interface MemberDrawHistory {
   winningAmount: number;
   status: string;
   notes?: string;
+  entitlementNumber?: number | null;
 }

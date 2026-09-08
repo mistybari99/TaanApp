@@ -23,6 +23,8 @@ export interface Draw {
   createdAt?: string;
   tanPeriodId?: number | null;
   drawSlot?: number | null;
+  entitlementId?: number | null;
+  entitlementNumber?: number | null;
   payoutId?: number | null;
   payoutPayerId?: number | null;
   payoutPayerName?: string | null;

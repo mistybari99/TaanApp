@@ -134,6 +134,33 @@ CREATE TABLE IF NOT EXISTS fund_tan_period_member_obligations (
   UNIQUE(tan_period_id, member_id)
 );
 
+-- One draw right is created for each share in a locked TAN. Draw wins consume
+-- rights without reducing the member's actual share balance.
+CREATE TABLE IF NOT EXISTS fund_tan_member_draw_entitlements (
+  id serial PRIMARY KEY,
+  tan_config_id integer NOT NULL REFERENCES fund_tan_configs(id) ON DELETE RESTRICT,
+  cycle_id integer NOT NULL REFERENCES fund_cycles(id) ON DELETE RESTRICT,
+  member_id integer NOT NULL REFERENCES fund_members(id) ON DELETE RESTRICT,
+  allocated_entitlements integer NOT NULL CHECK (allocated_entitlements >= 0),
+  consumed_entitlements integer NOT NULL DEFAULT 0 CHECK (consumed_entitlements >= 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(tan_config_id, member_id),
+  CHECK (consumed_entitlements <= allocated_entitlements)
+);
+
+ALTER TABLE fund_draws ADD COLUMN IF NOT EXISTS entitlement_id integer;
+ALTER TABLE fund_draws ADD COLUMN IF NOT EXISTS entitlement_number integer;
+CREATE INDEX IF NOT EXISTS fund_tan_member_draw_entitlements_member_idx
+  ON fund_tan_member_draw_entitlements(cycle_id, member_id);
+CREATE INDEX IF NOT EXISTS fund_draws_entitlement_idx ON fund_draws(entitlement_id);
+
+INSERT INTO fund_tan_member_draw_entitlements(tan_config_id,cycle_id,member_id,allocated_entitlements)
+SELECT cfg.id,cfg.cycle_id,cm.member_id,cm.shares
+FROM fund_tan_configs cfg
+JOIN fund_cycle_members cm ON cm.cycle_id=cfg.cycle_id
+ON CONFLICT(tan_config_id,member_id) DO NOTHING;
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fund_tan_periods_start_saturday_check') THEN

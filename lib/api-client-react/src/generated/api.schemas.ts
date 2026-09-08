@@ -219,6 +219,9 @@ export interface CycleMember {
   currentPeriodDue?: number;
   previousDue?: number;
   totalDue?: number;
+  drawEntitlementTotal?: number;
+  drawEntitlementUsed?: number;
+  drawEntitlementRemaining?: number;
 }
 
 export interface CycleMemberInput {
@@ -365,6 +368,8 @@ export interface Draw {
   createdAt?: string;
   tanPeriodId?: number | null;
   drawSlot?: number | null;
+  entitlementId?: number | null;
+  entitlementNumber?: number | null;
   payoutId?: number | null;
   payoutPayerId?: number | null;
   payoutPayerName?: string | null;
@@ -495,6 +500,9 @@ export interface MemberCycleSummary {
   totalCollected: number;
   previousDue?: number;
   totalDue?: number;
+  drawEntitlementTotal?: number;
+  drawEntitlementUsed?: number;
+  drawEntitlementRemaining?: number;
 }
 
 export type PaymentReceiptSource = typeof PaymentReceiptSource[keyof typeof PaymentReceiptSource];
@@ -535,6 +543,7 @@ export interface MemberDrawHistory {
   winningAmount: number;
   status: string;
   notes?: string;
+  entitlementNumber?: number | null;
 }
 
 export interface MemberHistory {

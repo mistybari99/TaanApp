@@ -21,4 +21,7 @@ export interface CycleMember {
   currentPeriodDue?: number;
   previousDue?: number;
   totalDue?: number;
+  drawEntitlementTotal?: number;
+  drawEntitlementUsed?: number;
+  drawEntitlementRemaining?: number;
 }

@@ -1,6 +1,7 @@
 - [Fund schema migrations](fund-schema.md) — legacy fund tables are raw-SQL managed; keep new financial structures additive and backward-compatible.
 - [Share transfer accounting](transfer-logic.md) — transfer value follows shares across repeated moves; winner overrides require explicit Owner auditing.
 - [Financial safety safeguards](financial-safety.md) — financial writes and audit rows commit atomically; reversed payments must reopen allocated due.
+- [Draw entitlement ledger](draw-entitlements.md) — each TAN share grants a separate draw right; wins consume rights without reducing actual shares.
 - [Member identity migration](member-identity.md) — public IRF IDs are additive and stable; legacy IDs remain untouched while every user-facing surface uses the public ID.
 - [Fund business date](fund-business-date.md) — collection deadlines and Friday/Saturday period state use Asia/Dhaka business dates, not UTC.
 - [Member selection modes](member-selection.md) — batch Previous Due uses atomic multi-select; payments, draws, transfers, and history remain single-member actions.
