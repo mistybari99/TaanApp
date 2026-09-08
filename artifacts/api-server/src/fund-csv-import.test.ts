@@ -26,6 +26,8 @@ test("CSV import accepts missing mobile while preserving member and validation s
   let duplicateMobileId = 0;
   let ambiguousFirstId = 0;
   let ambiguousSecondId = 0;
+  let cycleId = 0;
+  let ownsCycle = false;
   let baseUrl = "";
 
   try {
@@ -67,9 +69,17 @@ test("CSV import accepts missing mobile while preserving member and validation s
     ambiguousSecondId = ambiguousSecond.rows[0].id;
     await client.query("COMMIT");
 
-    const activeCycle = await pool.query("SELECT id FROM fund_cycles WHERE status='ACTIVE' ORDER BY cycle_number LIMIT 1");
-    assert.ok(activeCycle.rows[0], "Cycle #01 must be available for the synthetic import test");
-    const cycleId = Number(activeCycle.rows[0].id);
+    let activeCycle = await pool.query("SELECT id FROM fund_cycles WHERE status='ACTIVE' ORDER BY cycle_number LIMIT 1");
+    if (!activeCycle.rows[0]) {
+      activeCycle = await pool.query(
+        `INSERT INTO fund_cycles(cycle_number,name,start_date,status,notes)
+         VALUES((SELECT COALESCE(MAX(cycle_number),0)+1 FROM fund_cycles),$1,CURRENT_DATE,'ACTIVE',$2)
+         RETURNING id`,
+        [`${prefix} import cycle`, prefix],
+      );
+      ownsCycle = true;
+    }
+    cycleId = Number(activeCycle.rows[0].id);
 
     server = app.listen(0);
     await new Promise<void>((resolve) => server?.once("listening", () => resolve()));
@@ -93,6 +103,15 @@ test("CSV import accepts missing mobile while preserving member and validation s
     assert.equal(newPreview.previewRows[0].mobileStatus, "missing");
     assert.equal(newPreview.previewRows[0].existingMember, null);
 
+    const reviewRequiredResponse = await request({
+      dryRun: false,
+      cycleId,
+      rows: newMemberRows,
+      previewToken: newPreview.previewToken,
+    });
+    assert.equal(reviewRequiredResponse.status, 409);
+    assert.match((await reviewRequiredResponse.json() as { error: string }).error, /explicitly approve/);
+
     const newCommitResponse = await request({
       dryRun: false,
       cycleId,
@@ -102,6 +121,34 @@ test("CSV import accepts missing mobile while preserving member and validation s
     });
     assert.equal(newCommitResponse.status, 200);
     assert.equal((await newCommitResponse.json() as { imported: number }).imported, 1);
+
+    const raceRows = [
+      { name: `${prefix} race one`, shares: 1 },
+      { name: `${prefix} race two`, shares: 1 },
+    ];
+    const racePreviewResponse = await request({ dryRun: true, cycleId, rows: raceRows });
+    assert.equal(racePreviewResponse.status, 200);
+    const racePreview = await racePreviewResponse.json() as ImportPreview;
+    assert.deepEqual(racePreview.errors, []);
+    await pool.query(
+      `INSERT INTO fund_due_entries(cycle_id,member_id,amount,due_date,reason,created_by)
+       VALUES($1,$2,1,CURRENT_DATE,$3,$4)`,
+      [cycleId, missingMobileId, `${prefix} import race`, ownerId],
+    );
+    const raceCommitResponse = await request({
+      dryRun: false,
+      cycleId,
+      rows: raceRows,
+      confirmImport: true,
+      previewToken: racePreview.previewToken,
+    });
+    assert.equal(raceCommitResponse.status, 400);
+    assert.equal((await raceCommitResponse.json() as { error: string }).error, "Import was cancelled; no rows were saved");
+    const raceMembers = await pool.query(
+      "SELECT COUNT(*)::int AS count FROM fund_members WHERE name = ANY($1::text[])",
+      [[`${prefix} race one`, `${prefix} race two`]],
+    );
+    assert.equal(Number(raceMembers.rows[0].count), 0);
 
     const existingPreviewResponse = await request({
       dryRun: true,
@@ -168,6 +215,7 @@ test("CSV import accepts missing mobile while preserving member and validation s
        )`,
       [`${prefix}%`],
     );
+    await pool.query("DELETE FROM fund_due_entries WHERE created_by=$1 AND reason LIKE $2", [ownerId, `${prefix}%`]);
     await pool.query(
       `DELETE FROM fund_cycle_members
        WHERE member_id IN (
@@ -175,6 +223,7 @@ test("CSV import accepts missing mobile while preserving member and validation s
        )`,
       [`${prefix}%`],
     );
+    if (ownsCycle) await pool.query("DELETE FROM fund_cycles WHERE id=$1", [cycleId]);
     await pool.query(
       `DELETE FROM fund_audit WHERE actor_id=$1 OR detail LIKE $2`,
       [ownerId, `${prefix}%`],

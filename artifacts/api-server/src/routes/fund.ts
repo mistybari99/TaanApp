@@ -22,16 +22,17 @@ const passwordMatches = (password: string, stored: string) => {
 const cookies = (req: Request) => Object.fromEntries((req.headers.cookie ?? "").split(";").filter(Boolean).map((v) => v.trim().split("=")));
 const money = (value: unknown) => Number(value ?? 0);
 const isIsoDate = (value: unknown): value is string => /^\d{4}-\d{2}-\d{2}$/.test(String(value ?? ""));
-const todayIso = () => {
+export const businessDateInDhaka = (date = new Date()) => {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Dhaka",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).formatToParts(new Date());
+  }).formatToParts(date);
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}`;
 };
+const todayIso = () => businessDateInDhaka();
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 export const allocatePayment = (amount: number, previousDue: number) => {
   const safeAmount = Math.max(0, roundMoney(amount));
@@ -2038,6 +2039,24 @@ router.post("/settlements", requireAuth, async (req: AuthedRequest,res)=>{
     if(!activeCycle.rows[0].tracking_start_date) {
       await client.query("ROLLBACK");
       return res.status(409).json({error:"Owner must set the digital tracking start date before recording settlements"});
+    }
+    const availableCash = await client.query(
+      `SELECT GREATEST(
+         COALESCE((SELECT SUM(amount) FROM fund_payments
+                   WHERE collector_id=$1 AND cycle_id=$2 AND status='POSTED'),0)
+         - COALESCE((SELECT SUM(amount) FROM fund_settlements
+                     WHERE collector_id=$1 AND cycle_id=$2),0),
+         0
+       )::float AS "availableAmount"`,
+      [req.user!.id, activeCycle.rows[0].id],
+    );
+    const availableAmount = money(availableCash.rows[0]?.availableAmount);
+    if (settlementAmount > availableAmount) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({
+        error: "Settlement amount cannot exceed the collector's unsettled posted collections",
+        availableAmount,
+      });
     }
      const r=await client.query(`INSERT INTO fund_settlements(collector_id,cycle_id,amount,reference,note,idempotency_key) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,cycle_id AS "cycleId",amount::float,reference,created_at AS "createdAt"`,[req.user!.id,activeCycle.rows[0].id,settlementAmount,reference,b.note??"",idempotencyKey]);
       await auditOn(client, req.user!.id,"SETTLEMENT_CREATED",`${reference}: BDT ${settlementAmount}`,"settlement",String(r.rows[0].id), {

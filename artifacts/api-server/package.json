@@ -7,7 +7,8 @@
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:fund": "pnpm --filter @workspace/scripts test:fund && pnpm --filter @workspace/scripts test:tan && pnpm --filter @workspace/scripts exec node --test --import tsx ../artifacts/api-server/src/fund-financial-regressions.test.ts && pnpm --filter @workspace/scripts exec node --test --import tsx ../artifacts/api-server/src/fund-csv-import.test.ts && pnpm --filter @workspace/scripts exec node --test --import tsx ../artifacts/api-server/src/fund-audit.test.ts"
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",
