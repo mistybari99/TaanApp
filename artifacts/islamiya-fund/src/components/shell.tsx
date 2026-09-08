@@ -133,7 +133,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     )
   }
 
-  const renderNavItem = (item: NavItem, compact = false) => {
+  const renderNavItem = (item: NavItem, compact = false, withChevron = false) => {
     const active = isItemActive(location, item.href)
     return (
       <Link
@@ -145,7 +145,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           "group relative flex items-center rounded-xl transition-colors duration-150",
           compact
             ? "min-h-14 min-w-0 flex-1 flex-col justify-center gap-0.5 px-1 text-center"
-            : "min-h-12 gap-3 px-3",
+             : "min-h-12 w-full gap-3 px-3",
           active
             ? "bg-primary text-primary-foreground shadow-[0_5px_14px_hsl(var(--primary)/0.12)]"
             : compact
@@ -163,6 +163,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="truncate text-[10px] opacity-70">{item.labelEn}</span>
           </span>
         )}
+        {withChevron && <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground/60" aria-hidden="true" />}
       </Link>
     )
   }
@@ -284,7 +285,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <ShieldCheck className="h-5 w-5 text-accent-foreground" />
           </div>
 
-          <div className="mt-7 space-y-6">
+          <div className="mt-7 space-y-7">
             {(["operate", "finance", "records", "admin"] as const).map((group) => {
               const items = moreItems.filter((item) => item.group === group)
               if (!items.length) return null
@@ -297,8 +298,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <div className="overflow-hidden rounded-2xl border border-border/70 bg-card">
                     {items.map((item) => (
                       <div key={item.href} className="border-b border-border/60 last:border-b-0">
-                        {renderNavItem(item)}
-                        <ChevronRight className="pointer-events-none -mt-9 mr-3 ml-auto block h-4 w-4 text-muted-foreground/60" />
+                        {renderNavItem(item, false, true)}
                       </div>
                     ))}
                   </div>
