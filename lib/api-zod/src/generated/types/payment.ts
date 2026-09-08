@@ -17,7 +17,7 @@ export interface Payment {
   notes?: string;
   memberName: string;
   amount: number;
-  collectorName: string;
+  collectorName: string | null;
   receiverName?: string | null;
   receiptSource?: PaymentReceiptSource;
   verificationStatus: string;

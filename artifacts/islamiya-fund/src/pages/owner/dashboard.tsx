@@ -245,7 +245,7 @@ export default function OwnerDashboard() {
                 {dashboard.recentPayments.slice(0, 5).map((payment) => (
                   <TableRow key={payment.id}>
                     <TableCell className="font-medium">{payment.memberName}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{payment.collectorName}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{payment.collectorName ?? payment.receiverName ?? "Direct receiver"}</TableCell>
                     <TableCell className="text-right text-primary font-medium">{formatCurrency(payment.amount)}</TableCell>
                   </TableRow>
                 ))}

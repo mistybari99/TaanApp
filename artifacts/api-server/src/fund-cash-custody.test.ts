@@ -136,6 +136,36 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     assert.equal(directBody.receiptSource, "OWNER_DIRECT");
     assert.equal(directBody.receiverName, `${prefix} owner`);
 
+    const receiverDirectPayment = await request(baseUrl, "/api/payments", fixture.receiverToken, {
+      memberId: fixture.memberId,
+      cycleId: fixture.cycleId,
+      amount: 100,
+      verificationMethod: "CASH_RECEIVER_CONFIRMATION",
+      confirmDuplicate: true,
+      idempotencyKey: `${prefix}-receiver-payment`,
+    });
+    assert.equal(receiverDirectPayment.status, 201);
+    const receiverDirectBody = await receiverDirectPayment.json() as { receiptSource: string; receiverName: string };
+    assert.equal(receiverDirectBody.receiptSource, "CASH_RECEIVER_DIRECT");
+    assert.equal(receiverDirectBody.receiverName, `${prefix} receiver`);
+    const receiverDirectRow = await pool.query(
+      "SELECT collector_id,receiver_id,receipt_source FROM fund_payments WHERE idempotency_key=$1",
+      [`${prefix}-receiver-payment`],
+    );
+    assert.equal(receiverDirectRow.rows[0].collector_id, null);
+    assert.equal(Number(receiverDirectRow.rows[0].receiver_id), fixture.receiverId);
+    assert.equal(receiverDirectRow.rows[0].receipt_source, "CASH_RECEIVER_DIRECT");
+
+    const collectionDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dhaka" }).format(new Date());
+    const invalidDestination = await request(baseUrl, "/api/cash-handovers", fixture.collectorToken, {
+      toUserId: fixture.collectorId,
+      amount: 1,
+      collectionDate,
+      reference: `${prefix}-invalid-destination`,
+      idempotencyKey: `${prefix}-invalid-destination`,
+    });
+    assert.equal(invalidDestination.status, 400);
+
     const collectorPayment = await request(baseUrl, "/api/payments", fixture.collectorToken, {
       memberId: fixture.memberId,
       cycleId: fixture.cycleId,
@@ -146,16 +176,36 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     });
     assert.equal(collectorPayment.status, 201);
 
+    const rejectedHandover = await request(baseUrl, "/api/cash-handovers", fixture.collectorToken, {
+      toUserId: fixture.ownerId,
+      amount: 100,
+      collectionDate,
+      reference: `${prefix}-rejected`,
+      idempotencyKey: `${prefix}-rejected`,
+    });
+    assert.equal(rejectedHandover.status, 201);
+    const rejectedBody = await rejectedHandover.json() as { id: number };
+    const rejected = await request(baseUrl, `/api/cash-handovers/${rejectedBody.id}/reject`, fixture.ownerToken, {
+      reason: "Synthetic count mismatch",
+    });
+    assert.equal(rejected.status, 200);
+    assert.equal((await rejected.json() as { status: string }).status, "REJECTED");
+
     const handoverPayload = {
       toUserId: fixture.receiverId,
       amount: 100,
-      collectionDate: new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dhaka" }).format(new Date()),
+      collectionDate,
       reference: `${prefix}-collector-to-receiver`,
       receiptCount: 1,
       idempotencyKey: `${prefix}-handover-1`,
     };
-    const submitted = await request(baseUrl, "/api/cash-handovers", fixture.collectorToken, handoverPayload);
-    assert.equal(submitted.status, 201);
+    const concurrentSubmissions = await Promise.all([
+      request(baseUrl, "/api/cash-handovers", fixture.collectorToken, handoverPayload),
+      request(baseUrl, "/api/cash-handovers", fixture.collectorToken, { ...handoverPayload, reference: `${prefix}-handover-concurrent`, idempotencyKey: `${prefix}-handover-concurrent` }),
+    ]);
+    assert.equal(concurrentSubmissions.filter((response) => response.status === 201).length, 1);
+    assert.equal(concurrentSubmissions.filter((response) => response.status === 409).length, 1);
+    const submitted = concurrentSubmissions.find((response) => response.status === 201)!;
     const submittedBody = await submitted.json() as { id: number; status: string };
     assert.equal(submittedBody.status, "SUBMITTED");
 
@@ -164,8 +214,11 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
 
     const accepted = await request(baseUrl, `/api/cash-handovers/${submittedBody.id}/accept`, fixture.receiverToken, { countedAmount: 100 });
     assert.equal(accepted.status, 200);
-    const acceptedBody = await accepted.json() as { status: string };
+    const acceptedBody = await accepted.json() as { status: string; countedAmount: number; countedBy: number; receivedBy: number };
     assert.equal(acceptedBody.status, "ACCEPTED");
+    assert.equal(acceptedBody.countedAmount, 100);
+    assert.equal(acceptedBody.countedBy, fixture.receiverId);
+    assert.equal(acceptedBody.receivedBy, fixture.receiverId);
 
     const finalHandover = await request(baseUrl, "/api/cash-handovers", fixture.receiverToken, {
       toUserId: fixture.ownerId,

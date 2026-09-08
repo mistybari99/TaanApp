@@ -329,6 +329,9 @@ CREATE INDEX IF NOT EXISTS fund_due_entries_member_date_idx
 -- Existing payments and settlements remain readable and historical.
 ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS receiver_id integer;
 ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS receipt_source text NOT NULL DEFAULT 'COLLECTOR';
+-- Direct Owner/Cash Receiver receipts have no collector attribution. Legacy
+-- rows remain unchanged while new direct receipts may leave collector_id NULL.
+ALTER TABLE fund_payments ALTER COLUMN collector_id DROP NOT NULL;
 UPDATE fund_payments SET receiver_id = collector_id WHERE receiver_id IS NULL;
 ALTER TABLE fund_payments DROP CONSTRAINT IF EXISTS fund_payments_receipt_source_check;
 ALTER TABLE fund_payments ADD CONSTRAINT fund_payments_receipt_source_check
@@ -358,6 +361,9 @@ CREATE TABLE IF NOT EXISTS fund_cash_handovers (
   submitted_by integer NOT NULL REFERENCES fund_users(id) ON DELETE RESTRICT,
   accepted_by integer REFERENCES fund_users(id) ON DELETE RESTRICT,
   accepted_at timestamptz,
+  counted_by integer REFERENCES fund_users(id) ON DELETE RESTRICT,
+  counted_amount numeric CHECK (counted_amount >= 0),
+  received_by integer REFERENCES fund_users(id) ON DELETE RESTRICT,
   rejected_by integer REFERENCES fund_users(id) ON DELETE RESTRICT,
   rejected_at timestamptz,
   rejection_reason text,
@@ -366,6 +372,12 @@ CREATE TABLE IF NOT EXISTS fund_cash_handovers (
   CHECK (from_user_id <> to_user_id),
   CHECK (status IN ('SUBMITTED', 'ACCEPTED', 'REJECTED', 'VOID'))
 );
+UPDATE fund_cash_handovers
+SET counted_by = accepted_by,
+    counted_amount = amount,
+    received_by = accepted_by
+WHERE status = 'ACCEPTED' AND accepted_by IS NOT NULL
+  AND (counted_by IS NULL OR counted_amount IS NULL OR received_by IS NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS fund_cash_handovers_from_idempotency_idx
   ON fund_cash_handovers(from_user_id, idempotency_key)
   WHERE idempotency_key IS NOT NULL;

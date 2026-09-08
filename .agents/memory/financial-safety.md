@@ -14,3 +14,9 @@ Draw winner payouts use a separate immutable disbursement ledger: only one activ
 **Why:** A draw payout is a real cash outflow but must not rewrite the historical draw record; keeping the disbursement separate makes payer attribution, retries, audit history, and correction safe.
 
 **How to apply:** Lock the draw and payer balance inside one transaction, require the payout amount to equal the draw amount, and include active payouts in every custody, settlement, dashboard, and report calculation.
+
+Cash handovers reserve the sender's custody at submission time; only accepted handovers create incoming cash, while rejected handovers release the reservation.
+
+**Why:** Concurrent submissions otherwise allow two pending handovers to spend the same physical cash before either recipient accepts it.
+
+**How to apply:** Serialize the sender/cycle balance and subtract both `SUBMITTED` and `ACCEPTED` outgoing handovers when validating available custody; keep accepted incoming/outgoing totals separate for posted accounting.

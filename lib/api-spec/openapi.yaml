@@ -875,7 +875,7 @@ components:
         notes: { type: string }
         memberName: { type: string }
         amount: { type: number }
-        collectorName: { type: string }
+        collectorName: { type: string, nullable: true }
         receiverName: { type: string, nullable: true }
         receiptSource: { type: string, enum: [COLLECTOR, OWNER_DIRECT, CASH_RECEIVER_DIRECT] }
         verificationStatus: { type: string }
@@ -938,6 +938,11 @@ components:
         acceptedBy: { type: integer, nullable: true }
         acceptedByName: { type: string, nullable: true }
         acceptedAt: { type: string, nullable: true }
+        countedBy: { type: integer, nullable: true }
+        countedByName: { type: string, nullable: true }
+        countedAmount: { type: number, nullable: true }
+        receivedBy: { type: integer, nullable: true }
+        receivedByName: { type: string, nullable: true }
         rejectedBy: { type: integer, nullable: true }
         rejectedByName: { type: string, nullable: true }
         rejectedAt: { type: string, nullable: true }

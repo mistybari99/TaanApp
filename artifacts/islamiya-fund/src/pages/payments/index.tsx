@@ -34,7 +34,7 @@ export default function PaymentsPage() {
       memberId: payment.memberId,
       amount: payment.amount,
       date: payment.createdAt,
-      collectorName: payment.collectorName,
+      collectorName: payment.collectorName ?? payment.receiverName ?? "Direct receiver",
       status: payment.status
     });
   }
@@ -72,7 +72,7 @@ export default function PaymentsPage() {
                   <TableCell className="font-mono text-xs">{payment.receiptId}</TableCell>
                   <TableCell>{formatDate(payment.createdAt)}</TableCell>
                   <TableCell className="font-medium">{payment.memberName}</TableCell>
-                  <TableCell>{payment.collectorName}</TableCell>
+                  <TableCell>{payment.collectorName ?? payment.receiverName ?? "Direct receiver"}</TableCell>
                   <TableCell className="text-right font-bold text-primary">{formatCurrency(payment.amount)}</TableCell>
                   <TableCell>
                     <span className={`text-xs px-2 py-1 rounded-full ${

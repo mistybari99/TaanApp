@@ -293,12 +293,16 @@ const cashHandoverSelect = `
     h.receipt_start AS "receiptStart",h.receipt_end AS "receiptEnd",h.receipt_count AS "receiptCount",
     h.reference,h.note,h.status,h.submitted_by AS "submittedBy",
     h.accepted_by AS "acceptedBy",au.name AS "acceptedByName",h.accepted_at AS "acceptedAt",
+    h.counted_by AS "countedBy",cu.name AS "countedByName",h.counted_amount::float AS "countedAmount",
+    h.received_by AS "receivedBy",ru2.name AS "receivedByName",
     h.rejected_by AS "rejectedBy",ru.name AS "rejectedByName",h.rejected_at AS "rejectedAt",
     h.rejection_reason AS "rejectionReason",h.created_at AS "createdAt"
   FROM fund_cash_handovers h
     JOIN fund_users fu ON fu.id=h.from_user_id
     JOIN fund_users tu ON tu.id=h.to_user_id
     LEFT JOIN fund_users au ON au.id=h.accepted_by
+    LEFT JOIN fund_users cu ON cu.id=h.counted_by
+    LEFT JOIN fund_users ru2 ON ru2.id=h.received_by
     LEFT JOIN fund_users ru ON ru.id=h.rejected_by
 `;
 const drawSelect = `
@@ -748,9 +752,12 @@ router.get("/members/:id/history", requireAuth, async (req: AuthedRequest, res) 
       FROM fund_cycle_members cm JOIN fund_cycles c ON c.id=cm.cycle_id
       LEFT JOIN fund_payments p ON p.cycle_id=c.id AND p.member_id=cm.member_id
       WHERE cm.member_id=$1 GROUP BY c.id,cm.id ORDER BY c.start_date DESC`, [id]),
-    pool.query(`SELECT p.id,p.receipt_id AS "receiptId",p.cycle_id AS "cycleId",p.amount::float,p.collection_date::text AS "collectionDate",
-      p.shares,p.verification_status AS "verificationStatus",p.status,p.created_at AS "createdAt",u.name AS "collectorName"
-      FROM fund_payments p JOIN fund_users u ON u.id=p.collector_id WHERE p.member_id=$1 ORDER BY p.created_at DESC LIMIT 500`, [id]),
+     pool.query(`SELECT p.id,p.receipt_id AS "receiptId",p.cycle_id AS "cycleId",p.amount::float,p.collection_date::text AS "collectionDate",
+       p.shares,p.verification_status AS "verificationStatus",p.status,p.created_at AS "createdAt",u.name AS "collectorName",ru.name AS "receiverName",
+       p.receipt_source AS "receiptSource"
+       FROM fund_payments p LEFT JOIN fund_users u ON u.id=p.collector_id
+       LEFT JOIN fund_users ru ON ru.id=COALESCE(p.receiver_id,p.collector_id)
+       WHERE p.member_id=$1 ORDER BY p.created_at DESC LIMIT 500`, [id]),
     pool.query(`SELECT d.id,d.cycle_id AS "cycleId",c.cycle_number AS "cycleNumber",d.draw_number AS "drawNumber",
       d.draw_date::text AS "drawDate",d.winning_amount::float AS "winningAmount",d.status,d.notes
       FROM fund_draws d JOIN fund_cycles c ON c.id=d.cycle_id WHERE d.winner_member_id=$1 ORDER BY d.draw_date DESC`, [id]),
@@ -1817,8 +1824,8 @@ router.post("/draws/:id/disbursement", requireAuth, ownerOnly, async (req: Authe
           WHERE COALESCE(p.receiver_id,p.collector_id)=$1 AND p.cycle_id=$2 AND p.status='POSTED'),0)
         + COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
           WHERE h.to_user_id=$1 AND h.cycle_id=$2 AND h.status='ACCEPTED'),0)
-        - COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
-          WHERE h.from_user_id=$1 AND h.cycle_id=$2 AND h.status='ACCEPTED'),0)
+         - COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
+           WHERE h.from_user_id=$1 AND h.cycle_id=$2 AND h.status IN ('SUBMITTED','ACCEPTED')),0)
         - COALESCE((SELECT SUM(s.amount) FROM fund_settlements s
           WHERE s.collector_id=$1 AND s.cycle_id=$2),0)
         - COALESCE((SELECT SUM(pd.amount) FROM fund_draw_disbursements pd
@@ -2029,7 +2036,7 @@ router.get("/payments", requireAuth, async (req: AuthedRequest, res) => {
        u.name AS "collectorName",ru.name AS "receiverName",p.receipt_source AS "receiptSource",
        p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status
       FROM fund_payments p JOIN fund_members m ON m.id=p.member_id
-       JOIN fund_users u ON u.id=p.collector_id
+        LEFT JOIN fund_users u ON u.id=p.collector_id
        LEFT JOIN fund_users ru ON ru.id=COALESCE(p.receiver_id,p.collector_id)
       WHERE ${clauses.join(" AND ")} ORDER BY p.created_at DESC LIMIT 500`, params);
   res.json(r.rows);
@@ -2050,7 +2057,7 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
     await client.query("BEGIN");
     if (idempotencyKey) {
       await transactionLock(client, `payment:${req.user!.id}:${idempotencyKey}`);
-      const replay = await client.query(`SELECT p.id,p.receipt_id AS "receiptId",p.member_id AS "_memberDbId",COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name AS "memberName",p.cycle_id AS "cycleId",p.collection_date::text AS "collectionDate",p.shares,p.notes,p.amount::float,p.previous_due_applied::float AS "previousDueApplied",p.current_period_applied::float AS "currentPeriodApplied",u.name AS "collectorName",ru.name AS "receiverName",p.receipt_source AS "receiptSource",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id LEFT JOIN fund_users ru ON ru.id=COALESCE(p.receiver_id,p.collector_id) WHERE COALESCE(p.receiver_id,p.collector_id)=$1 AND p.idempotency_key=$2`, [req.user!.id,idempotencyKey]);
+       const replay = await client.query(`SELECT p.id,p.receipt_id AS "receiptId",p.member_id AS "_memberDbId",COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name AS "memberName",p.cycle_id AS "cycleId",p.collection_date::text AS "collectionDate",p.shares,p.notes,p.amount::float,p.previous_due_applied::float AS "previousDueApplied",p.current_period_applied::float AS "currentPeriodApplied",u.name AS "collectorName",ru.name AS "receiverName",p.receipt_source AS "receiptSource",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id LEFT JOIN fund_users u ON u.id=p.collector_id LEFT JOIN fund_users ru ON ru.id=COALESCE(p.receiver_id,p.collector_id) WHERE COALESCE(p.receiver_id,p.collector_id)=$1 AND p.idempotency_key=$2`, [req.user!.id,idempotencyKey]);
       if (replay.rows[0]) {
         const existing = replay.rows[0];
         if (Number(existing._memberDbId) !== Number(memberId)
@@ -2143,7 +2150,8 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
     const allocation = allocatePayment(Number(amount), previousDueOutstanding);
     const { previousDueApplied, currentPeriodApplied } = allocation;
     const receiptId = `IRF-${paidDate.replaceAll("-","")}-${randomBytes(3).toString("hex").toUpperCase()}`;
-    const receiptSource = req.user.role === "OWNER" ? "OWNER_DIRECT" : req.user.role === "CASH_RECEIVER" ? "CASH_RECEIVER_DIRECT" : "COLLECTOR";
+     const receiptSource = req.user.role === "OWNER" ? "OWNER_DIRECT" : req.user.role === "CASH_RECEIVER" ? "CASH_RECEIVER_DIRECT" : "COLLECTOR";
+     const collectorId = req.user.role === "COLLECTOR" ? req.user.id : null;
     const verification = req.user.role === "OWNER"
       ? "OWNER CONFIRMED"
       : req.user.role === "CASH_RECEIVER"
@@ -2151,15 +2159,15 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
         : "COLLECTOR CONFIRMED";
     const r = await client.query(
       `INSERT INTO fund_payments(receipt_id,member_id,cycle_id,collection_date,shares,amount,collector_id,receiver_id,receipt_source,verification_status,notes,idempotency_key,previous_due_applied,current_period_applied,tan_period_id)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id,receipt_id AS "receiptId",member_id AS "memberId",cycle_id AS "cycleId",collection_date::text AS "collectionDate",shares,notes,amount::float,previous_due_applied::float AS "previousDueApplied",current_period_applied::float AS "currentPeriodApplied",verification_status AS "verificationStatus",created_at AS "createdAt",status`,
-      [receiptId,memberId,selectedCycleId,paidDate,Number(cycleMember.rows[0].shares),amount,req.user.id,receiptSource,verification,notes ?? "",idempotencyKey ?? null,previousDueApplied,currentPeriodApplied,tanPeriodId],
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id,receipt_id AS "receiptId",member_id AS "memberId",cycle_id AS "cycleId",collection_date::text AS "collectionDate",shares,notes,amount::float,previous_due_applied::float AS "previousDueApplied",current_period_applied::float AS "currentPeriodApplied",verification_status AS "verificationStatus",created_at AS "createdAt",status`,
+       [receiptId,memberId,selectedCycleId,paidDate,Number(cycleMember.rows[0].shares),amount,collectorId,req.user.id,receiptSource,verification,notes ?? "",idempotencyKey ?? null,previousDueApplied,currentPeriodApplied,tanPeriodId],
     );
     await auditOn(client, req.user.id, "PAYMENT_POSTED", `${receiptId}: BDT ${amount}; previous due ${previousDueApplied}; receiver ${req.user.role}`, "payment", String(r.rows[0].id));
     await client.query("COMMIT");
     return res.status(201).json({
       ...r.rows[0],
       memberName: member.rows[0].name,
-      collectorName: req.user.name,
+       collectorName: req.user.role === "COLLECTOR" ? req.user.name : null,
       receiverName: req.user.name,
       receiptSource,
     });
@@ -2198,10 +2206,10 @@ router.post("/payments/:id/reverse", requireAuth, ownerOnly, async (req: AuthedR
     }
     await client.query("UPDATE fund_payments SET status='REVERSED',correction_reason=$2 WHERE id=$1", [o.id, reason]);
     const r = await client.query(
-      `INSERT INTO fund_payments(receipt_id,member_id,cycle_id,collection_date,shares,amount,collector_id,verification_status,status,reversed_payment_id,correction_reason,previous_due_applied,current_period_applied)
-        VALUES($1,$2,$3,$4,$5,$6,$7,'OWNER REVERSAL','REVERSAL',$8,$9,$10,$11)
+      `INSERT INTO fund_payments(receipt_id,member_id,cycle_id,collection_date,shares,amount,collector_id,receiver_id,receipt_source,verification_status,status,reversed_payment_id,correction_reason,previous_due_applied,current_period_applied)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'OWNER REVERSAL','REVERSAL',$10,$11,$12,$13)
         RETURNING id,receipt_id AS "receiptId",member_id AS "memberId",cycle_id AS "cycleId",amount::float,verification_status AS "verificationStatus",created_at AS "createdAt",status`,
-      [`REV-${o.receipt_id}`,o.member_id,o.cycle_id,o.collection_date,o.shares,o.amount,o.collector_id,o.id,reason,o.previous_due_applied ?? 0,o.current_period_applied ?? 0]);
+      [`REV-${o.receipt_id}`,o.member_id,o.cycle_id,o.collection_date,o.shares,o.amount,o.collector_id,o.receiver_id,o.receipt_source,o.id,reason,o.previous_due_applied ?? 0,o.current_period_applied ?? 0]);
     await auditOn(client, req.user!.id, "PAYMENT_REVERSED", `${o.receipt_id}: ${reason}`, "payment", String(o.id), {
       memberId: o.member_id,
       cycleId: o.cycle_id,
@@ -2226,9 +2234,9 @@ router.post("/payments/:id/reverse", requireAuth, ownerOnly, async (req: AuthedR
         currentPeriodApplied: money(o.current_period_applied),
       },
     });
-    const names = await client.query("SELECT m.name AS member,u.name AS collector FROM fund_members m,fund_users u WHERE m.id=$1 AND u.id=$2", [o.member_id,o.collector_id]);
+    const names = await client.query("SELECT m.name AS member,u.name AS collector,ru.name AS receiver FROM fund_members m LEFT JOIN fund_users u ON u.id=$2 LEFT JOIN fund_users ru ON ru.id=$3 WHERE m.id=$1", [o.member_id,o.collector_id,o.receiver_id ?? o.collector_id]);
     await client.query("COMMIT");
-    return res.json({ ...r.rows[0], memberName: names.rows[0].member, collectorName: names.rows[0].collector });
+    return res.json({ ...r.rows[0], memberName: names.rows[0].member, collectorName: names.rows[0].collector ?? null, receiverName: names.rows[0].receiver ?? null });
   } catch (error) {
     await client.query("ROLLBACK");
     req.log.error({ error }, "Payment reversal failed");
@@ -2368,8 +2376,8 @@ router.get("/cash-custody/balances", requireAuth, async (req: AuthedRequest, res
           WHERE COALESCE(p.receiver_id,p.collector_id)=u.id AND p.cycle_id=$1 AND p.status='POSTED'),0)
         + COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
           WHERE h.to_user_id=u.id AND h.cycle_id=$1 AND h.status='ACCEPTED'),0)
-        - COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
-          WHERE h.from_user_id=u.id AND h.cycle_id=$1 AND h.status='ACCEPTED'),0)
+          - COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
+           WHERE h.from_user_id=u.id AND h.cycle_id=$1 AND h.status IN ('SUBMITTED','ACCEPTED')),0)
          - COALESCE((SELECT SUM(s.amount) FROM fund_settlements s
            WHERE s.collector_id=u.id AND s.cycle_id=$1),0)
          - COALESCE((SELECT SUM(pd.amount) FROM fund_draw_disbursements pd
@@ -2456,8 +2464,8 @@ router.post("/cash-handovers", requireAuth, async (req: AuthedRequest, res) => {
           WHERE COALESCE(p.receiver_id,p.collector_id)=$1 AND p.cycle_id=$2 AND p.status='POSTED'),0)
         + COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
           WHERE h.to_user_id=$1 AND h.cycle_id=$2 AND h.status='ACCEPTED'),0)
-        - COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
-          WHERE h.from_user_id=$1 AND h.cycle_id=$2 AND h.status='ACCEPTED'),0)
+         - COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
+           WHERE h.from_user_id=$1 AND h.cycle_id=$2 AND h.status IN ('SUBMITTED','ACCEPTED')),0)
         - COALESCE((SELECT SUM(s.amount) FROM fund_settlements s
           WHERE s.collector_id=$1 AND s.cycle_id=$2),0)
         - COALESCE((SELECT SUM(pd.amount) FROM fund_draw_disbursements pd
@@ -2548,13 +2556,17 @@ router.post("/cash-handovers/:id/accept", requireAuth, async (req: AuthedRequest
       res.status(409).json({ error: "Counted cash does not match the submitted amount; reject and submit a correction instead", expectedAmount: money(handover.amount), countedAmount });
       return;
     }
-    await client.query("UPDATE fund_cash_handovers SET status='ACCEPTED',accepted_by=$2,accepted_at=now() WHERE id=$1", [id, req.user.id]);
+     const finalCountedAmount = countedAmount ?? money(handover.amount);
+     await client.query(
+       "UPDATE fund_cash_handovers SET status='ACCEPTED',accepted_by=$2,accepted_at=now(),counted_by=$2,counted_amount=$3,received_by=$2 WHERE id=$1",
+       [id, req.user.id, finalCountedAmount],
+     );
     await auditOn(client, req.user.id, "CASH_HANDOVER_ACCEPTED", `${handover.reference}: BDT ${handover.amount} accepted from ${handover.fromUserName}`, "cash_handover", String(id), {
       cycleId: Number(handover.cycleId),
       relatedTransactionId: handover.reference,
       effectiveDate: handover.collectionDate,
       beforeValue: { status: "SUBMITTED", amount: money(handover.amount) },
-      afterValue: { status: "ACCEPTED", acceptedBy: req.user.id, countedAmount: countedAmount ?? money(handover.amount) },
+       afterValue: { status: "ACCEPTED", acceptedBy: req.user.id, countedBy: req.user.id, receivedBy: req.user.id, countedAmount: finalCountedAmount },
     });
     const result = await client.query(`${cashHandoverSelect} WHERE h.id=$1`, [id]);
     await client.query("COMMIT");
@@ -2722,7 +2734,7 @@ router.patch("/settings",requireAuth,ownerOnly,async(req:AuthedRequest,res)=>{co
           WHERE ${readySql} AND m.status='active' AND (m.assigned_collector_id=$1 OR m.assigned_collector_id IS NULL)
           GROUP BY m.id,cm.id HAVING COALESCE(SUM(p.amount),0)<cm.daily_contribution
           ORDER BY m.member_id LIMIT 20`,[req.user!.id]),
-        pool.query(`SELECT p.id,p.receipt_id AS "receiptId",COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name AS "memberName",p.amount::float,u.name AS "collectorName",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id WHERE p.collector_id=$1 AND p.cycle_id=${activeCycleId} ORDER BY p.created_at DESC LIMIT 8`,[req.user!.id])
+        pool.query(`SELECT p.id,p.receipt_id AS "receiptId",COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name AS "memberName",p.amount::float,u.name AS "collectorName",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id LEFT JOIN fund_users u ON u.id=p.collector_id WHERE p.collector_id=$1 AND p.cycle_id=${activeCycleId} ORDER BY p.created_at DESC LIMIT 8`,[req.user!.id])
          ,
           pool.query(`SELECT
            COALESCE(SUM(GREATEST(COALESCE((SELECT SUM(de.amount) FROM fund_due_entries de WHERE de.cycle_id=cm.cycle_id AND de.member_id=cm.member_id),0)
@@ -2760,7 +2772,7 @@ router.patch("/settings",requireAuth,ownerOnly,async(req:AuthedRequest,res)=>{co
         LEFT JOIN fund_payments p ON p.member_id=m.id AND p.cycle_id=${activeCycleId} AND p.collection_date='${businessDate}'::date AND p.status='POSTED'
         WHERE ${readySql} AND m.status='active' GROUP BY m.id,cm.id
         HAVING COALESCE(SUM(p.amount),0)<cm.daily_contribution ORDER BY m.member_id LIMIT 20`),
-      pool.query(`SELECT p.id,p.receipt_id AS "receiptId",COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name AS "memberName",p.amount::float,u.name AS "collectorName",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id WHERE p.cycle_id=${activeCycleId} ORDER BY p.created_at DESC LIMIT 8`),
+      pool.query(`SELECT p.id,p.receipt_id AS "receiptId",COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name AS "memberName",p.amount::float,u.name AS "collectorName",ru.name AS "receiverName",p.receipt_source AS "receiptSource",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id LEFT JOIN fund_users u ON u.id=p.collector_id LEFT JOIN fund_users ru ON ru.id=COALESCE(p.receiver_id,p.collector_id) WHERE p.cycle_id=${activeCycleId} ORDER BY p.created_at DESC LIMIT 8`),
        pool.query(`SELECT a.id,COALESCE(u.name,'System') actor,a.action,a.detail,a.entity_type AS "entityType",a.entity_id AS "entityId",
           COALESCE(m.public_member_id,m.member_id) AS "memberId",a.cycle_id AS "cycleId",a.related_transaction_id AS "relatedTransactionId",a.reason,a.effective_date::text AS "effectiveDate",
          a.before_value AS "beforeValue",a.after_value AS "afterValue",a.created_at AS "createdAt"
@@ -2870,11 +2882,12 @@ router.get("/reports/export", requireAuth, ownerOnly, async (req, res) => {
     : "TRUE";
   const r = await pool.query(`SELECT p.id AS payment_id,p.receipt_id,COALESCE(m.public_member_id,m.member_id) AS member_id,m.name AS member_name,
        p.collection_date AS payment_date,(p.created_at AT TIME ZONE 'Asia/Dhaka')::time AS payment_time,p.amount,
-      p.verification_status,u.id AS collector_id,u.name AS collector_name,p.status,p.idempotency_key,p.created_at
-      FROM fund_payments p JOIN fund_members m ON m.id=p.member_id JOIN fund_users u ON u.id=p.collector_id
+      p.verification_status,u.id AS collector_id,u.name AS collector_name,ru.name AS receiver_name,p.receipt_source,p.status,p.idempotency_key,p.created_at
+      FROM fund_payments p JOIN fund_members m ON m.id=p.member_id LEFT JOIN fund_users u ON u.id=p.collector_id
+      LEFT JOIN fund_users ru ON ru.id=COALESCE(p.receiver_id,p.collector_id)
        WHERE p.cycle_id=${activeCycleId} AND ${period} ORDER BY p.created_at DESC`);
-  return sendCsv(res, `payments-${type || "all"}`, ["Payment ID", "Receipt ID", "Member ID", "Member", "Payment Date", "Payment Time", "Amount", "Verification", "Collector ID", "Collector", "Status", "Idempotency Key", "Created At"],
-    r.rows.map((x) => [x.payment_id, x.receipt_id, x.member_id, x.member_name, x.payment_date, x.payment_time, x.amount, x.verification_status, x.collector_id, x.collector_name, x.status, x.idempotency_key, x.created_at]));
+  return sendCsv(res, `payments-${type || "all"}`, ["Payment ID", "Receipt ID", "Member ID", "Member", "Payment Date", "Payment Time", "Amount", "Verification", "Collector ID", "Collector", "Receiver", "Receipt Source", "Status", "Idempotency Key", "Created At"],
+    r.rows.map((x) => [x.payment_id, x.receipt_id, x.member_id, x.member_name, x.payment_date, x.payment_time, x.amount, x.verification_status, x.collector_id, x.collector_name, x.receiver_name, x.receipt_source, x.status, x.idempotency_key, x.created_at]));
 });
 
 export default router;

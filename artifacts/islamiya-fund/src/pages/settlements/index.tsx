@@ -244,7 +244,7 @@ export default function SettlementsPage() {
           {isLoading ? <div className="p-8 text-center text-muted-foreground">লোড হচ্ছে...</div> : !handovers?.length ? (
             <div className="p-8 text-center text-muted-foreground">এখনো কোনো cash handover নেই</div>
           ) : handovers.map((handover) => {
-            const waitingForMe = handover.status === "SUBMITTED" && handover.toUserId === user?.id
+            const waitingForMe = canDecide && handover.status === "SUBMITTED" && handover.toUserId === user?.id
             return (
               <div key={handover.id} className="space-y-3 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -262,6 +262,7 @@ export default function SettlementsPage() {
                   </div>
                 </div>
                 {handover.rejectionReason && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800">Reject reason: {handover.rejectionReason}</p>}
+                 {handover.status === "ACCEPTED" && <p className="text-xs text-muted-foreground">গুনেছেন: {handover.countedByName ?? handover.acceptedByName ?? "—"} · গ্রহণ করেছেন: {handover.receivedByName ?? handover.acceptedByName ?? "—"} · counted {formatCurrency(handover.countedAmount ?? handover.amount)}</p>}
                 {waitingForMe && (
                   <div className="flex flex-col gap-2 rounded-xl border border-primary/20 bg-primary/5 p-3 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm font-semibold">Cash গুনে তারপর গ্রহণ বা reject করুন।</p>

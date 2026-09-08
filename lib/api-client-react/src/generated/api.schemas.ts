@@ -516,7 +516,7 @@ export interface Payment {
   notes?: string;
   memberName: string;
   amount: number;
-  collectorName: string;
+  collectorName: string | null;
   receiverName?: string | null;
   receiptSource?: PaymentReceiptSource;
   verificationStatus: string;
@@ -714,6 +714,11 @@ export interface CashHandover {
   acceptedBy?: number | null;
   acceptedByName?: string | null;
   acceptedAt?: string | null;
+  countedBy?: number | null;
+  countedByName?: string | null;
+  countedAmount?: number | null;
+  receivedBy?: number | null;
+  receivedByName?: string | null;
   rejectedBy?: number | null;
   rejectedByName?: string | null;
   rejectedAt?: string | null;
