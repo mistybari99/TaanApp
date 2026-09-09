@@ -6,7 +6,11 @@ import {
   useListCashReceivers,
   useCreateCashReceiver,
   useUpdateCashReceiver,
+  getListCollectorTargetsQueryKey,
+  useListCollectorTargets,
+  useUpsertCollectorTarget,
 } from "@workspace/api-client-react"
+import { useQueryClient } from "@tanstack/react-query"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,6 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Switch } from "@/components/ui/switch"
 import { UserSquare, Plus, KeyRound } from "lucide-react"
 import { toast } from "sonner"
+import { formatCurrency } from "@/lib/utils"
 
 export default function CollectorsPage() {
   const { data: collectors, isLoading, refetch } = useListCollectors()
@@ -23,6 +28,9 @@ export default function CollectorsPage() {
   const updateCollector = useUpdateCollector()
   const createCashReceiver = useCreateCashReceiver()
   const updateCashReceiver = useUpdateCashReceiver()
+  const { data: collectorTargets } = useListCollectorTargets()
+  const upsertCollectorTarget = useUpsertCollectorTarget()
+  const queryClient = useQueryClient()
 
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [formData, setFormData] = useState({ name: "", username: "", password: "" })
@@ -30,6 +38,7 @@ export default function CollectorsPage() {
 
   const [editTarget, setEditTarget] = useState<{ id: number; role: "COLLECTOR" | "CASH_RECEIVER" } | null>(null)
   const [editPassword, setEditPassword] = useState("")
+  const [targetInputs, setTargetInputs] = useState<Record<number, string>>({})
 
   const refreshStaff = () => {
     refetch()
@@ -77,7 +86,23 @@ export default function CollectorsPage() {
     else updateCashReceiver.mutate({ id: editTarget.id, data: { password: editPassword } }, options)
   }
 
+  const handleSaveTarget = (collectorId: number) => {
+    const value = targetInputs[collectorId]
+    if (value == null || value.trim() === "" || Number(value) < 0) return
+    upsertCollectorTarget.mutate(
+      { data: { collectorId, targetAmount: Number(value) } },
+      {
+        onSuccess: () => {
+          toast.success("সাপ্তাহিক target সংরক্ষণ হয়েছে")
+          queryClient.invalidateQueries({ queryKey: getListCollectorTargetsQueryKey() })
+        },
+        onError: (err: any) => toast.error(err.message || "Target সংরক্ষণ করা যায়নি"),
+      },
+    )
+  }
+
   const staff = [...(collectors ?? []), ...(cashReceivers ?? [])]
+  const targetsByCollector = new Map((collectorTargets ?? []).map((target) => [target.collectorId, target]))
   const busy = isLoading || cashReceiversLoading
 
   return (
@@ -135,15 +160,16 @@ export default function CollectorsPage() {
               <TableHead>নাম (Name)</TableHead>
               <TableHead>ইউজারনেম (Username)</TableHead>
               <TableHead>রোল (Role)</TableHead>
+              <TableHead>সাপ্তাহিক target</TableHead>
               <TableHead>অ্যাক্টিভ (Active)</TableHead>
               <TableHead className="text-right">অ্যাকশন</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-8">লোড হচ্ছে...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center py-8">লোড হচ্ছে...</TableCell></TableRow>
             ) : staff.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-8">কোন কর্মী নেই</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center py-8">কোন কর্মী নেই</TableCell></TableRow>
             ) : (
               staff.map((user) => (
                 <TableRow key={user.id} className={!user.active ? "opacity-60" : ""}>
@@ -153,6 +179,31 @@ export default function CollectorsPage() {
                   <TableCell className="font-mono text-sm">{user.username}</TableCell>
                   <TableCell>
                     <span className="text-xs bg-muted px-2 py-1 rounded">{user.role === "CASH_RECEIVER" ? "Cash Receiver" : "Collector"}</span>
+                  </TableCell>
+                  <TableCell>
+                    {user.role === "COLLECTOR" ? (
+                      <div className="min-w-[220px] space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className="h-8 w-28"
+                            value={targetInputs[user.id] ?? String(targetsByCollector.get(user.id)?.targetAmount ?? "")}
+                            onChange={(event) => setTargetInputs((current) => ({ ...current, [user.id]: event.target.value }))}
+                            placeholder="৳ 0"
+                          />
+                          <Button size="sm" variant="outline" onClick={() => handleSaveTarget(user.id)} disabled={upsertCollectorTarget.isPending}>Save</Button>
+                        </div>
+                        {targetsByCollector.get(user.id) && (
+                          <p className="text-[11px] text-muted-foreground">
+                            জমা {formatCurrency(targetsByCollector.get(user.id)!.acceptedAmount)} · বাকি {formatCurrency(targetsByCollector.get(user.id)!.remainingAmount)}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Switch 

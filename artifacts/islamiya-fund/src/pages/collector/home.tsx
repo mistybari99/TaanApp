@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react"
-import { useListMembers, useGetDashboard, useCreatePayment, useListCycles, useListCycleMembers, getGetCurrentUserQueryKey, getGetDashboardQueryKey, getListPaymentsQueryKey, getListMembersQueryKey, getListCycleMembersQueryKey, getGetTanQueryKey, useGetTan } from "@workspace/api-client-react"
+import { useListMembers, useGetDashboard, useCreatePayment, useListCycles, useListCycleMembers, getGetCurrentUserQueryKey, getGetDashboardQueryKey, getListPaymentsQueryKey, getListMembersQueryKey, getListCycleMembersQueryKey, getGetTanQueryKey, useGetTan, getListCollectorTargetsQueryKey, useListCollectorTargets } from "@workspace/api-client-react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -28,6 +28,7 @@ export default function CollectorHome() {
   })
   const { data: cycleMembers, isLoading: isCycleMembersLoading } = useListCycleMembers((activeCycle?.id ?? 0) as number, { query: { enabled: Boolean(activeCycle?.id), queryKey: getListCycleMembersQueryKey((activeCycle?.id ?? 0) as number) } })
   const { data: dashboard, refetch: refetchDashboard } = useGetDashboard({ query: { queryKey: getGetDashboardQueryKey(), refetchInterval: 15000 } })
+  const { data: collectorTargets } = useListCollectorTargets({ query: { queryKey: getListCollectorTargetsQueryKey(), refetchInterval: 15000 } })
   
   const { isOnline, addToQueue } = useSync()
   const createPayment = useCreatePayment()
@@ -53,6 +54,7 @@ export default function CollectorHome() {
     return member.name.toLowerCase().includes(term) || member.memberId.toLowerCase().includes(term) || (member.mobile ?? "").toLowerCase().includes(term)
   }), [memberOptions, search])
   const selectedMember = useMemo(() => memberOptions?.find(m => m.id === selectedMemberId), [memberOptions, selectedMemberId])
+  const weeklyTarget = collectorTargets?.[0]
   const membersLoading = activeCycle ? isCycleMembersLoading : isLoading
 
   useEffect(() => {
@@ -187,6 +189,31 @@ export default function CollectorHome() {
                   ? `পরবর্তী period ${tanData.nextPeriod.sequenceNo} শুরু হবে ${tanData.nextPeriod.periodStart}`
                   : "নতুন TAN lock না হওয়া পর্যন্ত collection বন্ধ"}
             </p>
+          </CardContent>
+        </Card>
+      )}
+      {weeklyTarget && (
+        <Card className={weeklyTarget.isAchieved ? "border-green-300 bg-green-50" : "border-amber-300 bg-amber-50"}>
+          <CardContent className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold">সাপ্তাহিক handover target</p>
+                <p className="text-xs text-muted-foreground mt-1">{weeklyTarget.periodStart} – {weeklyTarget.periodEnd}</p>
+              </div>
+              <span className={weeklyTarget.isAchieved ? "text-xs font-bold text-green-700" : "text-xs font-bold text-amber-800"}>
+                {weeklyTarget.isAchieved ? "Target achieved" : "In progress"}
+              </span>
+            </div>
+            {weeklyTarget.targetAmount > 0 ? (
+              <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="rounded-md bg-background/70 p-2"><div className="font-bold">{formatCurrency(weeklyTarget.targetAmount)}</div><div className="text-muted-foreground">Target</div></div>
+                <div className="rounded-md bg-background/70 p-2"><div className="font-bold">{formatCurrency(weeklyTarget.acceptedAmount)}</div><div className="text-muted-foreground">Accepted</div></div>
+                <div className="rounded-md bg-background/70 p-2"><div className="font-bold">{formatCurrency(weeklyTarget.remainingAmount)}</div><div className="text-muted-foreground">Remaining</div></div>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-muted-foreground">Owner এখনো এই সপ্তাহের target সেট করেননি।</p>
+            )}
+            <p className="mt-3 text-xs text-muted-foreground">এটি শুধু cash handover-এর লক্ষ্য; যেকোনো member-এর payment entry আপনি আগের মতোই করতে পারবেন।</p>
           </CardContent>
         </Card>
       )}

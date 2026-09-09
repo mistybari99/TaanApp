@@ -90,6 +90,7 @@ async function cleanupFixture(fixture: Fixture) {
   await pool.query("DELETE FROM fund_draw_disbursements WHERE cycle_id=$1", [fixture.cycleId]);
   await pool.query("DELETE FROM fund_draws WHERE cycle_id=$1", [fixture.cycleId]);
   await pool.query("DELETE FROM fund_cash_handovers WHERE cycle_id=$1", [fixture.cycleId]);
+  await pool.query("DELETE FROM fund_collector_weekly_targets WHERE cycle_id=$1", [fixture.cycleId]);
   await pool.query("DELETE FROM fund_payments WHERE cycle_id=$1", [fixture.cycleId]);
   await pool.query("DELETE FROM fund_cycle_members WHERE cycle_id=$1", [fixture.cycleId]);
   await pool.query("DELETE FROM fund_cycles WHERE id=$1", [fixture.cycleId]);
@@ -122,6 +123,21 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     const address = server.address();
     assert.ok(address && typeof address !== "string");
     const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const targetResponse = await request(baseUrl, "/api/collector-targets", fixture.ownerToken, {
+      collectorId: fixture.collectorId,
+      targetAmount: 50000,
+    });
+    assert.equal(targetResponse.status, 200);
+    const targetBody = await targetResponse.json() as { targetAmount: number; acceptedAmount: number; remainingAmount: number };
+    assert.deepEqual(
+      { target: targetBody.targetAmount, accepted: targetBody.acceptedAmount, remaining: targetBody.remainingAmount },
+      { target: 50000, accepted: 0, remaining: 50000 },
+    );
+    const collectorTargetResponse = await request(baseUrl, "/api/collector-targets", fixture.collectorToken);
+    assert.equal(collectorTargetResponse.status, 200);
+    const collectorTargets = await collectorTargetResponse.json() as Array<{ targetAmount: number }>;
+    assert.equal(collectorTargets[0]?.targetAmount, 50000);
 
     const directPayment = await request(baseUrl, "/api/payments", fixture.ownerToken, {
       memberId: fixture.memberId,
@@ -219,6 +235,13 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     assert.equal(acceptedBody.countedAmount, 100);
     assert.equal(acceptedBody.countedBy, fixture.receiverId);
     assert.equal(acceptedBody.receivedBy, fixture.receiverId);
+    const progressResponse = await request(baseUrl, "/api/collector-targets", fixture.ownerToken);
+    assert.equal(progressResponse.status, 200);
+    const progressTargets = await progressResponse.json() as Array<{ acceptedAmount: number; remainingAmount: number; isAchieved: boolean }>;
+    assert.deepEqual(
+      { accepted: progressTargets[0]?.acceptedAmount, remaining: progressTargets[0]?.remainingAmount, achieved: progressTargets[0]?.isAchieved },
+      { accepted: 100, remaining: 49900, achieved: false },
+    );
 
     const finalHandover = await request(baseUrl, "/api/cash-handovers", fixture.receiverToken, {
       toUserId: fixture.ownerId,

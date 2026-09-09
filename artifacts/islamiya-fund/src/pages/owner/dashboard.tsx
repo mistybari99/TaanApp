@@ -62,28 +62,6 @@ export default function OwnerDashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Share transfer value</CardTitle>
-            <TrendingUp className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(dashboard.transferValue)}</div>
-            <p className="text-xs text-muted-foreground">Transfer-linked contribution</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Transfer settlements</CardTitle>
-            <ArrowDownToLine className="h-4 w-4 text-secondary-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(dashboard.transferSettlementValue)}</div>
-            <p className="text-xs text-muted-foreground">{dashboard.drawCount} recorded draws</p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Current Collection</CardTitle>
             <AlertCircle className="h-4 w-4 text-destructive" />
           </CardHeader>

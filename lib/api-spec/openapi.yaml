@@ -250,6 +250,18 @@ paths:
       operationId: listCashCustodyBalances
       responses:
         "200": { description: Current cash custody balances, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/CashCustodyBalance" } } } } }
+  /collector-targets:
+    get:
+      operationId: listCollectorTargets
+      responses:
+        "200": { description: Weekly collector handover targets and progress, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/CollectorTarget" } } } } }
+    post:
+      operationId: upsertCollectorTarget
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CollectorTargetInput" } } }
+      responses:
+        "200": { description: Target saved, content: { application/json: { schema: { $ref: "#/components/schemas/CollectorTarget" } } } }
   /cash-handovers/{id}/accept:
     post:
       operationId: acceptCashHandover
@@ -987,6 +999,27 @@ components:
         acceptedOutgoing: { type: number }
         drawPayouts: { type: number }
         availableAmount: { type: number }
+    CollectorTarget:
+      type: object
+      required: [id, cycleId, collectorId, collectorName, targetAmount, periodStart, periodEnd, acceptedAmount, pendingAmount, remainingAmount, isAchieved]
+      properties:
+        id: { type: integer }
+        cycleId: { type: integer }
+        collectorId: { type: integer }
+        collectorName: { type: string }
+        targetAmount: { type: number }
+        periodStart: { type: string }
+        periodEnd: { type: string }
+        acceptedAmount: { type: number }
+        pendingAmount: { type: number }
+        remainingAmount: { type: number }
+        isAchieved: { type: boolean }
+    CollectorTargetInput:
+      type: object
+      required: [collectorId, targetAmount]
+      properties:
+        collectorId: { type: integer, minimum: 1 }
+        targetAmount: { type: number, minimum: 0 }
     AuditEntry:
       type: object
       required: [id, actor, action, detail, createdAt]

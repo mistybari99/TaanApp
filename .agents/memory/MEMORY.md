@@ -6,4 +6,5 @@
 - [Fund business date](fund-business-date.md) — collection deadlines and Friday/Saturday period state use Asia/Dhaka business dates, not UTC.
 - [Member selection modes](member-selection.md) — batch Previous Due uses atomic multi-select; payments, draws, transfers, and history remain single-member actions.
 - [Navigation hierarchy](navigation-hierarchy.md) — daily work stays in mobile primary navigation; infrequent records/admin routes live under More and logout requires confirmation.
+- [Collector weekly targets](collector-targets.md) — handover targets measure accepted cash custody without restricting a collector's member payment entry.
 - [Financial test isolation](financial-test-isolation.md) — regression fixtures must not assume a seeded active cycle and must delete dependent ledger rows before memberships.

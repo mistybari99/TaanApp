@@ -778,6 +778,27 @@ export interface CashCustodyBalance {
   availableAmount: number;
 }
 
+export interface CollectorTarget {
+  id: number;
+  cycleId: number;
+  collectorId: number;
+  collectorName: string;
+  targetAmount: number;
+  periodStart: string;
+  periodEnd: string;
+  acceptedAmount: number;
+  pendingAmount: number;
+  remainingAmount: number;
+  isAchieved: boolean;
+}
+
+export interface CollectorTargetInput {
+  /** @minimum 1 */
+  collectorId: number;
+  /** @minimum 0 */
+  targetAmount: number;
+}
+
 export type AuditEntryBeforeValue = { [key: string]: unknown } | null;
 
 export type AuditEntryAfterValue = { [key: string]: unknown } | null;

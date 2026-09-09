@@ -23,6 +23,8 @@ export * from './cashReceiverInput';
 export * from './cashReceiverUpdate';
 export * from './collectorInput';
 export * from './collectorPerformance';
+export * from './collectorTarget';
+export * from './collectorTargetInput';
 export * from './collectorUpdate';
 export * from './cycleMember';
 export * from './cycleMemberInput';

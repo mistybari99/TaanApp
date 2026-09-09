@@ -30,6 +30,8 @@ import type {
   CashReceiverInput,
   CashReceiverUpdate,
   CollectorInput,
+  CollectorTarget,
+  CollectorTargetInput,
   CollectorUpdate,
   CycleMember,
   CycleMemberInput,
@@ -2432,6 +2434,142 @@ export function useListCashCustodyBalances<TData = Awaited<ReturnType<typeof lis
 
 
 
+
+export const getListCollectorTargetsUrl = () => {
+
+
+
+
+  return `/api/collector-targets`
+}
+
+export const listCollectorTargets = async ( options?: Parameters<typeof customFetch>[1]): Promise<CollectorTarget[]> => {
+
+  return customFetch<CollectorTarget[]>(getListCollectorTargetsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCollectorTargetsQueryKey = () => {
+    return [
+    `/api/collector-targets`
+    ] as const;
+    }
+
+
+export const getListCollectorTargetsQueryOptions = <TData = Awaited<ReturnType<typeof listCollectorTargets>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCollectorTargets>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCollectorTargetsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCollectorTargets>>> = ({ signal }) => listCollectorTargets({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCollectorTargets>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCollectorTargetsQueryResult = NonNullable<Awaited<ReturnType<typeof listCollectorTargets>>>
+export type ListCollectorTargetsQueryError = ErrorType<unknown>
+
+
+
+export function useListCollectorTargets<TData = Awaited<ReturnType<typeof listCollectorTargets>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCollectorTargets>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCollectorTargetsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpsertCollectorTargetUrl = () => {
+
+
+
+
+  return `/api/collector-targets`
+}
+
+export const upsertCollectorTarget = async (collectorTargetInput: CollectorTargetInput, options?: Parameters<typeof customFetch>[1]): Promise<CollectorTarget> => {
+
+  return customFetch<CollectorTarget>(getUpsertCollectorTargetUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(collectorTargetInput)
+  }
+);}
+
+
+
+
+
+export const getUpsertCollectorTargetMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertCollectorTarget>>, TError,{data: BodyType<CollectorTargetInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof upsertCollectorTarget>>, TError,{data: BodyType<CollectorTargetInput>}, TContext> => {
+
+const mutationKey = ['upsertCollectorTarget'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof upsertCollectorTarget>>, {data: BodyType<CollectorTargetInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  upsertCollectorTarget(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpsertCollectorTargetMutationResult = NonNullable<Awaited<ReturnType<typeof upsertCollectorTarget>>>
+    export type UpsertCollectorTargetMutationBody = BodyType<CollectorTargetInput>
+    export type UpsertCollectorTargetMutationError = ErrorType<unknown>
+
+    export const useUpsertCollectorTarget = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertCollectorTarget>>, TError,{data: BodyType<CollectorTargetInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof upsertCollectorTarget>>,
+        TError,
+        {data: BodyType<CollectorTargetInput>},
+        TContext
+      > => {
+      return useMutation(getUpsertCollectorTargetMutationOptions(options));
+    }
 
 export const getAcceptCashHandoverUrl = (id: number,) => {
 

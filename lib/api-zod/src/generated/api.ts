@@ -1076,6 +1076,47 @@ export const ListCashCustodyBalancesResponseItem = zod.object({
 export const ListCashCustodyBalancesResponse = zod.array(ListCashCustodyBalancesResponseItem)
 
 
+export const ListCollectorTargetsResponseItem = zod.object({
+  "id": zod.number().int(),
+  "cycleId": zod.number().int(),
+  "collectorId": zod.number().int(),
+  "collectorName": zod.string(),
+  "targetAmount": zod.number(),
+  "periodStart": zod.string(),
+  "periodEnd": zod.string(),
+  "acceptedAmount": zod.number(),
+  "pendingAmount": zod.number(),
+  "remainingAmount": zod.number(),
+  "isAchieved": zod.boolean()
+})
+export const ListCollectorTargetsResponse = zod.array(ListCollectorTargetsResponseItem)
+
+
+
+export const upsertCollectorTargetBodyTargetAmountMin = 0;
+
+
+
+export const UpsertCollectorTargetBody = zod.object({
+  "collectorId": zod.number().int().min(1),
+  "targetAmount": zod.number().min(upsertCollectorTargetBodyTargetAmountMin)
+})
+
+export const UpsertCollectorTargetResponse = zod.object({
+  "id": zod.number().int(),
+  "cycleId": zod.number().int(),
+  "collectorId": zod.number().int(),
+  "collectorName": zod.string(),
+  "targetAmount": zod.number(),
+  "periodStart": zod.string(),
+  "periodEnd": zod.string(),
+  "acceptedAmount": zod.number(),
+  "pendingAmount": zod.number(),
+  "remainingAmount": zod.number(),
+  "isAchieved": zod.boolean()
+})
+
+
 export const AcceptCashHandoverParams = zod.object({
   "id": zod.coerce.number().int()
 })

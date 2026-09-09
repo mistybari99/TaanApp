@@ -413,6 +413,22 @@ CREATE INDEX IF NOT EXISTS fund_cash_handovers_cycle_created_idx
 CREATE INDEX IF NOT EXISTS fund_cash_handovers_to_status_idx
   ON fund_cash_handovers(to_user_id, status, created_at DESC);
 
+-- A cycle-level weekly handover target is a benchmark, not a payment restriction.
+-- Collectors may still record payments for every member; accepted handovers are
+-- measured against this target for the current Saturday-Friday period.
+CREATE TABLE IF NOT EXISTS fund_collector_weekly_targets (
+  id serial PRIMARY KEY,
+  cycle_id integer NOT NULL REFERENCES fund_cycles(id) ON DELETE RESTRICT,
+  collector_id integer NOT NULL REFERENCES fund_users(id) ON DELETE RESTRICT,
+  target_amount numeric NOT NULL DEFAULT 0 CHECK (target_amount >= 0),
+  set_by integer NOT NULL REFERENCES fund_users(id) ON DELETE RESTRICT,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(cycle_id, collector_id)
+);
+CREATE INDEX IF NOT EXISTS fund_collector_weekly_targets_cycle_idx
+  ON fund_collector_weekly_targets(cycle_id, collector_id);
+
 -- Expand the legacy user role check without rewriting existing Owner/Collector users.
 ALTER TABLE fund_users DROP CONSTRAINT IF EXISTS fund_users_role_check;
 ALTER TABLE fund_users ADD CONSTRAINT fund_users_role_check

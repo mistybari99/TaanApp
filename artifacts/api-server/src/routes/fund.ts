@@ -121,6 +121,11 @@ const addDays = (date: string, days: number) => {
   value.setUTCDate(value.getUTCDate() + days);
   return value.toISOString().slice(0, 10);
 };
+const saturdayWeekBounds = (date: string) => {
+  const daysSinceSaturday = (new Date(`${date}T00:00:00Z`).getUTCDay() + 1) % 7;
+  const periodStart = addDays(date, -daysSinceSaturday);
+  return { periodStart, periodEnd: addDays(periodStart, 6) };
+};
 const validStatus = (value: unknown, allowed: readonly string[]) => allowed.includes(String(value ?? ""));
 const cashCustodyRoles: readonly FundRole[] = ["OWNER", "COLLECTOR", "CASH_RECEIVER"];
 const isCashCustodyRole = (value: unknown): value is FundRole => cashCustodyRoles.includes(value as FundRole);
@@ -2519,6 +2524,113 @@ router.get("/cash-custody/balances", requireAuth, async (req: AuthedRequest, res
     [cycleId, req.user?.role === "COLLECTOR" || req.user?.role === "CASH_RECEIVER" ? req.user.id : null],
   );
   res.json(result.rows);
+});
+
+router.get("/collector-targets", requireAuth, async (req: AuthedRequest, res) => {
+  const activeCycle = await pool.query("SELECT id FROM fund_cycles WHERE status='ACTIVE' ORDER BY id DESC LIMIT 1");
+  const cycleId = Number(activeCycle.rows[0]?.id ?? 0);
+  if (!cycleId) {
+    res.json([]);
+    return;
+  }
+  const businessDate = todayIso();
+  const tanPeriod = await tanPeriodForDate(pool, cycleId, businessDate);
+  const { periodStart, periodEnd } = tanPeriod ?? saturdayWeekBounds(businessDate);
+  const params: unknown[] = [cycleId, periodStart, periodEnd];
+  const clauses = ["u.active=true", "u.role='COLLECTOR'"];
+  if (req.user?.role === "COLLECTOR") {
+    params.push(req.user.id);
+    clauses.push(`u.id=$${params.length}`);
+  }
+  const result = await pool.query(
+    `SELECT COALESCE(t.id,0)::int AS id,
+      $1::int AS "cycleId",u.id AS "collectorId",u.name AS "collectorName",
+      COALESCE(t.target_amount,0)::float AS "targetAmount",
+      $2::date::text AS "periodStart",$3::date::text AS "periodEnd",
+      COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
+        WHERE h.cycle_id=$1 AND h.from_user_id=u.id AND h.status='ACCEPTED'
+          AND h.collection_date BETWEEN $2::date AND $3::date),0)::float AS "acceptedAmount",
+      COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h
+        WHERE h.cycle_id=$1 AND h.from_user_id=u.id AND h.status='SUBMITTED'
+          AND h.collection_date BETWEEN $2::date AND $3::date),0)::float AS "pendingAmount"
+     FROM fund_users u
+     LEFT JOIN fund_collector_weekly_targets t
+       ON t.cycle_id=$1 AND t.collector_id=u.id
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY u.name`,
+    params,
+  );
+  res.json(result.rows.map((row) => {
+    const targetAmount = money(row.targetAmount);
+    const acceptedAmount = money(row.acceptedAmount);
+    return {
+      ...row,
+      targetAmount,
+      acceptedAmount,
+      pendingAmount: money(row.pendingAmount),
+      remainingAmount: Math.max(0, targetAmount - acceptedAmount),
+      isAchieved: targetAmount > 0 && acceptedAmount >= targetAmount,
+    };
+  }));
+});
+
+router.post("/collector-targets", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const b = req.body as Record<string, unknown>;
+  const collectorId = Number(b.collectorId);
+  const targetAmount = Number(b.targetAmount);
+  if (!Number.isInteger(collectorId) || collectorId <= 0 || !Number.isFinite(targetAmount) || targetAmount < 0) {
+    res.status(400).json({ error: "A valid collector and non-negative weekly target are required" });
+    return;
+  }
+  const activeCycle = await pool.query("SELECT id FROM fund_cycles WHERE status='ACTIVE' ORDER BY id DESC LIMIT 1");
+  const cycleId = Number(activeCycle.rows[0]?.id ?? 0);
+  if (!cycleId) {
+    res.status(409).json({ error: "Create an active cycle before setting a collector target" });
+    return;
+  }
+  const collector = await pool.query(
+    "SELECT id,name FROM fund_users WHERE id=$1 AND role='COLLECTOR' AND active=true",
+    [collectorId],
+  );
+  if (!collector.rows[0]) {
+    res.status(400).json({ error: "The selected user is not an active Collector" });
+    return;
+  }
+  const result = await pool.query(
+    `INSERT INTO fund_collector_weekly_targets(cycle_id,collector_id,target_amount,set_by)
+     VALUES($1,$2,$3,$4)
+     ON CONFLICT(cycle_id,collector_id)
+     DO UPDATE SET target_amount=EXCLUDED.target_amount,set_by=EXCLUDED.set_by,updated_at=now()
+     RETURNING id,cycle_id AS "cycleId",collector_id AS "collectorId",target_amount::float AS "targetAmount"`,
+    [cycleId, collectorId, targetAmount, req.user!.id],
+  );
+  await auditOn(pool, req.user!.id, "COLLECTOR_TARGET_UPDATED", `Weekly target for ${collector.rows[0].name}: BDT ${targetAmount}`, "collector_target", String(result.rows[0].id), {
+    cycleId,
+    afterValue: { collectorId, targetAmount },
+  });
+  const businessDate = todayIso();
+  const tanPeriod = await tanPeriodForDate(pool, cycleId, businessDate);
+  const { periodStart, periodEnd } = tanPeriod ?? saturdayWeekBounds(businessDate);
+  const progress = await pool.query(
+    `SELECT
+      COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h WHERE h.cycle_id=$1 AND h.from_user_id=$2 AND h.status='ACCEPTED' AND h.collection_date BETWEEN $3::date AND $4::date),0)::float AS "acceptedAmount",
+      COALESCE((SELECT SUM(h.amount) FROM fund_cash_handovers h WHERE h.cycle_id=$1 AND h.from_user_id=$2 AND h.status='SUBMITTED' AND h.collection_date BETWEEN $3::date AND $4::date),0)::float AS "pendingAmount"`,
+    [cycleId, collectorId, periodStart, periodEnd],
+  );
+  const acceptedAmount = money(progress.rows[0].acceptedAmount);
+  return res.json({
+    id: Number(result.rows[0].id),
+    cycleId,
+    collectorId,
+    collectorName: collector.rows[0].name,
+    targetAmount,
+    periodStart,
+    periodEnd,
+    acceptedAmount,
+    pendingAmount: money(progress.rows[0].pendingAmount),
+    remainingAmount: Math.max(0, targetAmount - acceptedAmount),
+    isAchieved: targetAmount > 0 && acceptedAmount >= targetAmount,
+  });
 });
 
 router.post("/cash-handovers", requireAuth, async (req: AuthedRequest, res) => {
