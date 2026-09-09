@@ -293,20 +293,66 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     });
     assert.equal(insufficient.status, 409);
 
-    const payoutPayload = {
-      payerUserId: fixture.ownerId,
-      amount: 50,
-      payoutDate: drawDateIso,
-      reference: `${prefix}-payout-1`,
-      idempotencyKey: `${prefix}-payout-1`,
+    const payoutPayloads = [
+      {
+        payerUserId: fixture.ownerId,
+        amount: 50,
+        payoutDate: drawDateIso,
+        reference: `${prefix}-payout-1`,
+        idempotencyKey: `${prefix}-payout-1`,
+      },
+      {
+        payerUserId: fixture.ownerId,
+        amount: 50,
+        payoutDate: drawDateIso,
+        reference: `${prefix}-payout-concurrent`,
+        idempotencyKey: `${prefix}-payout-concurrent`,
+      },
+    ];
+    const concurrentPayouts = await Promise.all(
+      payoutPayloads.map((payload) =>
+        request(baseUrl, `/api/draws/${drawBody.id}/disbursement`, fixture.ownerToken, payload),
+      ),
+    );
+    assert.equal(concurrentPayouts.filter((response) => response.status === 201).length, 1);
+    assert.equal(concurrentPayouts.filter((response) => response.status === 409).length, 1);
+    const winnerIndex = concurrentPayouts.findIndex((response) => response.status === 201);
+    const loserIndex = concurrentPayouts.findIndex((response) => response.status === 409);
+    assert.notEqual(winnerIndex, -1);
+    assert.notEqual(loserIndex, -1);
+    const payoutBody = await concurrentPayouts[winnerIndex].json() as {
+      payoutId: number;
+      payoutStatus: string;
+      payoutPayerId: number;
+      payoutAmount: number;
     };
-    const payout = await request(baseUrl, `/api/draws/${drawBody.id}/disbursement`, fixture.ownerToken, payoutPayload);
-    assert.equal(payout.status, 201);
-    const payoutBody = await payout.json() as { payoutId: number; payoutStatus: string; payoutPayerId: number; payoutAmount: number };
     assert.ok(payoutBody.payoutId);
     assert.equal(payoutBody.payoutStatus, "PAID");
     assert.equal(payoutBody.payoutPayerId, fixture.ownerId);
     assert.equal(payoutBody.payoutAmount, 50);
+    const losingPayoutBody = await concurrentPayouts[loserIndex].json() as { error: string };
+    assert.match(losingPayoutBody.error, /already been paid/);
+
+    const disbursements = await pool.query(
+      "SELECT id,status,amount,payer_user_id FROM fund_draw_disbursements WHERE draw_id=$1",
+      [drawBody.id],
+    );
+    assert.equal(disbursements.rows.length, 1);
+    assert.equal(Number(disbursements.rows[0].id), payoutBody.payoutId);
+    assert.equal(disbursements.rows[0].status, "PAID");
+    assert.equal(Number(disbursements.rows[0].amount), 50);
+    assert.equal(Number(disbursements.rows[0].payer_user_id), fixture.ownerId);
+
+    const payoutAudits = await pool.query(
+      `SELECT action,entity_type,entity_id,related_transaction_id
+         FROM fund_audit
+        WHERE actor_id=$1 AND cycle_id=$2 AND action='DRAW_PAYOUT_RECORDED'`,
+      [fixture.ownerId, fixture.cycleId],
+    );
+    assert.equal(payoutAudits.rows.length, 1);
+    assert.equal(payoutAudits.rows[0].entity_type, "draw_disbursement");
+    assert.equal(Number(payoutAudits.rows[0].entity_id), payoutBody.payoutId);
+    assert.equal(payoutAudits.rows[0].related_transaction_id, String(payoutBody.payoutId));
 
     const balancesAfterPayout = await request(baseUrl, "/api/cash-custody/balances", fixture.ownerToken);
     assert.equal(balancesAfterPayout.status, 200);
@@ -316,12 +362,17 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     assert.equal(ownerBalance?.drawPayouts, 50);
 
     const duplicate = await request(baseUrl, `/api/draws/${drawBody.id}/disbursement`, fixture.ownerToken, {
-      ...payoutPayload,
+      ...payoutPayloads[loserIndex],
       idempotencyKey: `${prefix}-payout-duplicate`,
     });
     assert.equal(duplicate.status, 409);
 
-    const replay = await request(baseUrl, `/api/draws/${drawBody.id}/disbursement`, fixture.ownerToken, payoutPayload);
+    const replay = await request(
+      baseUrl,
+      `/api/draws/${drawBody.id}/disbursement`,
+      fixture.ownerToken,
+      payoutPayloads[winnerIndex],
+    );
     assert.equal(replay.status, 200);
 
     const drawWithPayout = await request(baseUrl, "/api/draws", fixture.ownerToken);
