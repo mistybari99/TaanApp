@@ -20,6 +20,7 @@ export interface CycleMember {
   todayDue: number;
   currentPeriodDue?: number;
   previousDue?: number;
+  advanceCredit?: number;
   totalDue?: number;
   drawEntitlementTotal?: number;
   drawEntitlementUsed?: number;

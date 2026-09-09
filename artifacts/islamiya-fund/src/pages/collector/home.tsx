@@ -297,6 +297,7 @@ export default function CollectorHome() {
               visibleMembers?.slice(0, 10).map((member) => {
                 const previousDue = member.previousDue ?? 0
                 const currentPeriodDue = member.currentPeriodDue ?? 0
+                const advanceCredit = "advanceCredit" in member ? (member.advanceCredit ?? 0) : 0
                 const totalDue = member.totalDue ?? previousDue + currentPeriodDue
                 return (
                   <Card
@@ -314,12 +315,13 @@ export default function CollectorHome() {
                         <div className="mt-2 flex flex-wrap gap-1 text-[11px] font-semibold">
                           {previousDue > 0 && <span className="rounded bg-red-100 px-2 py-0.5 text-red-700">🔴 Previous Due</span>}
                           {currentPeriodDue > 0 && <span className="rounded bg-amber-100 px-2 py-0.5 text-amber-800">Current Due</span>}
+                          {advanceCredit > 0 && <span className="rounded bg-blue-100 px-2 py-0.5 text-blue-700">Advance {formatCurrency(advanceCredit)}</span>}
                         </div>
                       </div>
                       <div className="text-right">
                          <div className="text-primary font-bold">{formatCurrency(totalDue || member.dailyAmount || 0)}</div>
                          <div className="text-xs text-muted-foreground">Total Due</div>
-                         <div className="mt-1 text-[11px] text-muted-foreground">P {formatCurrency(previousDue)} · C {formatCurrency(currentPeriodDue)}</div>
+                         <div className="mt-1 text-[11px] text-muted-foreground">P {formatCurrency(previousDue)} · C {formatCurrency(currentPeriodDue)}{advanceCredit > 0 ? ` · A ${formatCurrency(advanceCredit)}` : ""}</div>
                       </div>
                     </CardContent>
                   </Card>
@@ -350,9 +352,10 @@ export default function CollectorHome() {
               </div>
 
               <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-2 rounded-lg bg-muted/50 p-3 text-center text-sm">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 rounded-lg bg-muted/50 p-3 text-center text-sm">
                   <div><div className="font-semibold">{formatCurrency(selectedMember?.previousDue ?? 0)}</div><div className="text-xs text-muted-foreground">আগের বকেয়া</div></div>
                   <div><div className="font-semibold">{formatCurrency(selectedMember?.currentPeriodDue ?? selectedMember?.dailyAmount ?? 0)}</div><div className="text-xs text-muted-foreground">Current collection</div></div>
+                  <div><div className="font-semibold text-blue-700">{formatCurrency(selectedMember && "advanceCredit" in selectedMember ? (selectedMember.advanceCredit ?? 0) : 0)}</div><div className="text-xs text-muted-foreground">Advance credit</div></div>
                   <div><div className="font-semibold text-destructive">{formatCurrency(selectedMember?.totalDue ?? selectedMember?.dailyAmount ?? 0)}</div><div className="text-xs text-muted-foreground">মোট due</div></div>
                 </div>
                 <div className="space-y-2">

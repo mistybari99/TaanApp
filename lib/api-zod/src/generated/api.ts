@@ -119,6 +119,7 @@ export const GetDashboardResponse = zod.object({
   "todayDue": zod.number(),
   "currentPeriodDue": zod.number().optional(),
   "previousDue": zod.number().optional(),
+  "advanceCredit": zod.number().optional(),
   "totalDue": zod.number().optional(),
   "createdAt": zod.string().optional(),
   "notes": zod.string().optional()
@@ -139,6 +140,7 @@ export const GetDashboardResponse = zod.object({
   "verificationStatus": zod.string(),
   "previousDueApplied": zod.number().optional(),
   "currentPeriodApplied": zod.number().optional(),
+  "advanceCredit": zod.number().optional(),
   "createdAt": zod.string(),
   "status": zod.string()
 })),
@@ -388,6 +390,7 @@ export const ListCycleMembersResponseItem = zod.object({
   "todayDue": zod.number(),
   "currentPeriodDue": zod.number().optional(),
   "previousDue": zod.number().optional(),
+  "advanceCredit": zod.number().optional(),
   "totalDue": zod.number().optional(),
   "drawEntitlementTotal": zod.number().int().optional(),
   "drawEntitlementUsed": zod.number().int().optional(),
@@ -425,6 +428,7 @@ export const UpsertCycleMemberResponse = zod.object({
   "todayDue": zod.number(),
   "currentPeriodDue": zod.number().optional(),
   "previousDue": zod.number().optional(),
+  "advanceCredit": zod.number().optional(),
   "totalDue": zod.number().optional(),
   "drawEntitlementTotal": zod.number().int().optional(),
   "drawEntitlementUsed": zod.number().int().optional(),
@@ -660,6 +664,7 @@ export const ListMembersResponseItem = zod.object({
   "todayDue": zod.number(),
   "currentPeriodDue": zod.number().optional(),
   "previousDue": zod.number().optional(),
+  "advanceCredit": zod.number().optional(),
   "totalDue": zod.number().optional(),
   "createdAt": zod.string().optional(),
   "notes": zod.string().optional()
@@ -697,6 +702,7 @@ export const CreateMemberResponse = zod.object({
   "todayDue": zod.number(),
   "currentPeriodDue": zod.number().optional(),
   "previousDue": zod.number().optional(),
+  "advanceCredit": zod.number().optional(),
   "totalDue": zod.number().optional(),
   "createdAt": zod.string().optional(),
   "notes": zod.string().optional()
@@ -783,6 +789,7 @@ export const UpdateMemberResponse = zod.object({
   "todayDue": zod.number(),
   "currentPeriodDue": zod.number().optional(),
   "previousDue": zod.number().optional(),
+  "advanceCredit": zod.number().optional(),
   "totalDue": zod.number().optional(),
   "createdAt": zod.string().optional(),
   "notes": zod.string().optional()
@@ -810,6 +817,7 @@ export const GetMemberHistoryResponse = zod.object({
   "todayDue": zod.number(),
   "currentPeriodDue": zod.number().optional(),
   "previousDue": zod.number().optional(),
+  "advanceCredit": zod.number().optional(),
   "totalDue": zod.number().optional(),
   "createdAt": zod.string().optional(),
   "notes": zod.string().optional()
@@ -846,6 +854,7 @@ export const GetMemberHistoryResponse = zod.object({
   "verificationStatus": zod.string(),
   "previousDueApplied": zod.number().optional(),
   "currentPeriodApplied": zod.number().optional(),
+  "advanceCredit": zod.number().optional(),
   "createdAt": zod.string(),
   "status": zod.string()
 })),
@@ -858,7 +867,22 @@ export const GetMemberHistoryResponse = zod.object({
   "winningAmount": zod.number(),
   "status": zod.string(),
   "notes": zod.string().optional(),
-  "entitlementNumber": zod.number().int().nullish()
+  "entitlementNumber": zod.number().int().nullish(),
+  "payoutStatus": zod.enum(['PAID', 'REVERSED']).nullish(),
+  "payoutHistory": zod.array(zod.object({
+  "id": zod.number().int(),
+  "drawId": zod.number().int(),
+  "payerUserId": zod.number().int(),
+  "payerName": zod.string().nullish(),
+  "amount": zod.number(),
+  "payoutDate": zod.string(),
+  "reference": zod.string(),
+  "note": zod.string().optional(),
+  "status": zod.enum(['PAID', 'REVERSED']),
+  "createdAt": zod.string(),
+  "reversedAt": zod.string().nullish(),
+  "reversalReason": zod.string().nullish()
+})).optional()
 })),
   "transfers": zod.array(zod.object({
   "id": zod.number().int(),
@@ -907,6 +931,7 @@ export const ListPaymentsResponseItem = zod.object({
   "verificationStatus": zod.string(),
   "previousDueApplied": zod.number().optional(),
   "currentPeriodApplied": zod.number().optional(),
+  "advanceCredit": zod.number().optional(),
   "createdAt": zod.string(),
   "status": zod.string()
 })
@@ -945,6 +970,7 @@ export const CreatePaymentResponse = zod.object({
   "verificationStatus": zod.string(),
   "previousDueApplied": zod.number().optional(),
   "currentPeriodApplied": zod.number().optional(),
+  "advanceCredit": zod.number().optional(),
   "createdAt": zod.string(),
   "status": zod.string()
 })
@@ -974,6 +1000,7 @@ export const ReversePaymentResponse = zod.object({
   "verificationStatus": zod.string(),
   "previousDueApplied": zod.number().optional(),
   "currentPeriodApplied": zod.number().optional(),
+  "advanceCredit": zod.number().optional(),
   "createdAt": zod.string(),
   "status": zod.string()
 })
@@ -1295,7 +1322,21 @@ export const ListDrawsResponseItem = zod.object({
   "payoutStatus": zod.enum(['PAID', 'REVERSED']).nullish(),
   "payoutCreatedAt": zod.string().nullish(),
   "payoutReversedAt": zod.string().nullish(),
-  "payoutReversalReason": zod.string().nullish()
+  "payoutReversalReason": zod.string().nullish(),
+  "payoutHistory": zod.array(zod.object({
+  "id": zod.number().int(),
+  "drawId": zod.number().int(),
+  "payerUserId": zod.number().int(),
+  "payerName": zod.string().nullish(),
+  "amount": zod.number(),
+  "payoutDate": zod.string(),
+  "reference": zod.string(),
+  "note": zod.string().optional(),
+  "status": zod.enum(['PAID', 'REVERSED']),
+  "createdAt": zod.string(),
+  "reversedAt": zod.string().nullish(),
+  "reversalReason": zod.string().nullish()
+})).optional()
 })
 export const ListDrawsResponse = zod.array(ListDrawsResponseItem)
 
@@ -1345,7 +1386,21 @@ export const CreateDrawResponse = zod.object({
   "payoutStatus": zod.enum(['PAID', 'REVERSED']).nullish(),
   "payoutCreatedAt": zod.string().nullish(),
   "payoutReversedAt": zod.string().nullish(),
-  "payoutReversalReason": zod.string().nullish()
+  "payoutReversalReason": zod.string().nullish(),
+  "payoutHistory": zod.array(zod.object({
+  "id": zod.number().int(),
+  "drawId": zod.number().int(),
+  "payerUserId": zod.number().int(),
+  "payerName": zod.string().nullish(),
+  "amount": zod.number(),
+  "payoutDate": zod.string(),
+  "reference": zod.string(),
+  "note": zod.string().optional(),
+  "status": zod.enum(['PAID', 'REVERSED']),
+  "createdAt": zod.string(),
+  "reversedAt": zod.string().nullish(),
+  "reversalReason": zod.string().nullish()
+})).optional()
 })
 
 
@@ -1398,7 +1453,21 @@ export const CreateDrawDisbursementResponse = zod.object({
   "payoutStatus": zod.enum(['PAID', 'REVERSED']).nullish(),
   "payoutCreatedAt": zod.string().nullish(),
   "payoutReversedAt": zod.string().nullish(),
-  "payoutReversalReason": zod.string().nullish()
+  "payoutReversalReason": zod.string().nullish(),
+  "payoutHistory": zod.array(zod.object({
+  "id": zod.number().int(),
+  "drawId": zod.number().int(),
+  "payerUserId": zod.number().int(),
+  "payerName": zod.string().nullish(),
+  "amount": zod.number(),
+  "payoutDate": zod.string(),
+  "reference": zod.string(),
+  "note": zod.string().optional(),
+  "status": zod.enum(['PAID', 'REVERSED']),
+  "createdAt": zod.string(),
+  "reversedAt": zod.string().nullish(),
+  "reversalReason": zod.string().nullish()
+})).optional()
 })
 
 
@@ -1456,7 +1525,21 @@ export const ReverseDrawDisbursementResponse = zod.object({
   "payoutStatus": zod.enum(['PAID', 'REVERSED']).nullish(),
   "payoutCreatedAt": zod.string().nullish(),
   "payoutReversedAt": zod.string().nullish(),
-  "payoutReversalReason": zod.string().nullish()
+  "payoutReversalReason": zod.string().nullish(),
+  "payoutHistory": zod.array(zod.object({
+  "id": zod.number().int(),
+  "drawId": zod.number().int(),
+  "payerUserId": zod.number().int(),
+  "payerName": zod.string().nullish(),
+  "amount": zod.number(),
+  "payoutDate": zod.string(),
+  "reference": zod.string(),
+  "note": zod.string().optional(),
+  "status": zod.enum(['PAID', 'REVERSED']),
+  "createdAt": zod.string(),
+  "reversedAt": zod.string().nullish(),
+  "reversalReason": zod.string().nullish()
+})).optional()
 })
 
 
@@ -1573,6 +1656,75 @@ export const UpdateCashReceiverResponse = zod.object({
   "username": zod.string(),
   "role": zod.enum(['OWNER', 'COLLECTOR', 'CASH_RECEIVER']),
   "active": zod.boolean().optional()
+})
+
+
+export const ListPermissionsResponseItem = zod.object({
+  "id": zod.number().int(),
+  "userId": zod.number().int(),
+  "userName": zod.string(),
+  "username": zod.string(),
+  "role": zod.enum(['COLLECTOR', 'CASH_RECEIVER']),
+  "permission": zod.enum(['FULL_ACCESS', 'PAYMENT_REVERSAL', 'PAYOUT_APPROVAL', 'PAYOUT_REVERSAL', 'ADVANCE_ALLOCATION', 'FINANCIAL_CORRECTION', 'DRAW_DATE_CORRECTION']),
+  "cycleId": zod.number().int().nullish(),
+  "expiresAt": zod.string().nullish(),
+  "revokedAt": zod.string().nullish(),
+  "note": zod.string().optional(),
+  "createdAt": zod.string(),
+  "grantedByName": zod.string().nullish()
+})
+export const ListPermissionsResponse = zod.array(ListPermissionsResponseItem)
+
+
+
+
+
+
+export const GrantPermissionBody = zod.object({
+  "userId": zod.number().int().min(1),
+  "permission": zod.enum(['FULL_ACCESS', 'PAYMENT_REVERSAL', 'PAYOUT_APPROVAL', 'PAYOUT_REVERSAL', 'ADVANCE_ALLOCATION', 'FINANCIAL_CORRECTION', 'DRAW_DATE_CORRECTION']),
+  "cycleId": zod.number().int().min(1).nullish(),
+  "expiresAt": zod.string().nullish(),
+  "note": zod.string().optional()
+})
+
+export const GrantPermissionResponse = zod.object({
+  "id": zod.number().int(),
+  "userId": zod.number().int(),
+  "userName": zod.string(),
+  "username": zod.string(),
+  "role": zod.enum(['COLLECTOR', 'CASH_RECEIVER']),
+  "permission": zod.enum(['FULL_ACCESS', 'PAYMENT_REVERSAL', 'PAYOUT_APPROVAL', 'PAYOUT_REVERSAL', 'ADVANCE_ALLOCATION', 'FINANCIAL_CORRECTION', 'DRAW_DATE_CORRECTION']),
+  "cycleId": zod.number().int().nullish(),
+  "expiresAt": zod.string().nullish(),
+  "revokedAt": zod.string().nullish(),
+  "note": zod.string().optional(),
+  "createdAt": zod.string(),
+  "grantedByName": zod.string().nullish()
+})
+
+
+export const RevokePermissionParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const RevokePermissionBody = zod.object({
+  "reason": zod.string().optional()
+})
+
+export const RevokePermissionResponse = zod.object({
+  "id": zod.number().int(),
+  "userId": zod.number().int(),
+  "userName": zod.string(),
+  "username": zod.string(),
+  "role": zod.enum(['COLLECTOR', 'CASH_RECEIVER']),
+  "permission": zod.enum(['FULL_ACCESS', 'PAYMENT_REVERSAL', 'PAYOUT_APPROVAL', 'PAYOUT_REVERSAL', 'ADVANCE_ALLOCATION', 'FINANCIAL_CORRECTION', 'DRAW_DATE_CORRECTION']),
+  "cycleId": zod.number().int().nullish(),
+  "expiresAt": zod.string().nullish(),
+  "revokedAt": zod.string().nullish(),
+  "note": zod.string().optional(),
+  "createdAt": zod.string(),
+  "grantedByName": zod.string().nullish()
 })
 
 

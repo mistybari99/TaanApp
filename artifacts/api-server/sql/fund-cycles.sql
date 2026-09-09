@@ -34,6 +34,7 @@ ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS shares integer NOT NULL DEFAU
 ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS notes text NOT NULL DEFAULT '';
 ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS previous_due_applied numeric NOT NULL DEFAULT 0;
 ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS current_period_applied numeric NOT NULL DEFAULT 0;
+ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS advance_credit numeric NOT NULL DEFAULT 0;
 ALTER TABLE fund_settlements ADD COLUMN IF NOT EXISTS cycle_id integer;
 ALTER TABLE fund_payments ADD COLUMN IF NOT EXISTS tan_period_id integer;
 ALTER TABLE fund_due_entries ADD COLUMN IF NOT EXISTS tan_period_id integer;
@@ -203,19 +204,11 @@ FROM fund_tan_configs cfg
 JOIN fund_cycle_members cm ON cm.cycle_id=cfg.cycle_id
 ON CONFLICT(tan_config_id,member_id) DO NOTHING;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fund_tan_periods_start_saturday_check') THEN
-    ALTER TABLE fund_tan_periods
-      ADD CONSTRAINT fund_tan_periods_start_saturday_check
-      CHECK (EXTRACT(DOW FROM period_start) = 6) NOT VALID;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fund_tan_periods_end_friday_check') THEN
-    ALTER TABLE fund_tan_periods
-      ADD CONSTRAINT fund_tan_periods_end_friday_check
-      CHECK (EXTRACT(DOW FROM period_end) = 5) NOT VALID;
-  END IF;
-END $$;
+-- TAN pause/resume can shift a schedule by any number of business dates.
+-- Keep period identity and minimum duration constraints, but do not require
+-- every shifted period to remain Saturday-Friday after repeated pauses.
+ALTER TABLE fund_tan_periods DROP CONSTRAINT IF EXISTS fund_tan_periods_start_saturday_check;
+ALTER TABLE fund_tan_periods DROP CONSTRAINT IF EXISTS fund_tan_periods_end_friday_check;
 
 CREATE TABLE IF NOT EXISTS fund_cycle_member_share_history (
   id serial PRIMARY KEY,
@@ -475,3 +468,30 @@ CREATE INDEX IF NOT EXISTS fund_collector_weekly_targets_cycle_idx
 ALTER TABLE fund_users DROP CONSTRAINT IF EXISTS fund_users_role_check;
 ALTER TABLE fund_users ADD CONSTRAINT fund_users_role_check
   CHECK (role IN ('OWNER', 'COLLECTOR', 'CASH_RECEIVER'));
+
+CREATE TABLE IF NOT EXISTS fund_user_permissions (
+  id serial PRIMARY KEY,
+  user_id integer NOT NULL REFERENCES fund_users(id) ON DELETE RESTRICT,
+  permission text NOT NULL CHECK (permission IN (
+    'FULL_ACCESS',
+    'PAYMENT_REVERSAL',
+    'PAYOUT_APPROVAL',
+    'PAYOUT_REVERSAL',
+    'ADVANCE_ALLOCATION',
+    'FINANCIAL_CORRECTION',
+    'DRAW_DATE_CORRECTION'
+  )),
+  cycle_id integer REFERENCES fund_cycles(id) ON DELETE RESTRICT,
+  expires_at timestamptz,
+  granted_by integer NOT NULL REFERENCES fund_users(id) ON DELETE RESTRICT,
+  revoked_by integer REFERENCES fund_users(id) ON DELETE RESTRICT,
+  revoked_at timestamptz,
+  note text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS fund_user_permissions_active_idx
+  ON fund_user_permissions(user_id,permission,COALESCE(cycle_id,0))
+  WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS fund_user_permissions_lookup_idx
+  ON fund_user_permissions(user_id,permission,expires_at)
+  WHERE revoked_at IS NULL;

@@ -393,6 +393,28 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/CashReceiverUpdate" } } }
       responses:
         "200": { description: Cash receiver updated, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
+  /permissions:
+    get:
+      operationId: listPermissions
+      responses:
+        "200": { description: Delegated permissions, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/PermissionRecord" } } } } }
+    post:
+      operationId: grantPermission
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PermissionInput" } } }
+      responses:
+        "201": { description: Permission granted, content: { application/json: { schema: { $ref: "#/components/schemas/PermissionRecord" } } } }
+  /permissions/{id}/revoke:
+    post:
+      operationId: revokePermission
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/PermissionRevocationInput" } } }
+      responses:
+        "200": { description: Permission revoked, content: { application/json: { schema: { $ref: "#/components/schemas/PermissionRecord" } } } }
   /audit:
     get:
       operationId: listAudit
@@ -439,6 +461,35 @@ components:
         username: { type: string }
         role: { type: string, enum: [OWNER, COLLECTOR, CASH_RECEIVER] }
         active: { type: boolean }
+    PermissionRecord:
+      type: object
+      required: [id, userId, userName, username, role, permission, createdAt]
+      properties:
+        id: { type: integer }
+        userId: { type: integer }
+        userName: { type: string }
+        username: { type: string }
+        role: { type: string, enum: [COLLECTOR, CASH_RECEIVER] }
+        permission: { type: string, enum: [FULL_ACCESS, PAYMENT_REVERSAL, PAYOUT_APPROVAL, PAYOUT_REVERSAL, ADVANCE_ALLOCATION, FINANCIAL_CORRECTION, DRAW_DATE_CORRECTION] }
+        cycleId: { type: integer, nullable: true }
+        expiresAt: { type: string, nullable: true }
+        revokedAt: { type: string, nullable: true }
+        note: { type: string }
+        createdAt: { type: string }
+        grantedByName: { type: string, nullable: true }
+    PermissionInput:
+      type: object
+      required: [userId, permission]
+      properties:
+        userId: { type: integer, minimum: 1 }
+        permission: { type: string, enum: [FULL_ACCESS, PAYMENT_REVERSAL, PAYOUT_APPROVAL, PAYOUT_REVERSAL, ADVANCE_ALLOCATION, FINANCIAL_CORRECTION, DRAW_DATE_CORRECTION] }
+        cycleId: { type: integer, minimum: 1, nullable: true }
+        expiresAt: { type: string, nullable: true }
+        note: { type: string }
+    PermissionRevocationInput:
+      type: object
+      properties:
+        reason: { type: string }
     OnboardingStatus:
       type: object
       required: [initialized, demoMode]
@@ -498,6 +549,7 @@ components:
         todayDue: { type: number }
         currentPeriodDue: { type: number }
         previousDue: { type: number }
+        advanceCredit: { type: number }
         totalDue: { type: number }
         createdAt: { type: string }
         notes: { type: string }
@@ -566,6 +618,7 @@ components:
         todayDue: { type: number }
         currentPeriodDue: { type: number }
         previousDue: { type: number }
+        advanceCredit: { type: number }
         totalDue: { type: number }
         drawEntitlementTotal: { type: integer }
         drawEntitlementUsed: { type: integer }
@@ -714,6 +767,23 @@ components:
         payoutCreatedAt: { type: string, nullable: true }
         payoutReversedAt: { type: string, nullable: true }
         payoutReversalReason: { type: string, nullable: true }
+        payoutHistory: { type: array, items: { $ref: "#/components/schemas/DrawPayoutHistory" } }
+    DrawPayoutHistory:
+      type: object
+      required: [id, drawId, payerUserId, amount, payoutDate, reference, status, createdAt]
+      properties:
+        id: { type: integer }
+        drawId: { type: integer }
+        payerUserId: { type: integer }
+        payerName: { type: string, nullable: true }
+        amount: { type: number }
+        payoutDate: { type: string }
+        reference: { type: string }
+        note: { type: string }
+        status: { type: string, enum: [PAID, REVERSED] }
+        createdAt: { type: string }
+        reversedAt: { type: string, nullable: true }
+        reversalReason: { type: string, nullable: true }
     DrawDisbursementInput:
       type: object
       required: [payerUserId, amount, payoutDate, reference]
@@ -871,6 +941,8 @@ components:
         status: { type: string }
         notes: { type: string }
         entitlementNumber: { type: integer, nullable: true }
+        payoutStatus: { type: string, enum: [PAID, REVERSED], nullable: true }
+        payoutHistory: { type: array, items: { $ref: "#/components/schemas/DrawPayoutHistory" } }
     MemberInput:
       type: object
       required: [name, mobile, shares, dailyAmount, joiningDate, status]
@@ -970,6 +1042,7 @@ components:
         verificationStatus: { type: string }
         previousDueApplied: { type: number }
         currentPeriodApplied: { type: number }
+        advanceCredit: { type: number }
         createdAt: { type: string }
         status: { type: string }
     PaymentInput:

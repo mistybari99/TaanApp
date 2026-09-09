@@ -23,6 +23,7 @@ export interface Payment {
   verificationStatus: string;
   previousDueApplied?: number;
   currentPeriodApplied?: number;
+  advanceCredit?: number;
   createdAt: string;
   status: string;
 }

@@ -4,11 +4,16 @@ import {
   useCreateCollector,
   useUpdateCollector,
   useListCashReceivers,
+  useListCycles,
   useCreateCashReceiver,
   useUpdateCashReceiver,
   getListCollectorTargetsQueryKey,
   useListCollectorTargets,
   useUpsertCollectorTarget,
+  getListPermissionsQueryKey,
+  useListPermissions,
+  useGrantPermission,
+  useRevokePermission,
 } from "@workspace/api-client-react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -24,12 +29,16 @@ import { formatCurrency } from "@/lib/utils"
 export default function CollectorsPage() {
   const { data: collectors, isLoading, refetch } = useListCollectors()
   const { data: cashReceivers, isLoading: cashReceiversLoading, refetch: refetchCashReceivers } = useListCashReceivers()
+  const { data: cycles } = useListCycles()
   const createCollector = useCreateCollector()
   const updateCollector = useUpdateCollector()
   const createCashReceiver = useCreateCashReceiver()
   const updateCashReceiver = useUpdateCashReceiver()
   const { data: collectorTargets } = useListCollectorTargets()
   const upsertCollectorTarget = useUpsertCollectorTarget()
+  const { data: permissions } = useListPermissions()
+  const grantPermission = useGrantPermission()
+  const revokePermission = useRevokePermission()
   const queryClient = useQueryClient()
 
   const [isAddOpen, setIsAddOpen] = useState(false)
@@ -39,6 +48,13 @@ export default function CollectorsPage() {
   const [editTarget, setEditTarget] = useState<{ id: number; role: "COLLECTOR" | "CASH_RECEIVER" } | null>(null)
   const [editPassword, setEditPassword] = useState("")
   const [targetInputs, setTargetInputs] = useState<Record<number, string>>({})
+  const [permissionForm, setPermissionForm] = useState({
+    userId: "",
+    permission: "PAYOUT_APPROVAL",
+    cycleId: "",
+    expiresAt: "",
+    note: "",
+  })
 
   const refreshStaff = () => {
     refetch()
@@ -97,6 +113,44 @@ export default function CollectorsPage() {
           queryClient.invalidateQueries({ queryKey: getListCollectorTargetsQueryKey() })
         },
         onError: (err: any) => toast.error(err.message || "Target সংরক্ষণ করা যায়নি"),
+      },
+    )
+  }
+
+  const handleGrantPermission = () => {
+    if (!permissionForm.userId) return
+    grantPermission.mutate(
+      {
+        data: {
+          userId: Number(permissionForm.userId),
+          permission: permissionForm.permission as any,
+          cycleId: permissionForm.cycleId ? Number(permissionForm.cycleId) : undefined,
+          expiresAt: permissionForm.expiresAt ? new Date(permissionForm.expiresAt).toISOString() : undefined,
+          note: permissionForm.note.trim() || undefined,
+        },
+      },
+      {
+        onSuccess: () => {
+          toast.success("Delegated permission দেওয়া হয়েছে")
+          setPermissionForm({ userId: "", permission: "PAYOUT_APPROVAL", cycleId: "", expiresAt: "", note: "" })
+          queryClient.invalidateQueries({ queryKey: getListPermissionsQueryKey() })
+        },
+        onError: (err: any) => toast.error(err.message || "Permission দেওয়া যায়নি"),
+      },
+    )
+  }
+
+  const handleRevokePermission = (permissionId: number) => {
+    const reason = window.prompt("Permission revoke করার কারণ", "Owner revoked delegated access")
+    if (!reason?.trim()) return
+    revokePermission.mutate(
+      { id: permissionId, data: { reason: reason.trim() } },
+      {
+        onSuccess: () => {
+          toast.success("Delegated permission revoke হয়েছে")
+          queryClient.invalidateQueries({ queryKey: getListPermissionsQueryKey() })
+        },
+        onError: (err: any) => toast.error(err.message || "Permission revoke করা যায়নি"),
       },
     )
   }
@@ -228,6 +282,66 @@ export default function CollectorsPage() {
             )}
           </TableBody>
         </Table>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1fr_1.4fr]">
+        <div className="rounded-xl border bg-card p-5 space-y-4">
+          <div>
+            <h2 className="font-semibold">Delegated permissions</h2>
+            <p className="text-sm text-muted-foreground">Owner-only controls আলাদা রেখে নির্দিষ্ট operational access দিন।</p>
+          </div>
+          <div className="space-y-2">
+            <Label>কর্মী</Label>
+            <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={permissionForm.userId} onChange={(event) => setPermissionForm({ ...permissionForm, userId: event.target.value })}>
+              <option value="">কর্মী নির্বাচন করুন</option>
+              {staff.filter((user) => user.active).map((user) => <option key={user.id} value={user.id}>{user.name} · {user.role}</option>)}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label>Permission</Label>
+            <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={permissionForm.permission} onChange={(event) => setPermissionForm({ ...permissionForm, permission: event.target.value })}>
+              <option value="PAYOUT_APPROVAL">Payout approval</option>
+              <option value="PAYOUT_REVERSAL">Payout reversal</option>
+              <option value="PAYMENT_REVERSAL">Payment reversal</option>
+              <option value="ADVANCE_ALLOCATION">Advance / due allocation</option>
+              <option value="FINANCIAL_CORRECTION">Financial correction</option>
+              <option value="DRAW_DATE_CORRECTION">Draw-date correction</option>
+              <option value="FULL_ACCESS">Full delegated access</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label>Cycle scope</Label>
+            <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={permissionForm.cycleId} onChange={(event) => setPermissionForm({ ...permissionForm, cycleId: event.target.value })}>
+              <option value="">All cycles</option>
+              {(cycles ?? []).map((cycle) => <option key={cycle.id} value={cycle.id}>{cycle.name} · Cycle {cycle.cycleNumber}</option>)}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label>Expiry (optional; blank means permanent)</Label>
+            <Input type="datetime-local" value={permissionForm.expiresAt} onChange={(event) => setPermissionForm({ ...permissionForm, expiresAt: event.target.value })} />
+          </div>
+          <div className="space-y-2">
+            <Label>কারণ / নোট</Label>
+            <Input value={permissionForm.note} onChange={(event) => setPermissionForm({ ...permissionForm, note: event.target.value })} placeholder="Why this access is needed" />
+          </div>
+          <Button onClick={handleGrantPermission} disabled={!permissionForm.userId || grantPermission.isPending}>Permission দিন</Button>
+        </div>
+        <div className="rounded-xl border bg-card p-5">
+          <h2 className="font-semibold">Current and past delegation</h2>
+          <div className="mt-4 space-y-2">
+            {(permissions ?? []).length === 0 ? <p className="text-sm text-muted-foreground">এখনো কোনো delegated permission নেই</p> : permissions?.map((permission) => (
+              <div key={permission.id} className={`rounded-lg border p-3 ${permission.revokedAt ? "opacity-60" : ""}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="font-medium">{permission.userName} · {permission.permission}</p>
+                    <p className="text-xs text-muted-foreground">{permission.role} · {permission.expiresAt ? `expires ${new Date(permission.expiresAt).toLocaleString()}` : "permanent"}{permission.note ? ` · ${permission.note}` : ""}</p>
+                  </div>
+                  {permission.revokedAt ? <span className="text-xs text-destructive">Revoked</span> : <Button size="sm" variant="outline" onClick={() => handleRevokePermission(permission.id)} disabled={revokePermission.isPending}>Revoke</Button>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Password Reset Dialog */}

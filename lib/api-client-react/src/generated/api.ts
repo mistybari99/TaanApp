@@ -61,6 +61,9 @@ import type {
   OnboardingStatus,
   Payment,
   PaymentInput,
+  PermissionInput,
+  PermissionRecord,
+  PermissionRevocationInput,
   PreviewShareTransferParams,
   ReversalInput,
   Settings,
@@ -3582,6 +3585,208 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getUpdateCashReceiverMutationOptions(options));
+    }
+
+export const getListPermissionsUrl = () => {
+
+
+
+
+  return `/api/permissions`
+}
+
+export const listPermissions = async ( options?: Parameters<typeof customFetch>[1]): Promise<PermissionRecord[]> => {
+
+  return customFetch<PermissionRecord[]>(getListPermissionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPermissionsQueryKey = () => {
+    return [
+    `/api/permissions`
+    ] as const;
+    }
+
+
+export const getListPermissionsQueryOptions = <TData = Awaited<ReturnType<typeof listPermissions>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPermissions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPermissionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPermissions>>> = ({ signal }) => listPermissions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPermissions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPermissionsQueryResult = NonNullable<Awaited<ReturnType<typeof listPermissions>>>
+export type ListPermissionsQueryError = ErrorType<unknown>
+
+
+
+export function useListPermissions<TData = Awaited<ReturnType<typeof listPermissions>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPermissions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPermissionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGrantPermissionUrl = () => {
+
+
+
+
+  return `/api/permissions`
+}
+
+export const grantPermission = async (permissionInput: PermissionInput, options?: Parameters<typeof customFetch>[1]): Promise<PermissionRecord> => {
+
+  return customFetch<PermissionRecord>(getGrantPermissionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(permissionInput)
+  }
+);}
+
+
+
+
+
+export const getGrantPermissionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof grantPermission>>, TError,{data: BodyType<PermissionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof grantPermission>>, TError,{data: BodyType<PermissionInput>}, TContext> => {
+
+const mutationKey = ['grantPermission'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof grantPermission>>, {data: BodyType<PermissionInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  grantPermission(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GrantPermissionMutationResult = NonNullable<Awaited<ReturnType<typeof grantPermission>>>
+    export type GrantPermissionMutationBody = BodyType<PermissionInput>
+    export type GrantPermissionMutationError = ErrorType<unknown>
+
+    export const useGrantPermission = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof grantPermission>>, TError,{data: BodyType<PermissionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof grantPermission>>,
+        TError,
+        {data: BodyType<PermissionInput>},
+        TContext
+      > => {
+      return useMutation(getGrantPermissionMutationOptions(options));
+    }
+
+export const getRevokePermissionUrl = (id: number,) => {
+
+
+
+
+  return `/api/permissions/${id}/revoke`
+}
+
+export const revokePermission = async (id: number,
+    permissionRevocationInput?: PermissionRevocationInput, options?: Parameters<typeof customFetch>[1]): Promise<PermissionRecord> => {
+
+  return customFetch<PermissionRecord>(getRevokePermissionUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(permissionRevocationInput)
+  }
+);}
+
+
+
+
+
+export const getRevokePermissionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokePermission>>, TError,{id: number;data?: BodyType<PermissionRevocationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokePermission>>, TError,{id: number;data?: BodyType<PermissionRevocationInput>}, TContext> => {
+
+const mutationKey = ['revokePermission'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokePermission>>, {id: number;data?: BodyType<PermissionRevocationInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  revokePermission(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokePermissionMutationResult = NonNullable<Awaited<ReturnType<typeof revokePermission>>>
+    export type RevokePermissionMutationBody = BodyType<PermissionRevocationInput> | undefined
+    export type RevokePermissionMutationError = ErrorType<unknown>
+
+    export const useRevokePermission = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokePermission>>, TError,{id: number;data?: BodyType<PermissionRevocationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof revokePermission>>,
+        TError,
+        {id: number;data?: BodyType<PermissionRevocationInput>},
+        TContext
+      > => {
+      return useMutation(getRevokePermissionMutationOptions(options));
     }
 
 export const getListAuditUrl = () => {

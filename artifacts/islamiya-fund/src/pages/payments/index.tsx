@@ -57,15 +57,16 @@ export default function PaymentsPage() {
               <TableHead>সদস্য (Member)</TableHead>
               <TableHead>কর্মী (Staff)</TableHead>
               <TableHead className="text-right">পরিমাণ (Amount)</TableHead>
+              <TableHead>Allocation</TableHead>
               <TableHead>স্ট্যাটাস</TableHead>
               <TableHead className="text-right">অ্যাকশন</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8">লোড হচ্ছে...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-8">লোড হচ্ছে...</TableCell></TableRow>
             ) : payments?.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-8">কোন লেনদেন নেই</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-8">কোন লেনদেন নেই</TableCell></TableRow>
             ) : (
               payments?.map((payment) => (
                 <TableRow key={payment.id} className={payment.status === 'REVERSED' ? 'opacity-50' : ''}>
@@ -74,6 +75,10 @@ export default function PaymentsPage() {
                   <TableCell className="font-medium">{payment.memberName}</TableCell>
                   <TableCell>{payment.collectorName ?? payment.receiverName ?? "Direct receiver"}</TableCell>
                   <TableCell className="text-right font-bold text-primary">{formatCurrency(payment.amount)}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    <div>P {formatCurrency(payment.previousDueApplied ?? 0)} · C {formatCurrency(payment.currentPeriodApplied ?? 0)}</div>
+                    {(payment.advanceCredit ?? 0) > 0 && <div className="font-medium text-blue-700">A {formatCurrency(payment.advanceCredit ?? 0)}</div>}
+                  </TableCell>
                   <TableCell>
                     <span className={`text-xs px-2 py-1 rounded-full ${
                       payment.status === 'COMPLETED' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'

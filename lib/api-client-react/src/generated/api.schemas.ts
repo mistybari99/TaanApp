@@ -33,6 +33,69 @@ export interface User {
   active?: boolean;
 }
 
+export type PermissionRecordRole = typeof PermissionRecordRole[keyof typeof PermissionRecordRole];
+
+
+export const PermissionRecordRole = {
+  COLLECTOR: 'COLLECTOR',
+  CASH_RECEIVER: 'CASH_RECEIVER',
+} as const;
+
+export type PermissionRecordPermission = typeof PermissionRecordPermission[keyof typeof PermissionRecordPermission];
+
+
+export const PermissionRecordPermission = {
+  FULL_ACCESS: 'FULL_ACCESS',
+  PAYMENT_REVERSAL: 'PAYMENT_REVERSAL',
+  PAYOUT_APPROVAL: 'PAYOUT_APPROVAL',
+  PAYOUT_REVERSAL: 'PAYOUT_REVERSAL',
+  ADVANCE_ALLOCATION: 'ADVANCE_ALLOCATION',
+  FINANCIAL_CORRECTION: 'FINANCIAL_CORRECTION',
+  DRAW_DATE_CORRECTION: 'DRAW_DATE_CORRECTION',
+} as const;
+
+export interface PermissionRecord {
+  id: number;
+  userId: number;
+  userName: string;
+  username: string;
+  role: PermissionRecordRole;
+  permission: PermissionRecordPermission;
+  cycleId?: number | null;
+  expiresAt?: string | null;
+  revokedAt?: string | null;
+  note?: string;
+  createdAt: string;
+  grantedByName?: string | null;
+}
+
+export type PermissionInputPermission = typeof PermissionInputPermission[keyof typeof PermissionInputPermission];
+
+
+export const PermissionInputPermission = {
+  FULL_ACCESS: 'FULL_ACCESS',
+  PAYMENT_REVERSAL: 'PAYMENT_REVERSAL',
+  PAYOUT_APPROVAL: 'PAYOUT_APPROVAL',
+  PAYOUT_REVERSAL: 'PAYOUT_REVERSAL',
+  ADVANCE_ALLOCATION: 'ADVANCE_ALLOCATION',
+  FINANCIAL_CORRECTION: 'FINANCIAL_CORRECTION',
+  DRAW_DATE_CORRECTION: 'DRAW_DATE_CORRECTION',
+} as const;
+
+export interface PermissionInput {
+  /** @minimum 1 */
+  userId: number;
+  permission: PermissionInputPermission;
+  /** @minimum 1 */
+  cycleId?: number | null;
+  expiresAt?: string | null;
+  note?: string;
+}
+
+export interface PermissionRevocationInput {
+  reason?: string;
+}
+
 export interface OnboardingStatus {
   initialized: boolean;
   demoMode: boolean;
@@ -107,6 +170,7 @@ export interface Member {
   todayDue: number;
   currentPeriodDue?: number;
   previousDue?: number;
+  advanceCredit?: number;
   totalDue?: number;
   createdAt?: string;
   notes?: string;
@@ -218,6 +282,7 @@ export interface CycleMember {
   todayDue: number;
   currentPeriodDue?: number;
   previousDue?: number;
+  advanceCredit?: number;
   totalDue?: number;
   drawEntitlementTotal?: number;
   drawEntitlementUsed?: number;
@@ -352,6 +417,29 @@ export const DrawPayoutStatus = {
   REVERSED: 'REVERSED',
 } as const;
 
+export type DrawPayoutHistoryStatus = typeof DrawPayoutHistoryStatus[keyof typeof DrawPayoutHistoryStatus];
+
+
+export const DrawPayoutHistoryStatus = {
+  PAID: 'PAID',
+  REVERSED: 'REVERSED',
+} as const;
+
+export interface DrawPayoutHistory {
+  id: number;
+  drawId: number;
+  payerUserId: number;
+  payerName?: string | null;
+  amount: number;
+  payoutDate: string;
+  reference: string;
+  note?: string;
+  status: DrawPayoutHistoryStatus;
+  createdAt: string;
+  reversedAt?: string | null;
+  reversalReason?: string | null;
+}
+
 export interface Draw {
   id: number;
   cycleId: number;
@@ -381,6 +469,7 @@ export interface Draw {
   payoutCreatedAt?: string | null;
   payoutReversedAt?: string | null;
   payoutReversalReason?: string | null;
+  payoutHistory?: DrawPayoutHistory[];
 }
 
 export interface DrawDisbursementInput {
@@ -575,9 +664,18 @@ export interface Payment {
   verificationStatus: string;
   previousDueApplied?: number;
   currentPeriodApplied?: number;
+  advanceCredit?: number;
   createdAt: string;
   status: string;
 }
+
+export type MemberDrawHistoryPayoutStatus = typeof MemberDrawHistoryPayoutStatus[keyof typeof MemberDrawHistoryPayoutStatus] | null;
+
+
+export const MemberDrawHistoryPayoutStatus = {
+  PAID: 'PAID',
+  REVERSED: 'REVERSED',
+} as const;
 
 export interface MemberDrawHistory {
   id: number;
@@ -589,6 +687,8 @@ export interface MemberDrawHistory {
   status: string;
   notes?: string;
   entitlementNumber?: number | null;
+  payoutStatus?: MemberDrawHistoryPayoutStatus;
+  payoutHistory?: DrawPayoutHistory[];
 }
 
 export interface MemberHistory {

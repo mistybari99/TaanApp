@@ -23,6 +23,7 @@ export interface Member {
   todayDue: number;
   currentPeriodDue?: number;
   previousDue?: number;
+  advanceCredit?: number;
   totalDue?: number;
   createdAt?: string;
   notes?: string;

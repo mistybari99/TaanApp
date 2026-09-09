@@ -12,6 +12,7 @@ test("Owner may reach Due Entry validation while Collector cannot create entries
   const collectorToken = `${prefix}-collector-token`;
   const client = await pool.connect();
   let server: ReturnType<typeof app.listen> | undefined;
+  let collectorId = 0;
   try {
     await client.query("BEGIN");
     const owner = await client.query(
@@ -24,6 +25,7 @@ test("Owner may reach Due Entry validation while Collector cannot create entries
        VALUES($1,$2,'synthetic','COLLECTOR') RETURNING id`,
       [`${prefix} collector`, `${prefix}-collector`],
     );
+    collectorId = collector.rows[0].id;
     await client.query(
       `INSERT INTO fund_sessions(token_hash,user_id,expires_at)
        VALUES($1,$2,now()+interval '10 minutes'),($3,$4,now()+interval '10 minutes')`,
@@ -50,7 +52,34 @@ test("Owner may reach Due Entry validation while Collector cannot create entries
       body: JSON.stringify({}),
     });
     assert.equal(collectorResponse.status, 403);
-    assert.deepEqual(await collectorResponse.json(), { error: "Owner access required" });
+    assert.deepEqual(await collectorResponse.json(), { error: "Delegated permission required: ADVANCE_ALLOCATION" });
+
+    const grantResponse = await fetch(`${baseUrl}/api/permissions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `irf_session=${ownerToken}` },
+      body: JSON.stringify({
+        userId: collectorId,
+        permission: "ADVANCE_ALLOCATION",
+        note: "Temporary due-entry coverage",
+      }),
+    });
+    assert.equal(grantResponse.status, 201);
+    const granted = await grantResponse.json() as { id: number };
+    assert.ok(granted.id > 0);
+
+    const delegatedResponse = await fetch(`${baseUrl}/api/due-entries`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `irf_session=${collectorToken}` },
+      body: JSON.stringify({}),
+    });
+    assert.equal(delegatedResponse.status, 400);
+
+    const revokeResponse = await fetch(`${baseUrl}/api/permissions/${granted.id}/revoke`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `irf_session=${ownerToken}` },
+      body: JSON.stringify({ reason: "Coverage ended" }),
+    });
+    assert.equal(revokeResponse.status, 200);
 
     const collectorViewResponse = await fetch(`${baseUrl}/api/members`, {
       headers: { cookie: `irf_session=${collectorToken}` },
@@ -63,6 +92,25 @@ test("Owner may reach Due Entry validation while Collector cannot create entries
     }
     await client.query("ROLLBACK").catch(() => undefined);
     client.release();
+    await pool.query(
+      `DELETE FROM fund_audit
+       WHERE actor_id IN (SELECT id FROM fund_users WHERE username LIKE $1)
+          OR entity_type='user_permission'
+             AND entity_id IN (
+               SELECT p.id::text FROM fund_user_permissions p
+               WHERE p.user_id IN (SELECT id FROM fund_users WHERE username LIKE $1)
+                  OR p.granted_by IN (SELECT id FROM fund_users WHERE username LIKE $1)
+                  OR p.revoked_by IN (SELECT id FROM fund_users WHERE username LIKE $1)
+             )`,
+      [`${prefix}%`],
+    );
+    await pool.query(
+      `DELETE FROM fund_user_permissions
+       WHERE user_id IN (SELECT id FROM fund_users WHERE username LIKE $1)
+          OR granted_by IN (SELECT id FROM fund_users WHERE username LIKE $1)
+          OR revoked_by IN (SELECT id FROM fund_users WHERE username LIKE $1)`,
+      [`${prefix}%`],
+    );
     await pool.query(
       `DELETE FROM fund_sessions
        WHERE user_id IN (SELECT id FROM fund_users WHERE username LIKE $1)`,

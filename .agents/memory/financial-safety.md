@@ -13,7 +13,7 @@ Draw winner payouts use a separate immutable disbursement ledger: only one activ
 
 **Why:** A draw payout is a real cash outflow but must not rewrite the historical draw record; keeping the disbursement separate makes payer attribution, retries, audit history, and correction safe.
 
-**How to apply:** Lock the draw and payer balance inside one transaction, require the payout amount to equal the draw amount, and include active payouts in every custody, settlement, dashboard, and report calculation.
+**How to apply:** Lock the draw and payer balance inside one transaction, require the payout amount to equal the draw amount, include active payouts in every custody, settlement, dashboard, and report calculation, and record a failed-save audit marker after rollback when the transaction cannot commit.
 
 Cash handovers reserve the sender's custody at submission time; only accepted handovers create incoming cash, while rejected handovers release the reservation.
 

@@ -35,13 +35,16 @@ export const businessDateInDhaka = (date = new Date()) => {
 };
 const todayIso = () => businessDateInDhaka();
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
-export const allocatePayment = (amount: number, previousDue: number) => {
+export const allocatePayment = (amount: number, previousDue: number, currentPeriodDue = Number.POSITIVE_INFINITY) => {
   const safeAmount = Math.max(0, roundMoney(amount));
   const safePreviousDue = Math.max(0, roundMoney(previousDue));
+  const safeCurrentPeriodDue = Math.max(0, roundMoney(currentPeriodDue));
   const previousDueApplied = roundMoney(Math.min(safeAmount, safePreviousDue));
+  const currentPeriodApplied = roundMoney(Math.min(safeAmount - previousDueApplied, safeCurrentPeriodDue));
   return {
     previousDueApplied,
-    currentPeriodApplied: roundMoney(safeAmount - previousDueApplied),
+    currentPeriodApplied,
+    advanceCredit: roundMoney(safeAmount - previousDueApplied - currentPeriodApplied),
   };
 };
 export const calculateShareTransfer = (sourceShares: number, receiverShares: number, quantity: number, accumulatedValue: number) => {
@@ -235,7 +238,9 @@ const tanDueForMembers = async (queryable: Queryable, cycleId: number, period: T
           WHERE o.tan_period_id=$3 AND o.member_id=cm.member_id),0)
         - COALESCE((SELECT SUM(pp.current_period_applied) FROM fund_payments pp
           WHERE pp.tan_period_id=$3 AND pp.member_id=cm.member_id AND pp.status='POSTED'),0),0
-      )::float AS "currentPeriodDue"
+      )::float AS "currentPeriodDue",
+      COALESCE((SELECT SUM(pp.advance_credit) FROM fund_payments pp
+        WHERE pp.cycle_id=$1 AND pp.member_id=cm.member_id AND pp.status='POSTED'),0)::float AS "advanceCredit"
      FROM fund_cycle_members cm
      WHERE cm.cycle_id=$1`,
     [cycleId, boundary, periodId],
@@ -267,7 +272,8 @@ const tanDashboardMemberRows = async (
     const due = dueByMember.get(Number(member.id));
     const previousDue = money(due?.previousDue);
     const currentPeriodDue = period ? money(due?.currentPeriodDue) : 0;
-    return { ...member, previousDue, currentPeriodDue, todayDue: currentPeriodDue, totalDue: previousDue + currentPeriodDue };
+    const advanceCredit = money(due?.advanceCredit);
+    return { ...member, previousDue, currentPeriodDue, advanceCredit, todayDue: currentPeriodDue, totalDue: previousDue + currentPeriodDue };
   });
 };
 
@@ -331,7 +337,26 @@ const drawSelect = `
     pd.id AS "payoutId",pd.payer_user_id AS "payoutPayerId",pu.name AS "payoutPayerName",
     pd.amount::float AS "payoutAmount",pd.payout_date::text AS "payoutDate",pd.reference AS "payoutReference",
     pd.note AS "payoutNote",pd.status AS "payoutStatus",pd.created_at AS "payoutCreatedAt",
-    pd.reversed_at AS "payoutReversedAt",pd.reversal_reason AS "payoutReversalReason"
+    pd.reversed_at AS "payoutReversedAt",pd.reversal_reason AS "payoutReversalReason",
+    COALESCE((
+      SELECT json_agg(json_build_object(
+        'id',ph.id,
+        'drawId',ph.draw_id,
+        'payerUserId',ph.payer_user_id,
+        'payerName',phu.name,
+        'amount',ph.amount::float,
+        'payoutDate',ph.payout_date::text,
+        'reference',ph.reference,
+        'note',ph.note,
+        'status',ph.status,
+        'createdAt',ph.created_at,
+        'reversedAt',ph.reversed_at,
+        'reversalReason',ph.reversal_reason
+      ) ORDER BY ph.created_at ASC,ph.id ASC)
+      FROM fund_draw_disbursements ph
+      LEFT JOIN fund_users phu ON phu.id=ph.payer_user_id
+      WHERE ph.draw_id=d.id
+    ),'[]'::json) AS "payoutHistory"
   FROM fund_draws d
     JOIN fund_cycles c ON c.id=d.cycle_id
     JOIN fund_members m ON m.id=d.winner_member_id
@@ -359,6 +384,56 @@ async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction
 }
 const ownerOnly = (req: AuthedRequest, res: Response, next: NextFunction) =>
   req.user?.role === "OWNER" ? next() : res.status(403).json({ error: "Owner access required" });
+type DelegatedPermission =
+  | "PAYMENT_REVERSAL"
+  | "PAYOUT_APPROVAL"
+  | "PAYOUT_REVERSAL"
+  | "ADVANCE_ALLOCATION"
+  | "FINANCIAL_CORRECTION"
+  | "DRAW_DATE_CORRECTION";
+const permissionScopeTable = (path: string) => {
+  if (path.includes("/draw-disbursements/")) return "fund_draw_disbursements";
+  if (path.includes("/draws/")) return "fund_draws";
+  if (path.includes("/payments/")) return "fund_payments";
+  if (path.includes("/share-transfers/")) return "fund_share_transfers";
+  return null;
+};
+const resolvePermissionCycleId = async (req: AuthedRequest) => {
+  const explicitCycleId = Number(req.body?.cycleId ?? req.query?.cycleId ?? 0);
+  if (Number.isInteger(explicitCycleId) && explicitCycleId > 0) return explicitCycleId;
+  const entityId = Number(req.params.id);
+  const table = permissionScopeTable(req.path);
+  if (!Number.isInteger(entityId) || entityId <= 0 || !table) return 0;
+  const result = await pool.query(`SELECT cycle_id AS "cycleId" FROM ${table} WHERE id=$1`, [entityId]);
+  return Number(result.rows[0]?.cycleId ?? 0);
+};
+const delegatedPermission = (permission: DelegatedPermission) => async (req: AuthedRequest, res: Response, next: NextFunction) => {
+  if (req.user?.role === "OWNER") return next();
+  if (!req.user) return res.status(401).json({ error: "Sign in required" });
+  const requestedCycleId = await resolvePermissionCycleId(req);
+  const result = await pool.query(
+    `SELECT 1
+       FROM fund_user_permissions
+      WHERE user_id=$1 AND revoked_at IS NULL
+        AND (expires_at IS NULL OR expires_at > now())
+        AND (permission=$2 OR permission='FULL_ACCESS')
+        AND (cycle_id IS NULL OR ($3::int > 0 AND cycle_id=$3))
+      LIMIT 1`,
+    [req.user.id, permission, requestedCycleId],
+  );
+  return result.rows[0]
+    ? next()
+    : res.status(403).json({ error: `Delegated permission required: ${permission}` });
+};
+const delegatedPermissionNames = [
+  "FULL_ACCESS",
+  "PAYMENT_REVERSAL",
+  "PAYOUT_APPROVAL",
+  "PAYOUT_REVERSAL",
+  "ADVANCE_ALLOCATION",
+  "FINANCIAL_CORRECTION",
+  "DRAW_DATE_CORRECTION",
+] as const;
 
 router.post("/auth/login", async (req, res) => {
   const { username, password } = req.body as { username?: string; password?: string };
@@ -423,9 +498,10 @@ router.get("/members", requireAuth, async (req: AuthedRequest, res) => {
        m.joining_date::text AS "joiningDate",m.created_at AS "createdAt",m.notes,m.status,
        c.tracking_start_date::text AS "trackingStartDate",
        COALESCE(cm.daily_contribution,0)::float AS "currentDailyAmount",
-       COALESCE(SUM(p.amount) FILTER(WHERE p.collection_date=$2::date AND p.status='POSTED'),0)::float AS "todayPaid",
+       COALESCE(SUM(p.current_period_applied) FILTER(WHERE p.collection_date=$2::date AND p.status='POSTED'),0)::float AS "todayPaid",
        GREATEST(COALESCE((SELECT SUM(de.amount) FROM fund_due_entries de WHERE de.cycle_id=c.id AND de.member_id=m.id),0)
          - COALESCE((SELECT SUM(pp.previous_due_applied) FROM fund_payments pp WHERE pp.cycle_id=c.id AND pp.member_id=m.id AND pp.status='POSTED'),0),0)::float AS "previousDue"
+       ,COALESCE((SELECT SUM(pp.advance_credit) FROM fund_payments pp WHERE pp.cycle_id=c.id AND pp.member_id=m.id AND pp.status='POSTED'),0)::float AS "advanceCredit"
      FROM fund_members m
        LEFT JOIN fund_cycles c ON c.status='ACTIVE'
        LEFT JOIN fund_cycle_members cm ON cm.cycle_id=c.id AND cm.member_id=m.id
@@ -439,8 +515,9 @@ router.get("/members", requireAuth, async (req: AuthedRequest, res) => {
     const tanMemberDue = activeTan ? tanDue.get(Number(m.id)) : null;
     const previousDue = activeTan ? money(tanMemberDue?.previousDue) : money(m.previousDue);
     const currentPeriodDue = activeTan ? money(tanMemberDue?.currentPeriodDue) : 0;
+    const advanceCredit = activeTan ? money(tanMemberDue?.advanceCredit) : money(m.advanceCredit);
     const todayDue = activeTan ? currentPeriodDue : trackingReady ? Math.max(0, money(m.currentDailyAmount) - money(m.todayPaid)) : 0;
-    return { ...m, previousDue, currentPeriodDue, todayDue, totalDue: todayDue + previousDue };
+    return { ...m, previousDue, currentPeriodDue, advanceCredit, todayDue, totalDue: todayDue + previousDue };
   }));
 });
 router.post("/members", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
@@ -788,15 +865,36 @@ router.get("/members/:id/history", requireAuth, async (req: AuthedRequest, res) 
       LEFT JOIN fund_payments p ON p.cycle_id=c.id AND p.member_id=cm.member_id
       WHERE cm.member_id=$1 GROUP BY c.id,cm.id ORDER BY c.start_date DESC`, [id]),
      pool.query(`SELECT p.id,p.receipt_id AS "receiptId",p.cycle_id AS "cycleId",p.amount::float,p.collection_date::text AS "collectionDate",
-       p.shares,p.verification_status AS "verificationStatus",p.status,p.created_at AS "createdAt",u.name AS "collectorName",ru.name AS "receiverName",
+       p.shares,p.previous_due_applied::float AS "previousDueApplied",p.current_period_applied::float AS "currentPeriodApplied",p.advance_credit::float AS "advanceCredit",
+       p.verification_status AS "verificationStatus",p.status,p.created_at AS "createdAt",u.name AS "collectorName",ru.name AS "receiverName",
        p.receipt_source AS "receiptSource"
        FROM fund_payments p LEFT JOIN fund_users u ON u.id=p.collector_id
        LEFT JOIN fund_users ru ON ru.id=COALESCE(p.receiver_id,p.collector_id)
        WHERE p.member_id=$1 ORDER BY p.created_at DESC LIMIT 500`, [id]),
-      pool.query(`SELECT d.id,d.cycle_id AS "cycleId",c.cycle_number AS "cycleNumber",d.draw_number AS "drawNumber",
+     pool.query(`SELECT d.id,d.cycle_id AS "cycleId",c.cycle_number AS "cycleNumber",d.draw_number AS "drawNumber",
        d.draw_date::text AS "drawDate",d.winning_amount::float AS "winningAmount",d.status,d.notes,
-       d.entitlement_number AS "entitlementNumber"
-       FROM fund_draws d JOIN fund_cycles c ON c.id=d.cycle_id WHERE d.winner_member_id=$1 ORDER BY d.draw_date DESC`, [id]),
+       d.entitlement_number AS "entitlementNumber",
+       pd.status AS "payoutStatus",
+       COALESCE((
+         SELECT json_agg(json_build_object(
+           'id',pd.id,'drawId',pd.draw_id,'payerUserId',pd.payer_user_id,'payerName',pu.name,
+           'amount',pd.amount::float,'payoutDate',pd.payout_date::text,'reference',pd.reference,
+           'note',pd.note,'status',pd.status,'createdAt',pd.created_at,
+           'reversedAt',pd.reversed_at,'reversalReason',pd.reversal_reason
+         ) ORDER BY pd.created_at ASC,pd.id ASC)
+         FROM fund_draw_disbursements pd
+         LEFT JOIN fund_users pu ON pu.id=pd.payer_user_id
+         WHERE pd.draw_id=d.id
+       ),'[]'::json) AS "payoutHistory"
+       FROM fund_draws d JOIN fund_cycles c ON c.id=d.cycle_id
+       LEFT JOIN LATERAL (
+         SELECT status
+         FROM fund_draw_disbursements
+         WHERE draw_id=d.id
+         ORDER BY created_at DESC,id DESC
+         LIMIT 1
+       ) pd ON true
+       WHERE d.winner_member_id=$1 ORDER BY d.draw_date DESC`, [id]),
      req.user?.role === "OWNER"
        ? pool.query(`${transferSelect} WHERE t.from_member_id=$1 OR t.to_member_id=$1 ORDER BY t.transfer_date DESC,t.created_at DESC`, [id])
        : pool.query(`${collectorTransferSelect} WHERE (t.from_member_id=$1 OR t.to_member_id=$1) AND (fm.assigned_collector_id=$2 OR fm.assigned_collector_id IS NULL OR tm.assigned_collector_id=$2 OR tm.assigned_collector_id IS NULL) ORDER BY t.transfer_date DESC,t.created_at DESC`, [id, req.user!.id]),
@@ -1333,10 +1431,11 @@ router.get("/cycles/:id/members", requireAuth, async (req: AuthedRequest, res) =
        (SELECT COUNT(*) FROM fund_draws d WHERE d.cycle_id=cm.cycle_id AND d.winner_member_id=cm.member_id AND d.status <> 'VOID'))::int AS "drawEntitlementUsed",
     COALESCE(SUM(p.amount) FILTER(WHERE p.status='POSTED'),0)::float AS "totalCollected",
      CASE WHEN c.status='ACTIVE' AND c.tracking_start_date IS NOT NULL AND '${todayIso()}'::date >= c.tracking_start_date
-      THEN GREATEST(cm.daily_contribution-COALESCE(SUM(p.amount) FILTER(WHERE p.collection_date='${todayIso()}'::date AND p.status='POSTED'),0),0)
+      THEN GREATEST(cm.daily_contribution-COALESCE(SUM(p.current_period_applied) FILTER(WHERE p.collection_date='${todayIso()}'::date AND p.status='POSTED'),0),0)
       ELSE 0 END::float AS "todayDue"
      ,GREATEST(COALESCE((SELECT SUM(de.amount) FROM fund_due_entries de WHERE de.cycle_id=c.id AND de.member_id=cm.member_id),0)
        - COALESCE((SELECT SUM(pp.previous_due_applied) FROM fund_payments pp WHERE pp.cycle_id=c.id AND pp.member_id=cm.member_id AND pp.status='POSTED'),0),0)::float AS "previousDue"
+     ,COALESCE((SELECT SUM(pp.advance_credit) FROM fund_payments pp WHERE pp.cycle_id=c.id AND pp.member_id=cm.member_id AND pp.status='POSTED'),0)::float AS "advanceCredit"
     FROM fund_cycle_members cm JOIN fund_members m ON m.id=cm.member_id JOIN fund_cycles c ON c.id=cm.cycle_id
       LEFT JOIN fund_payments p ON p.cycle_id=cm.cycle_id AND p.member_id=cm.member_id
     WHERE cm.cycle_id=$1${access} GROUP BY cm.id,m.id,c.id ORDER BY m.member_id`, params);
@@ -1344,6 +1443,7 @@ router.get("/cycles/:id/members", requireAuth, async (req: AuthedRequest, res) =
     const tanMemberDue = tan ? tanDue.get(Number(member.memberId)) : null;
     const previousDue = tan ? money(tanMemberDue?.previousDue) : money(member.previousDue);
     const currentPeriodDue = tan ? money(tanMemberDue?.currentPeriodDue) : 0;
+    const advanceCredit = tan ? money(tanMemberDue?.advanceCredit) : money(member.advanceCredit);
     const todayDue = tan ? currentPeriodDue : money(member.todayDue);
       const drawEntitlementTotal = Number(member.drawEntitlementTotal ?? member.shares);
       const drawEntitlementUsed = Number(member.drawEntitlementUsed ?? 0);
@@ -1354,6 +1454,7 @@ router.get("/cycles/:id/members", requireAuth, async (req: AuthedRequest, res) =
         drawEntitlementRemaining: Math.max(0, drawEntitlementTotal - drawEntitlementUsed),
         previousDue,
         currentPeriodDue,
+        advanceCredit,
         todayDue,
         totalDue: todayDue + previousDue,
       };
@@ -1441,7 +1542,7 @@ router.post("/cycles/:id/members", requireAuth, ownerOnly, async (req: AuthedReq
   }
 });
 
-router.post("/due-entries/batch", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+router.post("/due-entries/batch", requireAuth, delegatedPermission("ADVANCE_ALLOCATION"), async (req: AuthedRequest, res) => {
   const cycleId = Number(req.body.cycleId);
   const rawMemberIds = Array.isArray(req.body.memberIds) ? req.body.memberIds : [];
   const memberIds = rawMemberIds.map((value: unknown) => Number(value));
@@ -1542,7 +1643,7 @@ router.post("/due-entries/batch", requireAuth, ownerOnly, async (req: AuthedRequ
   }
 });
 
-router.post("/due-entries", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+router.post("/due-entries", requireAuth, delegatedPermission("ADVANCE_ALLOCATION"), async (req: AuthedRequest, res) => {
   const cycleId = Number(req.body.cycleId);
   const memberId = Number(req.body.memberId);
   const amount = Number(req.body.amount);
@@ -1966,7 +2067,7 @@ router.post("/share-transfers", requireAuth, ownerOnly, async (req: AuthedReques
   }
 });
 
-router.post("/share-transfers/:id/settlement", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+router.post("/share-transfers/:id/settlement", requireAuth, delegatedPermission("FINANCIAL_CORRECTION"), async (req: AuthedRequest, res) => {
   const transferId = Number(req.params.id);
   const amount = Number(req.body.amount);
   const idempotencyKey = idempotency(req.body.idempotencyKey);
@@ -2061,7 +2162,7 @@ router.get("/draws", requireAuth, async (req, res) => {
     ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""} ORDER BY d.draw_date DESC,d.draw_number DESC`, values);
   return res.json(result.rows);
 });
-router.post("/draws/:id/move-date", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+router.post("/draws/:id/move-date", requireAuth, delegatedPermission("DRAW_DATE_CORRECTION"), async (req: AuthedRequest, res) => {
   const drawId = Number(req.params.id);
   const drawDate = isIsoDate(req.body.drawDate) ? String(req.body.drawDate) : "";
   const reason = String(req.body.reason ?? "").trim();
@@ -2105,7 +2206,7 @@ router.post("/draws/:id/move-date", requireAuth, ownerOnly, async (req: AuthedRe
     client.release();
   }
 });
-router.post("/draws/:id/disbursement", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+router.post("/draws/:id/disbursement", requireAuth, delegatedPermission("PAYOUT_APPROVAL"), async (req: AuthedRequest, res) => {
   const drawId = Number(req.params.id);
   const payerUserId = Number(req.body?.payerUserId);
   const amount = Number(req.body?.amount);
@@ -2117,6 +2218,7 @@ router.post("/draws/:id/disbursement", requireAuth, ownerOnly, async (req: Authe
     return res.status(400).json({ error: "A valid draw, payer, positive amount, payout date, and reference are required" });
   }
   const client = await pool.connect();
+  let payoutCycleId: number | null = null;
   try {
     await client.query("BEGIN");
     await transactionLock(client, `draw-disbursement:${drawId}`);
@@ -2147,6 +2249,7 @@ router.post("/draws/:id/disbursement", requireAuth, ownerOnly, async (req: Authe
       await client.query("ROLLBACK");
       return res.status(404).json({ error: "Draw not found" });
     }
+    payoutCycleId = Number(draw.cycle_id);
     if (draw.status !== "RECORDED") {
       await client.query("ROLLBACK");
       return res.status(409).json({ error: "Only a recorded draw can be paid" });
@@ -2218,14 +2321,27 @@ router.post("/draws/:id/disbursement", requireAuth, ownerOnly, async (req: Authe
     await client.query("COMMIT");
     return res.status(201).json(result.rows[0]);
   } catch (error) {
-    await client.query("ROLLBACK");
+    await client.query("ROLLBACK").catch((rollbackError) => req.log.error({ rollbackError }, "Draw payout rollback failed"));
+    if (payoutCycleId) {
+      try {
+        await audit(req.user!.id, "DRAW_PAYOUT_SAVE_FAILED", `${reference}: payout save rolled back`, "draw", String(drawId), {
+          cycleId: payoutCycleId,
+          relatedTransactionId: idempotencyKey ?? reference,
+          reason: "Payout transaction rolled back",
+          effectiveDate: payoutDate,
+          afterValue: { drawId, payerUserId, amount, status: "FAILED", reference },
+        });
+      } catch (auditError) {
+        req.log.error({ auditError, drawId, payoutCycleId }, "Failed payout audit could not be recorded");
+      }
+    }
     req.log.error({ error }, "Draw payout failed");
     return res.status(409).json({ error: "Draw payout could not be saved; no records were changed" });
   } finally {
     client.release();
   }
 });
-router.post("/draw-disbursements/:id/reverse", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+router.post("/draw-disbursements/:id/reverse", requireAuth, delegatedPermission("PAYOUT_REVERSAL"), async (req: AuthedRequest, res) => {
   const payoutId = Number(req.params.id);
   const reason = String(req.body?.reason ?? "").trim();
   if (!Number.isInteger(payoutId) || payoutId <= 0 || !reason) {
@@ -2434,6 +2550,7 @@ router.get("/payments", requireAuth, async (req: AuthedRequest, res) => {
   const r = await pool.query(
     `SELECT p.id,p.receipt_id AS "receiptId",COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name AS "memberName",p.cycle_id AS "cycleId",
        p.collection_date::text AS "collectionDate",p.shares,p.notes,p.amount::float,
+       p.previous_due_applied::float AS "previousDueApplied",p.current_period_applied::float AS "currentPeriodApplied",p.advance_credit::float AS "advanceCredit",
        u.name AS "collectorName",ru.name AS "receiverName",p.receipt_source AS "receiptSource",
        p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status
       FROM fund_payments p JOIN fund_members m ON m.id=p.member_id
@@ -2458,7 +2575,7 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
     await client.query("BEGIN");
     if (idempotencyKey) {
       await transactionLock(client, `payment:${req.user!.id}:${idempotencyKey}`);
-       const replay = await client.query(`SELECT p.id,p.receipt_id AS "receiptId",p.member_id AS "_memberDbId",COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name AS "memberName",p.cycle_id AS "cycleId",p.collection_date::text AS "collectionDate",p.shares,p.notes,p.amount::float,p.previous_due_applied::float AS "previousDueApplied",p.current_period_applied::float AS "currentPeriodApplied",u.name AS "collectorName",ru.name AS "receiverName",p.receipt_source AS "receiptSource",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id LEFT JOIN fund_users u ON u.id=p.collector_id LEFT JOIN fund_users ru ON ru.id=COALESCE(p.receiver_id,p.collector_id) WHERE COALESCE(p.receiver_id,p.collector_id)=$1 AND p.idempotency_key=$2`, [req.user!.id,idempotencyKey]);
+       const replay = await client.query(`SELECT p.id,p.receipt_id AS "receiptId",p.member_id AS "_memberDbId",COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name AS "memberName",p.cycle_id AS "cycleId",p.collection_date::text AS "collectionDate",p.shares,p.notes,p.amount::float,p.previous_due_applied::float AS "previousDueApplied",p.current_period_applied::float AS "currentPeriodApplied",p.advance_credit::float AS "advanceCredit",u.name AS "collectorName",ru.name AS "receiverName",p.receipt_source AS "receiptSource",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id LEFT JOIN fund_users u ON u.id=p.collector_id LEFT JOIN fund_users ru ON ru.id=COALESCE(p.receiver_id,p.collector_id) WHERE COALESCE(p.receiver_id,p.collector_id)=$1 AND p.idempotency_key=$2`, [req.user!.id,idempotencyKey]);
       if (replay.rows[0]) {
         const existing = replay.rows[0];
         if (Number(existing._memberDbId) !== Number(memberId)
@@ -2540,8 +2657,22 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
           - COALESCE((SELECT SUM(previous_due_applied) FROM fund_payments WHERE cycle_id=$1 AND member_id=$2 AND status='POSTED'),0),0)::float AS previous_due`,
         [selectedCycleId, memberId],
       )).rows[0]?.previous_due);
-    const allocation = allocatePayment(Number(amount), previousDueOutstanding);
-    const { previousDueApplied, currentPeriodApplied } = allocation;
+    const requiredCurrentPeriod = tan
+      ? money(tanDue?.get(Number(memberId))?.currentPeriodDue)
+      : money(cycleMember.rows[0].daily_contribution);
+    const currentPeriodAlreadyApplied = tan
+      ? 0
+      : money((await client.query(
+        `SELECT COALESCE(SUM(current_period_applied),0)::float AS "currentPeriodApplied"
+           FROM fund_payments
+          WHERE cycle_id=$1 AND member_id=$2 AND collection_date=$3::date AND status='POSTED'`,
+        [selectedCycleId, memberId, paidDate],
+      )).rows[0]?.currentPeriodApplied);
+    const currentPeriodOutstanding = tan
+      ? requiredCurrentPeriod
+      : Math.max(0, requiredCurrentPeriod - currentPeriodAlreadyApplied);
+    const allocation = allocatePayment(Number(amount), previousDueOutstanding, currentPeriodOutstanding);
+    const { previousDueApplied, currentPeriodApplied, advanceCredit } = allocation;
     const receiptId = `IRF-${paidDate.replaceAll("-","")}-${randomBytes(3).toString("hex").toUpperCase()}`;
      const receiptSource = req.user.role === "OWNER" ? "OWNER_DIRECT" : req.user.role === "CASH_RECEIVER" ? "CASH_RECEIVER_DIRECT" : "COLLECTOR";
      const collectorId = req.user.role === "COLLECTOR" ? req.user.id : null;
@@ -2551,11 +2682,22 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
         ? "CASH RECEIVER CONFIRMED"
         : "COLLECTOR CONFIRMED";
     const r = await client.query(
-      `INSERT INTO fund_payments(receipt_id,member_id,cycle_id,collection_date,shares,amount,collector_id,receiver_id,receipt_source,verification_status,notes,idempotency_key,previous_due_applied,current_period_applied,tan_period_id)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id,receipt_id AS "receiptId",member_id AS "memberId",cycle_id AS "cycleId",collection_date::text AS "collectionDate",shares,notes,amount::float,previous_due_applied::float AS "previousDueApplied",current_period_applied::float AS "currentPeriodApplied",verification_status AS "verificationStatus",created_at AS "createdAt",status`,
-       [receiptId,memberId,selectedCycleId,paidDate,Number(cycleMember.rows[0].shares),amount,collectorId,req.user.id,receiptSource,verification,notes ?? "",idempotencyKey ?? null,previousDueApplied,currentPeriodApplied,tanPeriodId],
+      `INSERT INTO fund_payments(receipt_id,member_id,cycle_id,collection_date,shares,amount,collector_id,receiver_id,receipt_source,verification_status,notes,idempotency_key,previous_due_applied,current_period_applied,advance_credit,tan_period_id)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id,receipt_id AS "receiptId",member_id AS "memberId",cycle_id AS "cycleId",collection_date::text AS "collectionDate",shares,notes,amount::float,previous_due_applied::float AS "previousDueApplied",current_period_applied::float AS "currentPeriodApplied",advance_credit::float AS "advanceCredit",verification_status AS "verificationStatus",created_at AS "createdAt",status`,
+       [receiptId,memberId,selectedCycleId,paidDate,Number(cycleMember.rows[0].shares),amount,collectorId,req.user.id,receiptSource,verification,notes ?? "",idempotencyKey ?? null,previousDueApplied,currentPeriodApplied,advanceCredit,tanPeriodId],
     );
-    await auditOn(client, req.user.id, "PAYMENT_POSTED", `${receiptId}: BDT ${amount}; previous due ${previousDueApplied}; receiver ${req.user.role}`, "payment", String(r.rows[0].id));
+    await auditOn(client, req.user.id, "PAYMENT_POSTED", `${receiptId}: BDT ${amount}; previous due ${previousDueApplied}; current period ${currentPeriodApplied}; advance credit ${advanceCredit}; receiver ${req.user.role}`, "payment", String(r.rows[0].id), {
+      memberId,
+      cycleId: selectedCycleId,
+      relatedTransactionId: receiptId,
+      effectiveDate: paidDate,
+      afterValue: {
+        amount: Number(amount),
+        previousDueApplied,
+        currentPeriodApplied,
+        advanceCredit,
+      },
+    });
     await client.query("COMMIT");
     return res.status(201).json({
       ...r.rows[0],
@@ -2572,7 +2714,7 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
     client.release();
   }
 });
-router.post("/payments/:id/reverse", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+router.post("/payments/:id/reverse", requireAuth, delegatedPermission("PAYMENT_REVERSAL"), async (req: AuthedRequest, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -2599,10 +2741,10 @@ router.post("/payments/:id/reverse", requireAuth, ownerOnly, async (req: AuthedR
     }
     await client.query("UPDATE fund_payments SET status='REVERSED',correction_reason=$2 WHERE id=$1", [o.id, reason]);
     const r = await client.query(
-      `INSERT INTO fund_payments(receipt_id,member_id,cycle_id,collection_date,shares,amount,collector_id,receiver_id,receipt_source,verification_status,status,reversed_payment_id,correction_reason,previous_due_applied,current_period_applied)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'OWNER REVERSAL','REVERSAL',$10,$11,$12,$13)
-        RETURNING id,receipt_id AS "receiptId",member_id AS "memberId",cycle_id AS "cycleId",amount::float,verification_status AS "verificationStatus",created_at AS "createdAt",status`,
-      [`REV-${o.receipt_id}`,o.member_id,o.cycle_id,o.collection_date,o.shares,o.amount,o.collector_id,o.receiver_id,o.receipt_source,o.id,reason,o.previous_due_applied ?? 0,o.current_period_applied ?? 0]);
+      `INSERT INTO fund_payments(receipt_id,member_id,cycle_id,collection_date,shares,amount,collector_id,receiver_id,receipt_source,verification_status,status,reversed_payment_id,correction_reason,previous_due_applied,current_period_applied,advance_credit)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'OWNER REVERSAL','REVERSAL',$10,$11,$12,$13,$14)
+        RETURNING id,receipt_id AS "receiptId",member_id AS "memberId",cycle_id AS "cycleId",amount::float,previous_due_applied::float AS "previousDueApplied",current_period_applied::float AS "currentPeriodApplied",advance_credit::float AS "advanceCredit",verification_status AS "verificationStatus",created_at AS "createdAt",status`,
+      [`REV-${o.receipt_id}`,o.member_id,o.cycle_id,o.collection_date,o.shares,o.amount,o.collector_id,o.receiver_id,o.receipt_source,o.id,reason,o.previous_due_applied ?? 0,o.current_period_applied ?? 0,o.advance_credit ?? 0]);
     await auditOn(client, req.user!.id, "PAYMENT_REVERSED", `${o.receipt_id}: ${reason}`, "payment", String(o.id), {
       memberId: o.member_id,
       cycleId: o.cycle_id,
@@ -2616,6 +2758,7 @@ router.post("/payments/:id/reverse", requireAuth, ownerOnly, async (req: AuthedR
         amount: money(o.amount),
         previousDueApplied: money(o.previous_due_applied),
         currentPeriodApplied: money(o.current_period_applied),
+        advanceCredit: money(o.advance_credit),
       },
       afterValue: {
         reversalPaymentId: r.rows[0].id,
@@ -3190,6 +3333,113 @@ router.patch("/cash-receivers/:id", requireAuth, ownerOnly, async (req: AuthedRe
   await audit(req.user!.id, "CASH_RECEIVER_UPDATED", `Updated cash receiver ${current.rows[0].username}`, "user", String(id));
   res.json(result.rows[0]);
 });
+router.get("/permissions", requireAuth, ownerOnly, async (_req, res) => {
+  const result = await pool.query(
+    `SELECT p.id,p.user_id AS "userId",u.name AS "userName",u.username,u.role,
+            p.permission,p.cycle_id AS "cycleId",p.expires_at AS "expiresAt",
+            p.revoked_at AS "revokedAt",p.note,p.created_at AS "createdAt",
+            g.name AS "grantedByName"
+       FROM fund_user_permissions p
+       JOIN fund_users u ON u.id=p.user_id
+       LEFT JOIN fund_users g ON g.id=p.granted_by
+      ORDER BY p.revoked_at NULLS FIRST,p.expires_at NULLS LAST,u.name,p.permission`,
+  );
+  res.json(result.rows);
+});
+router.post("/permissions", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const userId = Number(req.body?.userId);
+  const permission = String(req.body?.permission ?? "");
+  const cycleId = req.body?.cycleId == null || req.body.cycleId === "" ? null : Number(req.body.cycleId);
+  const expiresAt = req.body?.expiresAt ? new Date(String(req.body.expiresAt)) : null;
+  const note = String(req.body?.note ?? "").trim();
+  if (!Number.isInteger(userId) || userId <= 0 || !delegatedPermissionNames.includes(permission as typeof delegatedPermissionNames[number])) {
+    return res.status(400).json({ error: "A valid delegated user and permission are required" });
+  }
+  if (cycleId !== null && (!Number.isInteger(cycleId) || cycleId <= 0)) {
+    return res.status(400).json({ error: "Cycle scope must be a valid cycle" });
+  }
+  if (expiresAt && (Number.isNaN(expiresAt.getTime()) || expiresAt <= new Date())) {
+    return res.status(400).json({ error: "Permission expiry must be a future date-time" });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const target = await client.query(
+      "SELECT id,name,username,role,active FROM fund_users WHERE id=$1 FOR SHARE",
+      [userId],
+    );
+    if (!target.rows[0] || !["COLLECTOR", "CASH_RECEIVER"].includes(target.rows[0].role) || !target.rows[0].active) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Permissions can only be delegated to an active Collector or Cash Receiver" });
+    }
+    if (cycleId !== null) {
+      const cycle = await client.query("SELECT 1 FROM fund_cycles WHERE id=$1", [cycleId]);
+      if (!cycle.rows[0]) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "Cycle scope not found" });
+      }
+    }
+    const inserted = await client.query(
+      `INSERT INTO fund_user_permissions(user_id,permission,cycle_id,expires_at,granted_by,note)
+       VALUES($1,$2,$3,$4,$5,$6)
+       RETURNING id,user_id AS "userId",permission,cycle_id AS "cycleId",expires_at AS "expiresAt",revoked_at AS "revokedAt",note,created_at AS "createdAt"`,
+      [userId, permission, cycleId, expiresAt?.toISOString() ?? null, req.user!.id, note],
+    );
+    await auditOn(client, req.user!.id, "PERMISSION_GRANTED", `Granted ${permission} to ${target.rows[0].name}`, "user_permission", String(inserted.rows[0].id), {
+      reason: note || "Owner delegated permission",
+      afterValue: { ...inserted.rows[0], userName: target.rows[0].name, role: target.rows[0].role },
+    });
+    await client.query("COMMIT");
+    return res.status(201).json({ ...inserted.rows[0], userName: target.rows[0].name, username: target.rows[0].username, role: target.rows[0].role });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    req.log.error({ error }, "Permission grant failed");
+    return res.status(409).json({ error: "Permission already exists or could not be granted" });
+  } finally {
+    client.release();
+  }
+});
+router.post("/permissions/:id/revoke", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const permissionId = Number(req.params.id);
+  const reason = String(req.body?.reason ?? "").trim() || "Owner revoked delegated permission";
+  if (!Number.isInteger(permissionId) || permissionId <= 0) return res.status(400).json({ error: "A valid permission is required" });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const current = await client.query(
+      `SELECT p.id,p.user_id AS "userId",u.name AS "userName",p.permission,p.cycle_id AS "cycleId",
+              p.revoked_at AS "revokedAt"
+         FROM fund_user_permissions p JOIN fund_users u ON u.id=p.user_id
+        WHERE p.id=$1 FOR UPDATE`,
+      [permissionId],
+    );
+    if (!current.rows[0]) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Permission not found" });
+    }
+    if (current.rows[0].revokedAt) {
+      await client.query("COMMIT");
+      return res.json(current.rows[0]);
+    }
+    await client.query(
+      "UPDATE fund_user_permissions SET revoked_by=$2,revoked_at=now() WHERE id=$1",
+      [permissionId, req.user!.id],
+    );
+    await auditOn(client, req.user!.id, "PERMISSION_REVOKED", `Revoked ${current.rows[0].permission} from ${current.rows[0].userName}`, "user_permission", String(permissionId), {
+      reason,
+      beforeValue: current.rows[0],
+      afterValue: { ...current.rows[0], revokedBy: req.user!.id, revoked: true },
+    });
+    await client.query("COMMIT");
+    return res.json({ ...current.rows[0], revokedAt: new Date().toISOString() });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    req.log.error({ error }, "Permission revoke failed");
+    return res.status(409).json({ error: "Permission could not be revoked; no records were changed" });
+  } finally {
+    client.release();
+  }
+});
 router.get("/audit",requireAuth,ownerOnly,async(_req,res)=>{const r=await pool.query(`SELECT a.id,COALESCE(u.name,'System') actor,a.action,a.detail,a.entity_type AS "entityType",a.entity_id AS "entityId",
   COALESCE(m.public_member_id,m.member_id) AS "memberId",a.cycle_id AS "cycleId",a.related_transaction_id AS "relatedTransactionId",a.reason,a.effective_date::text AS "effectiveDate",
   a.before_value AS "beforeValue",a.after_value AS "afterValue",a.created_at AS "createdAt"
@@ -3228,11 +3478,11 @@ router.patch("/settings",requireAuth,ownerOnly,async(req:AuthedRequest,res)=>{co
           WHERE collector_id=$1 AND cycle_id=${activeCycleId} AND collection_date='${businessDate}'::date AND status='POSTED'`,[req.user!.id]),
         pool.query(`SELECT COALESCE(SUM(amount),0)::float amount FROM fund_settlements WHERE collector_id=$1 AND cycle_id=${activeCycleId} AND (created_at AT TIME ZONE 'Asia/Dhaka')::date='${businessDate}'::date`,[req.user!.id]),
         pool.query(`SELECT m.id,COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name,m.mobile,m.address,m.business_name AS "businessName",cm.shares,cm.daily_contribution::float AS "dailyAmount",
-          m.joining_date::text AS "joiningDate",m.status,COALESCE(SUM(p.amount),0)::float AS "todayPaid"
+          m.joining_date::text AS "joiningDate",m.status,COALESCE(SUM(p.current_period_applied),0)::float AS "todayPaid"
           FROM fund_members m JOIN fund_cycle_members cm ON cm.member_id=m.id AND cm.cycle_id=${activeCycleId}
           LEFT JOIN fund_payments p ON p.member_id=m.id AND p.cycle_id=${activeCycleId} AND p.collection_date='${businessDate}'::date AND p.status='POSTED'
           WHERE ${readySql} AND m.status='active' AND (m.assigned_collector_id=$1 OR m.assigned_collector_id IS NULL)
-          GROUP BY m.id,cm.id HAVING COALESCE(SUM(p.amount),0)<cm.daily_contribution
+          GROUP BY m.id,cm.id HAVING COALESCE(SUM(p.current_period_applied),0)<cm.daily_contribution
           ORDER BY m.member_id LIMIT 20`,[req.user!.id]),
         pool.query(`SELECT p.id,p.receipt_id AS "receiptId",COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name AS "memberName",p.amount::float,u.name AS "collectorName",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id LEFT JOIN fund_users u ON u.id=p.collector_id WHERE p.collector_id=$1 AND p.cycle_id=${activeCycleId} ORDER BY p.created_at DESC LIMIT 8`,[req.user!.id])
          ,
@@ -3266,12 +3516,12 @@ router.patch("/settings",requireAuth,ownerOnly,async(req:AuthedRequest,res)=>{co
       pool.query(`SELECT COALESCE(SUM(amount),0)::float amount,COUNT(*)::int count FROM fund_payments p WHERE p.cycle_id=${activeCycleId} AND collection_date='${businessDate}'::date AND status='POSTED'`),
        pool.query(`SELECT COALESCE(SUM(amount),0)::float amount FROM fund_settlements WHERE cycle_id=${activeCycleId} AND (created_at AT TIME ZONE 'Asia/Dhaka')::date='${businessDate}'::date`),
        pool.query(`SELECT u.name,COALESCE(SUM(p.amount),0)::float collected,COUNT(p.id)::int payments,(COALESCE(SUM(p.amount),0)-COALESCE((SELECT SUM(s.amount) FROM fund_settlements s WHERE s.collector_id=u.id AND s.cycle_id=${activeCycleId} AND (s.created_at AT TIME ZONE 'Asia/Dhaka')::date='${businessDate}'::date),0))::float cash FROM fund_users u LEFT JOIN fund_payments p ON p.collector_id=u.id AND p.cycle_id=${activeCycleId} AND p.collection_date='${businessDate}'::date AND p.status='POSTED' WHERE u.role='COLLECTOR' GROUP BY u.id ORDER BY collected DESC`),
-      pool.query(`SELECT m.id,COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name,m.mobile,m.address,m.business_name AS "businessName",cm.shares,cm.daily_contribution::float AS "dailyAmount",m.joining_date::text AS "joiningDate",m.status,COALESCE(SUM(p.amount),0)::float AS "todayPaid",
+       pool.query(`SELECT m.id,COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name,m.mobile,m.address,m.business_name AS "businessName",cm.shares,cm.daily_contribution::float AS "dailyAmount",m.joining_date::text AS "joiningDate",m.status,COALESCE(SUM(p.current_period_applied),0)::float AS "todayPaid",
          GREATEST(COALESCE((SELECT SUM(de.amount) FROM fund_due_entries de WHERE de.cycle_id=cm.cycle_id AND de.member_id=cm.member_id),0)-COALESCE((SELECT SUM(pp.previous_due_applied) FROM fund_payments pp WHERE pp.cycle_id=cm.cycle_id AND pp.member_id=cm.member_id AND pp.status='POSTED'),0),0)::float AS "previousDue"
         FROM fund_members m JOIN fund_cycle_members cm ON cm.member_id=m.id AND cm.cycle_id=${activeCycleId}
         LEFT JOIN fund_payments p ON p.member_id=m.id AND p.cycle_id=${activeCycleId} AND p.collection_date='${businessDate}'::date AND p.status='POSTED'
         WHERE ${readySql} AND m.status='active' GROUP BY m.id,cm.id
-        HAVING COALESCE(SUM(p.amount),0)<cm.daily_contribution ORDER BY m.member_id LIMIT 20`),
+        HAVING COALESCE(SUM(p.current_period_applied),0)<cm.daily_contribution ORDER BY m.member_id LIMIT 20`),
       pool.query(`SELECT p.id,p.receipt_id AS "receiptId",COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name AS "memberName",p.amount::float,u.name AS "collectorName",ru.name AS "receiverName",p.receipt_source AS "receiptSource",p.verification_status AS "verificationStatus",p.created_at AS "createdAt",p.status FROM fund_payments p JOIN fund_members m ON m.id=p.member_id LEFT JOIN fund_users u ON u.id=p.collector_id LEFT JOIN fund_users ru ON ru.id=COALESCE(p.receiver_id,p.collector_id) WHERE p.cycle_id=${activeCycleId} ORDER BY p.created_at DESC LIMIT 8`),
        pool.query(`SELECT a.id,COALESCE(u.name,'System') actor,a.action,a.detail,a.entity_type AS "entityType",a.entity_id AS "entityId",
           COALESCE(m.public_member_id,m.member_id) AS "memberId",a.cycle_id AS "cycleId",a.related_transaction_id AS "relatedTransactionId",a.reason,a.effective_date::text AS "effectiveDate",
@@ -3355,12 +3605,12 @@ router.get("/reports/export", requireAuth, ownerOnly, async (req, res) => {
 
   if (type === "due") {
     const r = await pool.query(`SELECT COALESCE(m.public_member_id,m.member_id) AS member_id,m.name,m.mobile,cm.shares,cm.daily_contribution AS daily_amount,
-       COALESCE(SUM(p.amount) FILTER (WHERE p.collection_date='${todayIso()}'::date AND p.status='POSTED'),0)::float AS today_paid,
-       GREATEST(cm.daily_contribution-COALESCE(SUM(p.amount) FILTER (WHERE p.collection_date='${todayIso()}'::date AND p.status='POSTED'),0),0)::float AS today_due
+       COALESCE(SUM(p.current_period_applied) FILTER (WHERE p.collection_date='${todayIso()}'::date AND p.status='POSTED'),0)::float AS today_paid,
+       GREATEST(cm.daily_contribution-COALESCE(SUM(p.current_period_applied) FILTER (WHERE p.collection_date='${todayIso()}'::date AND p.status='POSTED'),0),0)::float AS today_due
       FROM fund_members m JOIN fund_cycle_members cm ON cm.member_id=m.id AND cm.cycle_id=${activeCycleId}
       JOIN fund_cycles c ON c.id=cm.cycle_id LEFT JOIN fund_payments p ON p.member_id=m.id AND p.cycle_id=${activeCycleId}
        WHERE m.status='active' AND c.tracking_start_date IS NOT NULL AND '${todayIso()}'::date >= c.tracking_start_date GROUP BY m.id,cm.id
-       HAVING COALESCE(SUM(p.amount) FILTER (WHERE p.collection_date='${todayIso()}'::date AND p.status='POSTED'),0) < cm.daily_contribution
+       HAVING COALESCE(SUM(p.current_period_applied) FILTER (WHERE p.collection_date='${todayIso()}'::date AND p.status='POSTED'),0) < cm.daily_contribution
       ORDER BY m.member_id`);
     return sendCsv(res, "due-members", ["Member ID", "Name", "Mobile", "Shares", "Daily Amount", "Today Paid", "Today Due"],
       r.rows.map((x) => [x.member_id, x.name, x.mobile, x.shares, x.daily_amount, x.today_paid, x.today_due]));

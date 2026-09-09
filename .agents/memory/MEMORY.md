@@ -9,3 +9,5 @@
 - [Collector weekly targets](collector-targets.md) — handover targets measure accepted cash custody without restricting a collector's member payment entry.
 - [Financial test isolation](financial-test-isolation.md) — regression fixtures must not assume a seeded active cycle and must delete dependent ledger rows before memberships.
 - [TAN pause continuity](tan-pauses.md) — pausing freezes the current period identity; resume shifts only remaining schedule dates and blocks new payments while paused.
+- [Delegated permissions](delegated-permissions.md) — Owner grants auditable, expiring or cycle-scoped operational access; sensitive controls retain Owner fallback.
+- [Payment allocation](payment-allocation.md) — previous due clears first, current due is capped, and overpayment remains visible as separate advance credit.

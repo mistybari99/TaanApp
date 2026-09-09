@@ -18,11 +18,13 @@ const previousSaturday = (date: string) => {
   return addDays(date, -((day + 1) % 7));
 };
 
-test("payment allocation always clears Previous Due before Current Collection", () => {
-  assert.deepEqual(allocatePayment(500, 300), { previousDueApplied: 300, currentPeriodApplied: 200 });
-  assert.deepEqual(allocatePayment(100, 300), { previousDueApplied: 100, currentPeriodApplied: 0 });
-  assert.deepEqual(allocatePayment(700, 300), { previousDueApplied: 300, currentPeriodApplied: 400 });
-  assert.deepEqual(allocatePayment(500, 900), { previousDueApplied: 500, currentPeriodApplied: 0 });
+test("payment allocation clears Previous Due, caps Current Collection, and records advance credit", () => {
+  assert.deepEqual(allocatePayment(500, 300), { previousDueApplied: 300, currentPeriodApplied: 200, advanceCredit: 0 });
+  assert.deepEqual(allocatePayment(100, 300), { previousDueApplied: 100, currentPeriodApplied: 0, advanceCredit: 0 });
+  assert.deepEqual(allocatePayment(700, 300), { previousDueApplied: 300, currentPeriodApplied: 400, advanceCredit: 0 });
+  assert.deepEqual(allocatePayment(500, 900), { previousDueApplied: 500, currentPeriodApplied: 0, advanceCredit: 0 });
+  assert.deepEqual(allocatePayment(500, 0, 100), { previousDueApplied: 0, currentPeriodApplied: 100, advanceCredit: 400 });
+  assert.deepEqual(allocatePayment(150, 100, 25), { previousDueApplied: 100, currentPeriodApplied: 25, advanceCredit: 25 });
 });
 
 test("collection calendar closes on Friday and opens the next period on Saturday", () => {
@@ -249,12 +251,85 @@ test("TAN pause and resume preserve payment period links and shift future period
     );
     assert.deepEqual(afterResumePaymentRow.rows[0], { tan_period_id: periodIds[0], status: "POSTED" });
 
+    const secondPause = await request(`/api/cycles/${cycleId}/tan/pause`, { reason: "Second pause continuity regression" });
+    assert.equal(secondPause.status, 200);
+    const secondPauseBody = await secondPause.json() as { pausePeriodId: number };
+    assert.equal(secondPauseBody.pausePeriodId, periodIds[0]);
+    const secondPausedPayment = await request("/api/payments", {
+      memberId,
+      cycleId,
+      collectionDate: today,
+      amount: 25,
+      verificationMethod: "OWNER_CONFIRMATION",
+      confirmDuplicate: true,
+      idempotencyKey: `${prefix}-while-paused-again`,
+    });
+    assert.equal(secondPausedPayment.status, 409);
+    await client.query(
+      "UPDATE fund_tan_configs SET pause_started_on=$2 WHERE id=$1",
+      [tanConfigId, addDays(today, -3)],
+    );
+    const secondResume = await request(`/api/cycles/${cycleId}/tan/resume`, { reason: "Second resume continuity regression" });
+    assert.equal(secondResume.status, 200);
+    const secondResumeBody = await secondResume.json() as {
+      resumedPeriodId: number;
+      resumedPeriodSequence: number;
+      daysShifted: number;
+    };
+    assert.equal(secondResumeBody.resumedPeriodId, periodIds[0]);
+    assert.equal(secondResumeBody.resumedPeriodSequence, 1);
+    assert.equal(secondResumeBody.daysShifted, 3);
+
+    const periodsAfterSecondResume = await client.query(
+      `SELECT id,sequence_no,period_start::text AS period_start,period_end::text AS period_end,draw_date::text AS draw_date
+       FROM fund_tan_periods WHERE tan_config_id=$1 ORDER BY sequence_no`,
+      [tanConfigId],
+    );
+    assert.deepEqual(periodsAfterSecondResume.rows, [
+      {
+        id: periodIds[0],
+        sequence_no: 1,
+        period_start: tanStart,
+        period_end: addDays(tanStart, 16),
+        draw_date: addDays(tanStart, 16),
+      },
+      {
+        id: periodIds[1],
+        sequence_no: 2,
+        period_start: addDays(tanStart, 17),
+        period_end: addDays(tanStart, 23),
+        draw_date: addDays(tanStart, 23),
+      },
+      {
+        id: periodIds[2],
+        sequence_no: 3,
+        period_start: addDays(tanStart, 24),
+        period_end: addDays(tanStart, 30),
+        draw_date: addDays(tanStart, 30),
+      },
+    ]);
+    const secondResumePayment = await request("/api/payments", {
+      memberId,
+      cycleId,
+      collectionDate: today,
+      amount: 25,
+      verificationMethod: "OWNER_CONFIRMATION",
+      confirmDuplicate: true,
+      idempotencyKey: `${prefix}-after-resume-again`,
+    });
+    assert.equal(secondResumePayment.status, 201);
+    const paymentPeriodLinks = await client.query(
+      "SELECT tan_period_id,status FROM fund_payments WHERE cycle_id=$1 AND member_id=$2 ORDER BY id",
+      [cycleId, memberId],
+    );
+    assert.ok(paymentPeriodLinks.rows.every((payment) => payment.tan_period_id === periodIds[0] && payment.status === "POSTED"));
+
     const scheduleEvents = await client.query(
       `SELECT tan_period_id,event_type,effective_date::text AS effective_date,days_shifted,before_value,after_value
        FROM fund_tan_schedule_events WHERE tan_config_id=$1 ORDER BY id`,
       [tanConfigId],
     );
-    assert.equal(scheduleEvents.rows.length, 2);
+    assert.equal(scheduleEvents.rows.length, 4);
     assert.deepEqual(scheduleEvents.rows.map((event) => ({
       tan_period_id: event.tan_period_id,
       event_type: event.event_type,
@@ -263,10 +338,13 @@ test("TAN pause and resume preserve payment period links and shift future period
     })), [
       { tan_period_id: periodIds[0], event_type: "PAUSED", effective_date: today, days_shifted: 0 },
       { tan_period_id: periodIds[0], event_type: "RESUMED", effective_date: today, days_shifted: 7 },
+      { tan_period_id: periodIds[0], event_type: "PAUSED", effective_date: today, days_shifted: 0 },
+      { tan_period_id: periodIds[0], event_type: "RESUMED", effective_date: today, days_shifted: 3 },
     ]);
     assert.equal(scheduleEvents.rows[0].before_value.periodId, periodIds[0]);
     assert.equal(scheduleEvents.rows[1].after_value.status, "LOCKED");
     assert.equal(scheduleEvents.rows[1].after_value.periodEnd, addDays(tanStart, 13));
+    assert.equal(scheduleEvents.rows[3].after_value.periodEnd, addDays(tanStart, 16));
 
     const auditEvents = await client.query(
       `SELECT action,cycle_id,entity_type,entity_id,effective_date::text AS effective_date
@@ -275,6 +353,8 @@ test("TAN pause and resume preserve payment period links and shift future period
       [ownerId, cycleId],
     );
     assert.deepEqual(auditEvents.rows, [
+      { action: "TAN_PAUSED", cycle_id: cycleId, entity_type: "tan_config", entity_id: String(tanConfigId), effective_date: today },
+      { action: "TAN_RESUMED", cycle_id: cycleId, entity_type: "tan_config", entity_id: String(tanConfigId), effective_date: today },
       { action: "TAN_PAUSED", cycle_id: cycleId, entity_type: "tan_config", entity_id: String(tanConfigId), effective_date: today },
       { action: "TAN_RESUMED", cycle_id: cycleId, entity_type: "tan_config", entity_id: String(tanConfigId), effective_date: today },
     ]);

@@ -6,6 +6,8 @@ import { pool } from "@workspace/db";
 
 const prefix = `CASH-CUSTODY-${process.pid}-${Date.now()}`;
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
+const failedPayoutTriggerName = `fund_test_payout_failure_${process.pid}`;
+const failedPayoutFunctionName = `fund_test_payout_failure_fn_${process.pid}`;
 
 type Fixture = {
   ownerId: number;
@@ -396,12 +398,127 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     assert.equal(restoredOwnerBalance?.availableAmount, 200);
     assert.equal(restoredOwnerBalance?.drawPayouts, 0);
 
+    const sameKeyPayoutPayload = {
+      payerUserId: fixture.ownerId,
+      amount: 50,
+      payoutDate: drawDateIso,
+      reference: `${prefix}-payout-same-key`,
+      idempotencyKey: `${prefix}-payout-same-key`,
+    };
+    const sameKeyPayouts = await Promise.all([
+      request(baseUrl, `/api/draws/${drawBody.id}/disbursement`, fixture.ownerToken, sameKeyPayoutPayload),
+      request(baseUrl, `/api/draws/${drawBody.id}/disbursement`, fixture.ownerToken, sameKeyPayoutPayload),
+    ]);
+    assert.equal(sameKeyPayouts.filter((response) => response.status === 201).length, 1);
+    assert.equal(sameKeyPayouts.filter((response) => response.status === 200).length, 1);
+    const sameKeyBodies = await Promise.all(sameKeyPayouts.map((response) => response.json() as Promise<{
+      payoutId: number;
+      payoutStatus: string;
+      payoutReference: string;
+    }>));
+    assert.equal(sameKeyBodies[0].payoutId, sameKeyBodies[1].payoutId);
+    assert.equal(sameKeyBodies[0].payoutStatus, "PAID");
+    assert.equal(sameKeyBodies[1].payoutStatus, "PAID");
+    const sameKeyRows = await pool.query(
+      "SELECT id,status,reference FROM fund_draw_disbursements WHERE draw_id=$1 AND idempotency_key=$2",
+      [drawBody.id, sameKeyPayoutPayload.idempotencyKey],
+    );
+    assert.deepEqual(sameKeyRows.rows, [{
+      id: sameKeyBodies[0].payoutId,
+      status: "PAID",
+      reference: sameKeyPayoutPayload.reference,
+    }]);
+    const sameKeyReversal = await request(baseUrl, `/api/draw-disbursements/${sameKeyBodies[0].payoutId}/reverse`, fixture.ownerToken, {
+      reason: "Synthetic same-key retry cleanup",
+    });
+    assert.equal(sameKeyReversal.status, 200);
+
+    const failedReference = `${prefix}-payout-forced-failure`;
+    const failedIdempotencyKey = `${prefix}-payout-forced-failure`;
+    await pool.query(`
+      CREATE OR REPLACE FUNCTION ${failedPayoutFunctionName}() RETURNS trigger
+      LANGUAGE plpgsql AS $failure$
+      BEGIN
+        IF NEW.reference = '${failedReference}' THEN
+          RAISE EXCEPTION 'synthetic payout save failure';
+        END IF;
+        RETURN NEW;
+      END;
+      $failure$;
+      DROP TRIGGER IF EXISTS ${failedPayoutTriggerName} ON fund_draw_disbursements;
+      CREATE TRIGGER ${failedPayoutTriggerName}
+      AFTER INSERT ON fund_draw_disbursements
+      FOR EACH ROW EXECUTE FUNCTION ${failedPayoutFunctionName}();
+    `);
+    const failedPayout = await request(baseUrl, `/api/draws/${drawBody.id}/disbursement`, fixture.ownerToken, {
+      payerUserId: fixture.ownerId,
+      amount: 50,
+      payoutDate: drawDateIso,
+      reference: failedReference,
+      idempotencyKey: failedIdempotencyKey,
+    });
+    assert.equal(failedPayout.status, 409);
+    await pool.query(`DROP TRIGGER IF EXISTS ${failedPayoutTriggerName} ON fund_draw_disbursements`);
+    await pool.query(`DROP FUNCTION IF EXISTS ${failedPayoutFunctionName}()`);
+    const failedPayoutRows = await pool.query(
+      "SELECT id FROM fund_draw_disbursements WHERE draw_id=$1 AND reference=$2",
+      [drawBody.id, failedReference],
+    );
+    assert.equal(failedPayoutRows.rows.length, 0);
+    const failedPayoutAudits = await pool.query(
+      `SELECT action,entity_type,entity_id,cycle_id,related_transaction_id,after_value
+         FROM fund_audit
+        WHERE actor_id=$1 AND cycle_id=$2 AND action='DRAW_PAYOUT_SAVE_FAILED'
+          AND related_transaction_id=$3`,
+      [fixture.ownerId, fixture.cycleId, failedIdempotencyKey],
+    );
+    assert.equal(failedPayoutAudits.rows.length, 1);
+    assert.equal(failedPayoutAudits.rows[0].entity_type, "draw");
+    assert.equal(failedPayoutAudits.rows[0].entity_id, String(drawBody.id));
+    assert.deepEqual(failedPayoutAudits.rows[0].after_value, {
+      drawId: drawBody.id,
+      payerUserId: fixture.ownerId,
+      amount: 50,
+      status: "FAILED",
+      reference: failedReference,
+    });
+
+    const replacementPayout = await request(baseUrl, `/api/draws/${drawBody.id}/disbursement`, fixture.ownerToken, {
+      payerUserId: fixture.ownerId,
+      amount: 50,
+      payoutDate: drawDateIso,
+      reference: `${prefix}-payout-replacement`,
+      idempotencyKey: `${prefix}-payout-replacement`,
+    });
+    assert.equal(replacementPayout.status, 201);
+    const memberHistoryResponse = await request(baseUrl, `/api/members/${fixture.memberId}/history`, fixture.ownerToken);
+    assert.equal(memberHistoryResponse.status, 200);
+    const memberHistory = await memberHistoryResponse.json() as {
+      draws: Array<{
+        id: number;
+        payoutStatus: string | null;
+        payoutHistory: Array<{ reference: string; status: string }>;
+      }>;
+    };
+    const historicalDraw = memberHistory.draws.find((row) => row.id === drawBody.id);
+    assert.equal(historicalDraw?.payoutStatus, "PAID");
+    assert.deepEqual(
+      historicalDraw?.payoutHistory.map((payout) => payout.status),
+      ["REVERSED", "REVERSED", "PAID"],
+    );
+    assert.deepEqual(
+      historicalDraw?.payoutHistory.map((payout) => payout.reference),
+      [`${prefix}-payout-1`, `${prefix}-payout-same-key`, `${prefix}-payout-replacement`],
+    );
+
     const handoverReplay = await request(baseUrl, "/api/cash-handovers", fixture.collectorToken, handoverPayload);
     assert.equal(handoverReplay.status, 200);
     const handoverReplayBody = await handoverReplay.json() as { id: number };
     assert.equal(handoverReplayBody.id, submittedBody.id);
   } finally {
     if (server) await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
+    await pool.query(`DROP TRIGGER IF EXISTS ${failedPayoutTriggerName} ON fund_draw_disbursements`).catch(() => undefined);
+    await pool.query(`DROP FUNCTION IF EXISTS ${failedPayoutFunctionName}()`).catch(() => undefined);
     await cleanupFixture(fixture);
   }
 });
