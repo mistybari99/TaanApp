@@ -1127,13 +1127,28 @@ router.post("/cycles/:id/tan/resume", requireAuth, ownerOnly, async (req: Authed
     // The pause freezes the current period. Its id/sequence stays the same so
     // payments already linked to it remain in that period; only remaining
     // calendar time and all later periods move forward.
+    const periodsToShift = await client.query(
+      `SELECT id FROM fund_tan_periods
+        WHERE tan_config_id=$1 AND sequence_no > $2 AND status <> 'COMPLETED'
+        ORDER BY sequence_no DESC FOR UPDATE`,
+      [tan.tanConfigId, period.sequenceNo],
+    );
+    for (const shiftedPeriod of periodsToShift.rows) {
+      await client.query(
+        `UPDATE fund_tan_periods
+            SET period_end=period_end + ($2 * INTERVAL '1 day'),
+                draw_date=draw_date + ($2 * INTERVAL '1 day'),
+                period_start=period_start + ($2 * INTERVAL '1 day')
+          WHERE id=$1`,
+        [shiftedPeriod.id, daysPaused],
+      );
+    }
     await client.query(
       `UPDATE fund_tan_periods
-          SET period_end=period_end + ($3 * INTERVAL '1 day'),
-              draw_date=draw_date + ($3 * INTERVAL '1 day'),
-              period_start=CASE WHEN sequence_no=$4 THEN period_start ELSE period_start + ($3 * INTERVAL '1 day') END
-        WHERE tan_config_id=$1 AND sequence_no >= $2 AND status <> 'COMPLETED'`,
-      [tan.tanConfigId, period.sequenceNo, daysPaused, period.sequenceNo],
+          SET period_end=period_end + ($2 * INTERVAL '1 day'),
+              draw_date=draw_date + ($2 * INTERVAL '1 day')
+        WHERE tan_config_id=$1 AND sequence_no=$3 AND status <> 'COMPLETED'`,
+      [tan.tanConfigId, daysPaused, period.sequenceNo],
     );
     await client.query(
       "UPDATE fund_cycles SET end_date=(SELECT MAX(period_end) FROM fund_tan_periods WHERE tan_config_id=$2) WHERE id=$1",

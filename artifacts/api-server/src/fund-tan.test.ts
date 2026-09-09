@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import app from "./app";
-import { allocatePayment, calculateShareTransfer, collectionCalendarState, pausedTanPeriodResumeDates } from "./routes/fund";
+import { allocatePayment, businessDateInDhaka, calculateShareTransfer, collectionCalendarState, pausedTanPeriodResumeDates } from "./routes/fund";
 import { pool } from "@workspace/db";
 
 const prefix = `SYN-TAN-${process.pid}-${Date.now()}`;
@@ -45,6 +45,263 @@ test("mid-period pause keeps the same period window and shifts only its resume d
     pausedTanPeriodResumeDates("2026-09-05", "2026-09-11", 3),
     { periodStart: "2026-09-05", periodEnd: "2026-09-14", drawDate: "2026-09-14" },
   );
+});
+
+test("TAN pause and resume preserve payment period links and shift future periods", async () => {
+  const token = `${prefix}-pause-owner-token`;
+  const client = await pool.connect();
+  let server: ReturnType<typeof app.listen> | undefined;
+  let ownerId = 0;
+  let cycleId = 0;
+  let memberId = 0;
+  let tanConfigId = 0;
+  let previousActiveCycleId = 0;
+  try {
+    const today = businessDateInDhaka();
+    const tanStart = previousSaturday(today);
+    await client.query("BEGIN");
+    const previousActiveCycle = await client.query(
+      "UPDATE fund_cycles SET status='COMPLETED' WHERE status='ACTIVE' RETURNING id",
+    );
+    previousActiveCycleId = previousActiveCycle.rows[0]?.id ?? 0;
+    const owner = await client.query(
+      `INSERT INTO fund_users(name,username,password_hash,role)
+       VALUES($1,$2,'synthetic','OWNER') RETURNING id`,
+      [`${prefix} pause owner`, `${prefix}-pause-owner`],
+    );
+    ownerId = owner.rows[0].id;
+    await client.query(
+      `INSERT INTO fund_sessions(token_hash,user_id,expires_at)
+       VALUES($1,$2,now()+interval '10 minutes')`,
+      [hashToken(token), ownerId],
+    );
+    const member = await client.query(
+      `INSERT INTO fund_members(member_id,name,mobile,address,shares,daily_amount,joining_date,status)
+       VALUES($1,$2,$3,'test',1,100,$4,'active') RETURNING id`,
+      [`${prefix}-PAUSE-M1`, `${prefix} pause member`, "01700000001", tanStart],
+    );
+    memberId = member.rows[0].id;
+    const cycle = await client.query(
+      `INSERT INTO fund_cycles(cycle_number,name,start_date,end_date,daily_per_share,status,tracking_start_date,notes)
+       VALUES((SELECT COALESCE(MAX(cycle_number),0)+1 FROM fund_cycles),$1,$2,$3,100,'ACTIVE',$2,$4)
+       RETURNING id`,
+      [`${prefix} pause cycle`, tanStart, addDays(tanStart, 20), prefix],
+    );
+    cycleId = cycle.rows[0].id;
+    await client.query(
+      `INSERT INTO fund_cycle_members(cycle_id,member_id,shares,daily_contribution)
+       VALUES($1,$2,1,100)`,
+      [cycleId, memberId],
+    );
+    const tanConfig = await client.query(
+      `INSERT INTO fund_tan_configs(cycle_id,tan_start_date,draws_per_week,total_shares,total_draw_dates,daily_per_share,
+        expected_daily_collection,weekly_collection_unit,per_draw_winner_amount,locked_by)
+       VALUES($1,$2,1,1,3,100,100,700,100,$3) RETURNING id`,
+      [cycleId, tanStart, ownerId],
+    );
+    tanConfigId = tanConfig.rows[0].id;
+    const periodIds: number[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const periodStart = addDays(tanStart, index * 7);
+      const periodEnd = addDays(periodStart, 6);
+      const period = await client.query(
+        `INSERT INTO fund_tan_periods(tan_config_id,cycle_id,sequence_no,period_start,period_end,draw_date,expected_collection)
+         VALUES($1,$2,$3,$4,$5,$6,700) RETURNING id`,
+        [tanConfigId, cycleId, index + 1, periodStart, periodEnd, periodEnd],
+      );
+      periodIds.push(period.rows[0].id);
+      await client.query(
+        `INSERT INTO fund_tan_period_member_obligations(tan_period_id,cycle_id,member_id,shares_snapshot,required_amount)
+         VALUES($1,$2,$3,1,700)`,
+        [period.rows[0].id, cycleId, memberId],
+      );
+    }
+    await client.query("COMMIT");
+
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server?.once("listening", () => resolve()));
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const request = async (path: string, body: Record<string, unknown>) => fetch(`${baseUrl}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `irf_session=${token}` },
+      body: JSON.stringify(body),
+    });
+
+    const beforePausePayment = await request("/api/payments", {
+      memberId,
+      cycleId,
+      collectionDate: today,
+      amount: 100,
+      verificationMethod: "OWNER_CONFIRMATION",
+      idempotencyKey: `${prefix}-before-pause`,
+    });
+    assert.equal(beforePausePayment.status, 201);
+    const beforePausePaymentRow = await client.query(
+      "SELECT id,tan_period_id,status FROM fund_payments WHERE cycle_id=$1 AND member_id=$2 ORDER BY id DESC LIMIT 1",
+      [cycleId, memberId],
+    );
+    assert.deepEqual(beforePausePaymentRow.rows[0], {
+      id: beforePausePaymentRow.rows[0].id,
+      tan_period_id: periodIds[0],
+      status: "POSTED",
+    });
+    const paymentId = beforePausePaymentRow.rows[0].id;
+    const paymentCountBeforePause = Number((await client.query(
+      "SELECT COUNT(*) AS count FROM fund_payments WHERE cycle_id=$1 AND member_id=$2",
+      [cycleId, memberId],
+    )).rows[0].count);
+
+    const pause = await request(`/api/cycles/${cycleId}/tan/pause`, { reason: "Pause for continuity regression" });
+    assert.equal(pause.status, 200);
+    const pauseBody = await pause.json() as { pausePeriodId: number };
+    assert.equal(pauseBody.pausePeriodId, periodIds[0]);
+
+    const pausedPayment = await request("/api/payments", {
+      memberId,
+      cycleId,
+      collectionDate: today,
+      amount: 50,
+      verificationMethod: "OWNER_CONFIRMATION",
+      confirmDuplicate: true,
+      idempotencyKey: `${prefix}-while-paused`,
+    });
+    assert.equal(pausedPayment.status, 409);
+    assert.equal(
+      Number((await client.query(
+        "SELECT COUNT(*) AS count FROM fund_payments WHERE cycle_id=$1 AND member_id=$2",
+        [cycleId, memberId],
+      )).rows[0].count),
+      paymentCountBeforePause,
+    );
+
+    // The API uses today's Dhaka business date for resume. Move the pause
+    // marker back a full week to exercise elapsed time deterministically while
+    // preserving Saturday/Friday schedule constraints.
+    await client.query(
+      "UPDATE fund_tan_configs SET pause_started_on=$2 WHERE id=$1",
+      [tanConfigId, addDays(today, -7)],
+    );
+    const resume = await request(`/api/cycles/${cycleId}/tan/resume`, { reason: "Resume continuity regression" });
+    assert.equal(resume.status, 200);
+    const resumeBody = await resume.json() as {
+      resumedPeriodId: number;
+      resumedPeriodSequence: number;
+      daysShifted: number;
+    };
+    assert.equal(resumeBody.resumedPeriodId, periodIds[0]);
+    assert.equal(resumeBody.resumedPeriodSequence, 1);
+    assert.equal(resumeBody.daysShifted, 7);
+
+    const periodsAfterResume = await client.query(
+      `SELECT id,sequence_no,period_start::text AS period_start,period_end::text AS period_end,draw_date::text AS draw_date
+       FROM fund_tan_periods WHERE tan_config_id=$1 ORDER BY sequence_no`,
+      [tanConfigId],
+    );
+    assert.deepEqual(periodsAfterResume.rows, [
+      {
+        id: periodIds[0],
+        sequence_no: 1,
+        period_start: tanStart,
+        period_end: addDays(tanStart, 13),
+        draw_date: addDays(tanStart, 13),
+      },
+      {
+        id: periodIds[1],
+        sequence_no: 2,
+        period_start: addDays(tanStart, 14),
+        period_end: addDays(tanStart, 20),
+        draw_date: addDays(tanStart, 20),
+      },
+      {
+        id: periodIds[2],
+        sequence_no: 3,
+        period_start: addDays(tanStart, 21),
+        period_end: addDays(tanStart, 27),
+        draw_date: addDays(tanStart, 27),
+      },
+    ]);
+    const tanAfterResume = await client.query(
+      "SELECT id,status,pause_period_id FROM fund_tan_configs WHERE id=$1",
+      [tanConfigId],
+    );
+    assert.deepEqual(tanAfterResume.rows[0], { id: tanConfigId, status: "LOCKED", pause_period_id: null });
+    const existingPayment = await client.query(
+      "SELECT tan_period_id,status FROM fund_payments WHERE id=$1",
+      [paymentId],
+    );
+    assert.deepEqual(existingPayment.rows[0], { tan_period_id: periodIds[0], status: "POSTED" });
+
+    const afterResumePayment = await request("/api/payments", {
+      memberId,
+      cycleId,
+      collectionDate: today,
+      amount: 50,
+      verificationMethod: "OWNER_CONFIRMATION",
+      confirmDuplicate: true,
+      idempotencyKey: `${prefix}-after-resume`,
+    });
+    assert.equal(afterResumePayment.status, 201);
+    const afterResumePaymentRow = await client.query(
+      "SELECT tan_period_id,status FROM fund_payments WHERE cycle_id=$1 AND member_id=$2 ORDER BY id DESC LIMIT 1",
+      [cycleId, memberId],
+    );
+    assert.deepEqual(afterResumePaymentRow.rows[0], { tan_period_id: periodIds[0], status: "POSTED" });
+
+    const scheduleEvents = await client.query(
+      `SELECT tan_period_id,event_type,effective_date::text AS effective_date,days_shifted,before_value,after_value
+       FROM fund_tan_schedule_events WHERE tan_config_id=$1 ORDER BY id`,
+      [tanConfigId],
+    );
+    assert.equal(scheduleEvents.rows.length, 2);
+    assert.deepEqual(scheduleEvents.rows.map((event) => ({
+      tan_period_id: event.tan_period_id,
+      event_type: event.event_type,
+      effective_date: event.effective_date,
+      days_shifted: event.days_shifted,
+    })), [
+      { tan_period_id: periodIds[0], event_type: "PAUSED", effective_date: today, days_shifted: 0 },
+      { tan_period_id: periodIds[0], event_type: "RESUMED", effective_date: today, days_shifted: 7 },
+    ]);
+    assert.equal(scheduleEvents.rows[0].before_value.periodId, periodIds[0]);
+    assert.equal(scheduleEvents.rows[1].after_value.status, "LOCKED");
+    assert.equal(scheduleEvents.rows[1].after_value.periodEnd, addDays(tanStart, 13));
+
+    const auditEvents = await client.query(
+      `SELECT action,cycle_id,entity_type,entity_id,effective_date::text AS effective_date
+       FROM fund_audit WHERE actor_id=$1 AND cycle_id=$2 AND action IN ('TAN_PAUSED','TAN_RESUMED')
+       ORDER BY id`,
+      [ownerId, cycleId],
+    );
+    assert.deepEqual(auditEvents.rows, [
+      { action: "TAN_PAUSED", cycle_id: cycleId, entity_type: "tan_config", entity_id: String(tanConfigId), effective_date: today },
+      { action: "TAN_RESUMED", cycle_id: cycleId, entity_type: "tan_config", entity_id: String(tanConfigId), effective_date: today },
+    ]);
+  } finally {
+    if (server) await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
+    await client.query("ROLLBACK").catch(() => undefined);
+    client.release();
+    if (cycleId) {
+      await pool.query("DELETE FROM fund_payments WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_tan_schedule_events WHERE tan_config_id=$1", [tanConfigId]);
+      await pool.query("DELETE FROM fund_tan_period_member_obligations WHERE cycle_id=$1", [cycleId]);
+      await pool.query("UPDATE fund_tan_configs SET pause_period_id=NULL WHERE id=$1", [tanConfigId]);
+      await pool.query("DELETE FROM fund_tan_periods WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_tan_configs WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_cycle_members WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_cycles WHERE id=$1", [cycleId]);
+    }
+    if (previousActiveCycleId) {
+      await pool.query("UPDATE fund_cycles SET status='ACTIVE' WHERE id=$1", [previousActiveCycleId]);
+    }
+    if (ownerId) {
+      await pool.query("DELETE FROM fund_audit WHERE actor_id=$1", [ownerId]);
+      await pool.query("DELETE FROM fund_sessions WHERE user_id=$1", [ownerId]);
+      await pool.query("DELETE FROM fund_users WHERE id=$1", [ownerId]);
+    }
+    if (memberId) await pool.query("DELETE FROM fund_members WHERE id=$1", [memberId]);
+  }
 });
 
 test("share transfer math supports partial, full, repeated and multi-receiver transfers", () => {

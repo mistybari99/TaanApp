@@ -139,6 +139,7 @@ CREATE TABLE IF NOT EXISTS fund_tan_periods (
   CHECK (period_end >= period_start + 6),
   CHECK (draw_date = period_end)
 );
+ALTER TABLE fund_tan_periods DROP CONSTRAINT IF EXISTS fund_tan_periods_check;
 ALTER TABLE fund_tan_periods DROP CONSTRAINT IF EXISTS fund_tan_periods_period_end_check;
 ALTER TABLE fund_tan_periods
   ADD CONSTRAINT fund_tan_periods_period_end_check CHECK (period_end >= period_start + 6);
