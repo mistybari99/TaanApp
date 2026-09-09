@@ -12,6 +12,7 @@ export type TanPeriodComputedStatus = typeof TanPeriodComputedStatus[keyof typeo
 export const TanPeriodComputedStatus = {
   SCHEDULED: 'SCHEDULED',
   OPEN: 'OPEN',
+  PAUSED: 'PAUSED',
   CLOSED: 'CLOSED',
   COMPLETED: 'COMPLETED',
 } as const;

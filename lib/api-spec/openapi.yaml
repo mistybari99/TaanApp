@@ -88,6 +88,26 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/TanLockInput" } } }
       responses:
         "201": { description: TAN locked, content: { application/json: { schema: { $ref: "#/components/schemas/TanLockResult" } } } }
+  /cycles/{id}/tan/pause:
+    post:
+      operationId: pauseTan
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/TanScheduleActionInput" } } }
+      responses:
+        "200": { description: TAN paused, content: { application/json: { schema: { $ref: "#/components/schemas/TanScheduleActionResult" } } } }
+  /cycles/{id}/tan/resume:
+    post:
+      operationId: resumeTan
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/TanScheduleActionInput" } } }
+      responses:
+        "200": { description: TAN resumed, content: { application/json: { schema: { $ref: "#/components/schemas/TanScheduleActionResult" } } } }
   /cycles/{id}/members:
     get:
       operationId: listCycleMembers
@@ -309,6 +329,16 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/DrawDisbursementInput" } } }
       responses:
         "201": { description: Draw payout recorded, content: { application/json: { schema: { $ref: "#/components/schemas/Draw" } } } }
+  /draws/{id}/move-date:
+    post:
+      operationId: moveDrawDate
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DrawDateMoveInput" } } }
+      responses:
+        "200": { description: Draw date moved, content: { application/json: { schema: { $ref: "#/components/schemas/DrawDateMoveResult" } } } }
   /draw-disbursements/{id}/reverse:
     post:
       operationId: reverseDrawDisbursement
@@ -694,6 +724,21 @@ components:
         reference: { type: string, minLength: 1 }
         note: { type: string }
         idempotencyKey: { type: string, minLength: 8 }
+    DrawDateMoveInput:
+      type: object
+      required: [drawDate]
+      properties:
+        drawDate: { type: string }
+        reason: { type: string }
+    DrawDateMoveResult:
+      type: object
+      required: [id, cycleId, drawNumber, drawDate]
+      properties:
+        id: { type: integer }
+        cycleId: { type: integer }
+        drawNumber: { type: integer }
+        drawDate: { type: string }
+        tanPeriodId: { type: integer, nullable: true }
     DrawInput:
       type: object
       required: [cycleId, drawDate, winnerMemberId, winningAmount]
@@ -724,7 +769,7 @@ components:
         drawDate: { type: string }
         expectedCollection: { type: number }
         status: { type: string, enum: [OPEN, COMPLETED] }
-        computedStatus: { type: string, enum: [SCHEDULED, OPEN, CLOSED, COMPLETED] }
+        computedStatus: { type: string, enum: [SCHEDULED, OPEN, PAUSED, CLOSED, COMPLETED] }
         recordedDraws: { type: integer }
         completedAt: { type: string, nullable: true }
     TanConfig:
@@ -741,9 +786,14 @@ components:
         expectedDailyCollection: { type: number }
         weeklyCollectionUnit: { type: number }
         perDrawWinnerAmount: { type: number }
-        status: { type: string, enum: [LOCKED, COMPLETED] }
+        status: { type: string, enum: [LOCKED, PAUSED, COMPLETED] }
         lockedAt: { type: string }
         completedAt: { type: string, nullable: true }
+        pauseStartedOn: { type: string, nullable: true }
+        pausePeriodId: { type: integer, nullable: true }
+        pauseReason: { type: string, nullable: true }
+        pausedAt: { type: string, nullable: true }
+        resumedAt: { type: string, nullable: true }
     TanResponse:
       type: object
       required: [tan, periods, activePeriod, nextPeriod]
@@ -763,6 +813,24 @@ components:
         totalDrawDates: { type: integer }
         perDrawWinnerAmount: { type: number }
         tanStartDate: { type: string }
+    TanScheduleActionInput:
+      type: object
+      properties:
+        reason: { type: string }
+    TanScheduleActionResult:
+      type: object
+      required: [cycleId, tanConfigId, status]
+      properties:
+        cycleId: { type: integer }
+        tanConfigId: { type: integer }
+        status: { type: string, enum: [LOCKED, PAUSED] }
+        pauseStartedOn: { type: string, nullable: true }
+        pausePeriodId: { type: integer, nullable: true }
+        pauseReason: { type: string, nullable: true }
+        resumedAt: { type: string, nullable: true }
+        resumedPeriodId: { type: integer, nullable: true }
+        resumedPeriodSequence: { type: integer, nullable: true }
+        daysShifted: { type: integer, nullable: true }
     MemberHistory:
       type: object
       required: [member, cycles, payments, draws, transfers]

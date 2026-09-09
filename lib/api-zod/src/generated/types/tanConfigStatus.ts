@@ -11,5 +11,6 @@ export type TanConfigStatus = typeof TanConfigStatus[keyof typeof TanConfigStatu
 
 export const TanConfigStatus = {
   LOCKED: 'LOCKED',
+  PAUSED: 'PAUSED',
   COMPLETED: 'COMPLETED',
 } as const;

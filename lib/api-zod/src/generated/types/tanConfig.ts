@@ -21,4 +21,9 @@ export interface TanConfig {
   status: TanConfigStatus;
   lockedAt?: string;
   completedAt?: string | null;
+  pauseStartedOn?: string | null;
+  pausePeriodId?: number | null;
+  pauseReason?: string | null;
+  pausedAt?: string | null;
+  resumedAt?: string | null;
 }

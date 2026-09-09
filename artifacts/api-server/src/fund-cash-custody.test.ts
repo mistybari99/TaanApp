@@ -271,6 +271,18 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     assert.equal(draw.status, 201);
     const drawBody = await draw.json() as { id: number; payoutStatus: string | null };
     assert.equal(drawBody.payoutStatus, null);
+    const movedDrawDate = new Date(`${drawDateIso}T00:00:00Z`);
+    movedDrawDate.setUTCDate(movedDrawDate.getUTCDate() - 1);
+    const movedDrawDateIso = movedDrawDate.toISOString().slice(0, 10);
+    const moved = await request(baseUrl, `/api/draws/${drawBody.id}/move-date`, fixture.ownerToken, {
+      drawDate: movedDrawDateIso,
+      reason: "Synthetic manual draw-date correction",
+    });
+    assert.equal(moved.status, 200);
+    const movedBody = await moved.json() as { id: number; drawNumber: number; drawDate: string; tanPeriodId: number | null };
+    assert.equal(movedBody.id, drawBody.id);
+    assert.equal(movedBody.drawDate, movedDrawDateIso);
+    assert.ok(movedBody.drawNumber > 0);
 
     const insufficient = await request(baseUrl, `/api/draws/${drawBody.id}/disbursement`, fixture.ownerToken, {
       payerUserId: fixture.collectorId,

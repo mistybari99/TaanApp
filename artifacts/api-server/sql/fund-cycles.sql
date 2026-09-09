@@ -93,13 +93,30 @@ CREATE TABLE IF NOT EXISTS fund_tan_configs (
   expected_daily_collection numeric NOT NULL CHECK (expected_daily_collection > 0),
   weekly_collection_unit numeric NOT NULL CHECK (weekly_collection_unit > 0),
   per_draw_winner_amount numeric NOT NULL CHECK (per_draw_winner_amount > 0),
-  status text NOT NULL DEFAULT 'LOCKED' CHECK (status IN ('LOCKED','COMPLETED')),
+  status text NOT NULL DEFAULT 'LOCKED' CHECK (status IN ('LOCKED','PAUSED','COMPLETED')),
   locked_by integer NOT NULL REFERENCES fund_users(id) ON DELETE RESTRICT,
   locked_at timestamptz NOT NULL DEFAULT now(),
   completed_by integer REFERENCES fund_users(id) ON DELETE RESTRICT,
   completed_at timestamptz,
+  pause_started_on date,
+  pause_period_id integer,
+  pause_reason text,
+  paused_by integer REFERENCES fund_users(id) ON DELETE RESTRICT,
+  paused_at timestamptz,
+  resumed_by integer REFERENCES fund_users(id) ON DELETE RESTRICT,
+  resumed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE fund_tan_configs DROP CONSTRAINT IF EXISTS fund_tan_configs_status_check;
+ALTER TABLE fund_tan_configs
+  ADD CONSTRAINT fund_tan_configs_status_check CHECK (status IN ('LOCKED','PAUSED','COMPLETED'));
+ALTER TABLE fund_tan_configs ADD COLUMN IF NOT EXISTS pause_started_on date;
+ALTER TABLE fund_tan_configs ADD COLUMN IF NOT EXISTS pause_period_id integer;
+ALTER TABLE fund_tan_configs ADD COLUMN IF NOT EXISTS pause_reason text;
+ALTER TABLE fund_tan_configs ADD COLUMN IF NOT EXISTS paused_by integer;
+ALTER TABLE fund_tan_configs ADD COLUMN IF NOT EXISTS paused_at timestamptz;
+ALTER TABLE fund_tan_configs ADD COLUMN IF NOT EXISTS resumed_by integer;
+ALTER TABLE fund_tan_configs ADD COLUMN IF NOT EXISTS resumed_at timestamptz;
 ALTER TABLE fund_tan_configs DROP CONSTRAINT IF EXISTS fund_tan_configs_cycle_id_key;
 CREATE INDEX IF NOT EXISTS fund_tan_configs_cycle_idx ON fund_tan_configs(cycle_id, id DESC);
 
@@ -119,9 +136,33 @@ CREATE TABLE IF NOT EXISTS fund_tan_periods (
   UNIQUE(tan_config_id, sequence_no),
   UNIQUE(tan_config_id, period_start),
   UNIQUE(tan_config_id, draw_date),
-  CHECK (period_end = period_start + 6),
+  CHECK (period_end >= period_start + 6),
   CHECK (draw_date = period_end)
 );
+ALTER TABLE fund_tan_periods DROP CONSTRAINT IF EXISTS fund_tan_periods_period_end_check;
+ALTER TABLE fund_tan_periods
+  ADD CONSTRAINT fund_tan_periods_period_end_check CHECK (period_end >= period_start + 6);
+ALTER TABLE fund_tan_configs
+  DROP CONSTRAINT IF EXISTS fund_tan_configs_pause_period_id_fkey;
+ALTER TABLE fund_tan_configs
+  ADD CONSTRAINT fund_tan_configs_pause_period_id_fkey
+  FOREIGN KEY (pause_period_id) REFERENCES fund_tan_periods(id) ON DELETE RESTRICT;
+
+CREATE TABLE IF NOT EXISTS fund_tan_schedule_events (
+  id serial PRIMARY KEY,
+  tan_config_id integer NOT NULL REFERENCES fund_tan_configs(id) ON DELETE RESTRICT,
+  tan_period_id integer REFERENCES fund_tan_periods(id) ON DELETE RESTRICT,
+  event_type text NOT NULL CHECK (event_type IN ('PAUSED','RESUMED','RESCHEDULED')),
+  effective_date date NOT NULL,
+  days_shifted integer NOT NULL DEFAULT 0,
+  reason text NOT NULL DEFAULT '',
+  actor_id integer NOT NULL REFERENCES fund_users(id) ON DELETE RESTRICT,
+  before_value jsonb,
+  after_value jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS fund_tan_schedule_events_config_idx
+  ON fund_tan_schedule_events(tan_config_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS fund_tan_period_member_obligations (
   id serial PRIMARY KEY,

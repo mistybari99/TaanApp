@@ -255,9 +255,14 @@ export const GetTanResponse = zod.object({
   "expectedDailyCollection": zod.number(),
   "weeklyCollectionUnit": zod.number(),
   "perDrawWinnerAmount": zod.number(),
-  "status": zod.enum(['LOCKED', 'COMPLETED']),
+  "status": zod.enum(['LOCKED', 'PAUSED', 'COMPLETED']),
   "lockedAt": zod.string().optional(),
-  "completedAt": zod.string().nullish()
+  "completedAt": zod.string().nullish(),
+  "pauseStartedOn": zod.string().nullish(),
+  "pausePeriodId": zod.number().int().nullish(),
+  "pauseReason": zod.string().nullish(),
+  "pausedAt": zod.string().nullish(),
+  "resumedAt": zod.string().nullish()
 }).nullable(),
   "periods": zod.array(zod.object({
   "id": zod.number().int(),
@@ -267,7 +272,7 @@ export const GetTanResponse = zod.object({
   "drawDate": zod.string(),
   "expectedCollection": zod.number(),
   "status": zod.enum(['OPEN', 'COMPLETED']),
-  "computedStatus": zod.enum(['SCHEDULED', 'OPEN', 'CLOSED', 'COMPLETED']),
+  "computedStatus": zod.enum(['SCHEDULED', 'OPEN', 'PAUSED', 'CLOSED', 'COMPLETED']),
   "recordedDraws": zod.number().int(),
   "completedAt": zod.string().nullish()
 })),
@@ -279,7 +284,7 @@ export const GetTanResponse = zod.object({
   "drawDate": zod.string(),
   "expectedCollection": zod.number(),
   "status": zod.enum(['OPEN', 'COMPLETED']),
-  "computedStatus": zod.enum(['SCHEDULED', 'OPEN', 'CLOSED', 'COMPLETED']),
+  "computedStatus": zod.enum(['SCHEDULED', 'OPEN', 'PAUSED', 'CLOSED', 'COMPLETED']),
   "recordedDraws": zod.number().int(),
   "completedAt": zod.string().nullish()
 }).nullable(),
@@ -291,7 +296,7 @@ export const GetTanResponse = zod.object({
   "drawDate": zod.string(),
   "expectedCollection": zod.number(),
   "status": zod.enum(['OPEN', 'COMPLETED']),
-  "computedStatus": zod.enum(['SCHEDULED', 'OPEN', 'CLOSED', 'COMPLETED']),
+  "computedStatus": zod.enum(['SCHEDULED', 'OPEN', 'PAUSED', 'CLOSED', 'COMPLETED']),
   "recordedDraws": zod.number().int(),
   "completedAt": zod.string().nullish()
 }).nullable()
@@ -318,6 +323,50 @@ export const LockTanResponse = zod.object({
   "totalDrawDates": zod.number().int(),
   "perDrawWinnerAmount": zod.number(),
   "tanStartDate": zod.string()
+})
+
+
+export const PauseTanParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const PauseTanBody = zod.object({
+  "reason": zod.string().optional()
+})
+
+export const PauseTanResponse = zod.object({
+  "cycleId": zod.number().int(),
+  "tanConfigId": zod.number().int(),
+  "status": zod.enum(['LOCKED', 'PAUSED']),
+  "pauseStartedOn": zod.string().nullish(),
+  "pausePeriodId": zod.number().int().nullish(),
+  "pauseReason": zod.string().nullish(),
+  "resumedAt": zod.string().nullish(),
+  "resumedPeriodId": zod.number().int().nullish(),
+  "resumedPeriodSequence": zod.number().int().nullish(),
+  "daysShifted": zod.number().int().nullish()
+})
+
+
+export const ResumeTanParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const ResumeTanBody = zod.object({
+  "reason": zod.string().optional()
+})
+
+export const ResumeTanResponse = zod.object({
+  "cycleId": zod.number().int(),
+  "tanConfigId": zod.number().int(),
+  "status": zod.enum(['LOCKED', 'PAUSED']),
+  "pauseStartedOn": zod.string().nullish(),
+  "pausePeriodId": zod.number().int().nullish(),
+  "pauseReason": zod.string().nullish(),
+  "resumedAt": zod.string().nullish(),
+  "resumedPeriodId": zod.number().int().nullish(),
+  "resumedPeriodSequence": zod.number().int().nullish(),
+  "daysShifted": zod.number().int().nullish()
 })
 
 
@@ -1350,6 +1399,24 @@ export const CreateDrawDisbursementResponse = zod.object({
   "payoutCreatedAt": zod.string().nullish(),
   "payoutReversedAt": zod.string().nullish(),
   "payoutReversalReason": zod.string().nullish()
+})
+
+
+export const MoveDrawDateParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const MoveDrawDateBody = zod.object({
+  "drawDate": zod.string(),
+  "reason": zod.string().optional()
+})
+
+export const MoveDrawDateResponse = zod.object({
+  "id": zod.number().int(),
+  "cycleId": zod.number().int(),
+  "drawNumber": zod.number().int(),
+  "drawDate": zod.string(),
+  "tanPeriodId": zod.number().int().nullish()
 })
 
 

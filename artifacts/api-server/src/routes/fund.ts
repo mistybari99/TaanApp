@@ -121,6 +121,15 @@ const addDays = (date: string, days: number) => {
   value.setUTCDate(value.getUTCDate() + days);
   return value.toISOString().slice(0, 10);
 };
+const daysBetween = (from: string, to: string) => {
+  const milliseconds = new Date(`${to}T00:00:00Z`).getTime() - new Date(`${from}T00:00:00Z`).getTime();
+  return Math.round(milliseconds / 86_400_000);
+};
+export const pausedTanPeriodResumeDates = (periodStart: string, periodEnd: string, daysPaused: number) => ({
+  periodStart,
+  periodEnd: addDays(periodEnd, daysPaused),
+  drawDate: addDays(periodEnd, daysPaused),
+});
 const saturdayWeekBounds = (date: string) => {
   const daysSinceSaturday = (new Date(`${date}T00:00:00Z`).getUTCDay() + 1) % 7;
   const periodStart = addDays(date, -daysSinceSaturday);
@@ -176,7 +185,9 @@ const tanConfigForCycle = async (queryable: Queryable, cycleId: number, forUpdat
       cfg.draws_per_week AS "drawsPerWeek",cfg.total_shares AS "totalShares",cfg.total_draw_dates AS "totalDrawDates",
       cfg.daily_per_share::float AS "dailyPerShare",cfg.expected_daily_collection::float AS "expectedDailyCollection",
       cfg.weekly_collection_unit::float AS "weeklyCollectionUnit",cfg.per_draw_winner_amount::float AS "perDrawWinnerAmount",
-      cfg.status AS "tanStatus",cfg.locked_at AS "lockedAt",cfg.completed_at AS "completedAt"
+      cfg.status AS "tanStatus",cfg.locked_at AS "lockedAt",cfg.completed_at AS "completedAt",
+      cfg.pause_started_on::text AS "pauseStartedOn",cfg.pause_period_id AS "pausePeriodId",
+      cfg.pause_reason AS "pauseReason",cfg.paused_at AS "pausedAt",cfg.resumed_at AS "resumedAt"
      FROM fund_tan_configs cfg WHERE cfg.cycle_id=$1
      ORDER BY cfg.id DESC LIMIT 1
      ${forUpdate ? "FOR UPDATE" : ""}`,
@@ -186,7 +197,7 @@ const tanConfigForCycle = async (queryable: Queryable, cycleId: number, forUpdat
 };
 
 const tanPeriodIsLive = (period: TanPeriodRow | null, date = todayIso()) =>
-  Boolean(period && period.periodStatus !== "COMPLETED" && date >= period.periodStart && date <= period.periodEnd);
+  Boolean(period && period.tanStatus === "LOCKED" && period.periodStatus !== "COMPLETED" && date >= period.periodStart && date <= period.periodEnd);
 
 export const collectionCalendarState = (
   date: string,
@@ -399,8 +410,9 @@ router.get("/members", requireAuth, async (req: AuthedRequest, res) => {
   const search = `%${String(req.query.search ?? "")}%`;
   const businessDate = todayIso();
   const params: unknown[] = [search, businessDate];
-  let allowed = "";
-  if (req.user?.role === "COLLECTOR") { params.push(req.user.id); allowed = " AND (m.assigned_collector_id=$3 OR m.assigned_collector_id IS NULL)"; }
+  // Assignment is an organizational marker, not a payment authorization
+  // boundary. Collectors must be able to enter any member's payment.
+  const allowed = "";
   const activeCycle = await pool.query("SELECT id FROM fund_cycles WHERE status='ACTIVE' LIMIT 1");
   const activeCycleId = Number(activeCycle.rows[0]?.id ?? 0);
   const activeTan = activeCycleId ? await tanConfigForCycle(pool, activeCycleId) : null;
@@ -812,6 +824,12 @@ router.post("/cycles", requireAuth, ownerOnly, async (req: AuthedRequest, res) =
   if (b.endDate !== undefined && b.endDate !== null && b.endDate !== "" && !isIsoDate(b.endDate)) {
     return res.status(400).json({ error: "End date must be YYYY-MM-DD" });
   }
+  if (b.endDate && String(b.endDate) < String(b.startDate)) {
+    return res.status(400).json({ error: "Cycle end date cannot be before its start date" });
+  }
+  if (status === "ACTIVE" && String(b.trackingStartDate) < String(b.startDate)) {
+    return res.status(400).json({ error: "Digital tracking cannot start before the cycle start date" });
+  }
   const number = b.cycleNumber
     ? Number(b.cycleNumber)
     : Number((await pool.query("SELECT COALESCE(MAX(cycle_number),0)+1 AS next FROM fund_cycles")).rows[0].next);
@@ -834,7 +852,7 @@ router.patch("/cycles/:id", requireAuth, ownerOnly, async (req: AuthedRequest, r
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const current = await client.query(`SELECT id,name,end_date::text AS end_date,tracking_start_date::text AS tracking_start_date,
+    const current = await client.query(`SELECT id,name,start_date::text AS start_date,end_date::text AS end_date,tracking_start_date::text AS tracking_start_date,
         daily_per_share::float AS daily_per_share,draw_frequency,draw_day,status,notes,
         (SELECT COUNT(*) FROM fund_payments WHERE cycle_id=fund_cycles.id AND status='POSTED')::int AS posted_payments
         FROM fund_cycles WHERE id=$1 FOR UPDATE`, [id]);
@@ -863,6 +881,53 @@ router.patch("/cycles/:id", requireAuth, ownerOnly, async (req: AuthedRequest, r
     if (b.trackingStartDate !== undefined && !isIsoDate(b.trackingStartDate)) {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "Tracking start date must be YYYY-MM-DD" });
+    }
+    const requestedEndDate = b.endDate === undefined ? current.rows[0].end_date : (b.endDate ? String(b.endDate) : null);
+    if (b.endDate !== undefined && b.endDate !== null && b.endDate !== "" && !isIsoDate(b.endDate)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "End date must be YYYY-MM-DD" });
+    }
+    const cycleStart = String(current.rows[0].start_date ?? "");
+    if (requestedEndDate && requestedEndDate < cycleStart) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Cycle end date cannot be before its start date" });
+    }
+    if (b.trackingStartDate && String(b.trackingStartDate) < cycleStart) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Digital tracking cannot start before the cycle start date" });
+    }
+    if (requestedStatus === "COMPLETED") {
+      const outstanding = await client.query(
+        `SELECT COUNT(*)::int AS count
+           FROM fund_cycle_members cm
+          WHERE cm.cycle_id=$1
+            AND GREATEST(
+              COALESCE((SELECT SUM(de.amount) FROM fund_due_entries de WHERE de.cycle_id=cm.cycle_id AND de.member_id=cm.member_id),0)
+              + COALESCE((SELECT SUM(o.required_amount) FROM fund_tan_period_member_obligations o WHERE o.cycle_id=cm.cycle_id AND o.member_id=cm.member_id),0)
+              - COALESCE((SELECT SUM(p.previous_due_applied+p.current_period_applied) FROM fund_payments p
+                           WHERE p.cycle_id=cm.cycle_id AND p.member_id=cm.member_id AND p.status='POSTED'),0),
+              0
+            ) > 0`,
+        [id],
+      );
+      if (Number(outstanding.rows[0]?.count ?? 0) > 0) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "Cycle cannot close while members have outstanding due" });
+      }
+      const pendingPayouts = await client.query(
+        `SELECT COUNT(*)::int AS count
+           FROM fund_draws d
+          WHERE d.cycle_id=$1 AND d.status='RECORDED'
+            AND NOT EXISTS (
+              SELECT 1 FROM fund_draw_disbursements pd
+               WHERE pd.draw_id=d.id AND pd.status='PAID'
+            )`,
+        [id],
+      );
+      if (Number(pendingPayouts.rows[0]?.count ?? 0) > 0) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "Cycle cannot close while a draw payout is pending" });
+      }
     }
     if (current.rows[0].posted_payments > 0 && b.trackingStartDate && b.trackingStartDate !== current.rows[0].tracking_start_date) {
       await client.query("ROLLBACK");
@@ -936,7 +1001,9 @@ router.get("/cycles/:id/tan", requireAuth, async (req: AuthedRequest, res) => {
   const currentDate = todayIso();
   const mapped = periods.rows.map((period) => ({
     ...period,
-    computedStatus: period.status === "COMPLETED"
+    computedStatus: config.tanStatus === "PAUSED" && Number(period.id) === Number(config.pausePeriodId)
+      ? "PAUSED"
+      : period.status === "COMPLETED"
       ? "COMPLETED"
       : currentDate < String(period.periodStart)
         ? "SCHEDULED"
@@ -944,7 +1011,7 @@ router.get("/cycles/:id/tan", requireAuth, async (req: AuthedRequest, res) => {
           ? "CLOSED"
           : "OPEN",
   }));
-  const activePeriod = mapped.find((period) => period.computedStatus === "OPEN") ?? null;
+  const activePeriod = mapped.find((period) => period.computedStatus === "OPEN" || period.computedStatus === "PAUSED") ?? null;
   const nextPeriod = mapped.find((period) => period.computedStatus === "SCHEDULED") ?? null;
   return res.json({
     tan: {
@@ -961,11 +1028,146 @@ router.get("/cycles/:id/tan", requireAuth, async (req: AuthedRequest, res) => {
       status: config.tanStatus,
       lockedAt: config.lockedAt,
       completedAt: config.completedAt,
+      pauseStartedOn: config.pauseStartedOn,
+      pausePeriodId: config.pausePeriodId,
+      pauseReason: config.pauseReason,
+      pausedAt: config.pausedAt,
+      resumedAt: config.resumedAt,
     },
     periods: mapped,
     activePeriod,
     nextPeriod,
   });
+});
+
+router.post("/cycles/:id/tan/pause", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const cycleId = Number(req.params.id);
+  const reason = String(req.body.reason ?? "").trim();
+  const pauseDate = todayIso();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const tan = await tanConfigForCycle(client, cycleId, true);
+    if (!tan) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "TAN schedule not found" });
+    }
+    if (tan.tanStatus !== "LOCKED") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: tan.tanStatus === "PAUSED" ? "TAN is already paused" : "Completed TAN cannot be paused" });
+    }
+    const period = await tanPeriodForDate(client, cycleId, pauseDate, true);
+    if (!period || period.periodStatus === "COMPLETED") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "TAN can only be paused during the current open period" });
+    }
+    await client.query(
+      `UPDATE fund_tan_configs
+          SET status='PAUSED',pause_started_on=$2,pause_period_id=$3,pause_reason=$4,paused_by=$5,paused_at=now(),
+              resumed_by=NULL,resumed_at=NULL
+        WHERE id=$1`,
+      [tan.tanConfigId, pauseDate, period.periodId, reason, req.user!.id],
+    );
+    await client.query(
+      `INSERT INTO fund_tan_schedule_events(tan_config_id,tan_period_id,event_type,effective_date,reason,actor_id,before_value,after_value)
+       VALUES($1,$2,'PAUSED',$3,$4,$5,$6,$7)`,
+      [tan.tanConfigId, period.periodId, pauseDate, reason, req.user!.id,
+        JSON.stringify({ status: tan.tanStatus, periodId: period.periodId, sequenceNo: period.sequenceNo }),
+        JSON.stringify({ status: "PAUSED", periodId: period.periodId, sequenceNo: period.sequenceNo })],
+    );
+    await auditOn(client, req.user!.id, "TAN_PAUSED", `Paused TAN ${tan.tanConfigId} during period ${period.sequenceNo}`, "tan_config", String(tan.tanConfigId), {
+      cycleId,
+      reason,
+      effectiveDate: pauseDate,
+      beforeValue: { status: tan.tanStatus, periodId: period.periodId, sequenceNo: period.sequenceNo },
+      afterValue: { status: "PAUSED", periodId: period.periodId, sequenceNo: period.sequenceNo },
+    });
+    await client.query("COMMIT");
+    return res.json({ cycleId, tanConfigId: tan.tanConfigId, status: "PAUSED", pauseStartedOn: pauseDate, pausePeriodId: period.periodId, pauseReason: reason });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    req.log.error({ error }, "TAN pause failed");
+    return res.status(409).json({ error: "TAN could not be paused; no records were changed" });
+  } finally {
+    client.release();
+  }
+});
+
+router.post("/cycles/:id/tan/resume", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const cycleId = Number(req.params.id);
+  const resumeDate = todayIso();
+  const reason = String(req.body.reason ?? "").trim();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const tan = await tanConfigForCycle(client, cycleId, true);
+    if (!tan) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "TAN schedule not found" });
+    }
+    if (tan.tanStatus !== "PAUSED" || !tan.pauseStartedOn || !tan.pausePeriodId) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "TAN is not paused" });
+    }
+    const daysPaused = daysBetween(String(tan.pauseStartedOn), resumeDate);
+    if (daysPaused < 1) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Resume must be on a later business date than the pause date" });
+    }
+    const pausedPeriod = await client.query(
+      `SELECT id,sequence_no AS "sequenceNo",period_start::text AS "periodStart",period_end::text AS "periodEnd"
+         FROM fund_tan_periods WHERE id=$1 AND tan_config_id=$2 FOR UPDATE`,
+      [tan.pausePeriodId, tan.tanConfigId],
+    );
+    if (!pausedPeriod.rows[0]) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Paused TAN period no longer exists" });
+    }
+    const period = pausedPeriod.rows[0];
+    // The pause freezes the current period. Its id/sequence stays the same so
+    // payments already linked to it remain in that period; only remaining
+    // calendar time and all later periods move forward.
+    await client.query(
+      `UPDATE fund_tan_periods
+          SET period_end=period_end + ($3 * INTERVAL '1 day'),
+              draw_date=draw_date + ($3 * INTERVAL '1 day'),
+              period_start=CASE WHEN sequence_no=$4 THEN period_start ELSE period_start + ($3 * INTERVAL '1 day') END
+        WHERE tan_config_id=$1 AND sequence_no >= $2 AND status <> 'COMPLETED'`,
+      [tan.tanConfigId, period.sequenceNo, daysPaused, period.sequenceNo],
+    );
+    await client.query(
+      "UPDATE fund_cycles SET end_date=(SELECT MAX(period_end) FROM fund_tan_periods WHERE tan_config_id=$2) WHERE id=$1",
+      [cycleId, tan.tanConfigId],
+    );
+    await client.query(
+      `UPDATE fund_tan_configs
+          SET status='LOCKED',resumed_by=$2,resumed_at=now(),pause_started_on=NULL,pause_period_id=NULL,pause_reason=NULL
+        WHERE id=$1`,
+      [tan.tanConfigId, req.user!.id],
+    );
+    await client.query(
+      `INSERT INTO fund_tan_schedule_events(tan_config_id,tan_period_id,event_type,effective_date,days_shifted,reason,actor_id,before_value,after_value)
+       VALUES($1,$2,'RESUMED',$3,$4,$5,$6,$7,$8)`,
+      [tan.tanConfigId, period.id, resumeDate, daysPaused, reason, req.user!.id,
+        JSON.stringify({ status: "PAUSED", periodStart: period.periodStart, periodEnd: period.periodEnd }),
+        JSON.stringify({ status: "LOCKED", ...pausedTanPeriodResumeDates(period.periodStart, period.periodEnd, daysPaused) })],
+    );
+    await auditOn(client, req.user!.id, "TAN_RESUMED", `Resumed TAN ${tan.tanConfigId}; period ${period.sequenceNo} retained`, "tan_config", String(tan.tanConfigId), {
+      cycleId,
+      reason,
+      effectiveDate: resumeDate,
+      beforeValue: { status: "PAUSED", periodId: period.id, periodStart: period.periodStart, periodEnd: period.periodEnd },
+      afterValue: { status: "LOCKED", periodId: period.id, ...pausedTanPeriodResumeDates(period.periodStart, period.periodEnd, daysPaused), daysPaused },
+    });
+    await client.query("COMMIT");
+    return res.json({ cycleId, tanConfigId: tan.tanConfigId, status: "LOCKED", resumedAt: resumeDate, resumedPeriodId: period.id, resumedPeriodSequence: period.sequenceNo, daysShifted: daysPaused });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    req.log.error({ error }, "TAN resume failed");
+    return res.status(409).json({ error: "TAN could not be resumed; no records were changed" });
+  } finally {
+    client.release();
+  }
 });
 
 router.post("/cycles/:id/tan/lock", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
@@ -1077,6 +1279,10 @@ router.post("/cycles/:id/tan/lock", requireAuth, ownerOnly, async (req: AuthedRe
         );
       }
     }
+    await client.query(
+      "UPDATE fund_cycles SET end_date=(SELECT MAX(period_end) FROM fund_tan_periods WHERE tan_config_id=$2) WHERE id=$1",
+      [cycleId, tanConfigId],
+    );
     if (!previousTan) {
       await client.query("UPDATE fund_cycles SET tracking_start_date=$2 WHERE id=$1", [cycleId, tanStartDate]);
     }
@@ -1101,8 +1307,9 @@ router.get("/cycles/:id/members", requireAuth, async (req: AuthedRequest, res) =
   const tanPeriod = tan ? await tanPeriodForDate(pool, cycleId, todayIso()) : null;
   const tanDue = tan ? await tanDueForMembers(pool, cycleId, tanPeriod) : new Map<number, any>();
   const params: unknown[] = [Number(req.params.id)];
-  let access = "";
-  if (req.user?.role === "COLLECTOR") { params.push(req.user.id); access = " AND (m.assigned_collector_id=$2 OR m.assigned_collector_id IS NULL)"; }
+  // Keep assigned-member marking for dashboards, but do not restrict payment
+  // entry or cycle member visibility to the assigned collector.
+  const access = "";
   const entitlementConfigParam = params.push(Number(tan?.tanConfigId ?? 0));
   const result = await pool.query(`SELECT cm.id,cm.cycle_id AS "cycleId",m.id AS "memberId",COALESCE(m.public_member_id,m.member_id) AS "memberCode",m.name,m.mobile,m.business_name AS "businessName",
     m.status,cm.shares,cm.daily_contribution::float AS "dailyContribution",
@@ -1839,6 +2046,50 @@ router.get("/draws", requireAuth, async (req, res) => {
     ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""} ORDER BY d.draw_date DESC,d.draw_number DESC`, values);
   return res.json(result.rows);
 });
+router.post("/draws/:id/move-date", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const drawId = Number(req.params.id);
+  const drawDate = isIsoDate(req.body.drawDate) ? String(req.body.drawDate) : "";
+  const reason = String(req.body.reason ?? "").trim();
+  if (!drawId || !drawDate) return res.status(400).json({ error: "A valid draw date is required" });
+  if (drawDate > todayIso()) return res.status(400).json({ error: "Manual draw date cannot be in the future" });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await transactionLock(client, `draw-date:${drawId}`);
+    const current = await client.query(
+      `SELECT d.id,d.cycle_id AS "cycleId",d.draw_number AS "drawNumber",d.draw_date::text AS "drawDate",
+              d.status,d.tan_period_id AS "tanPeriodId"
+         FROM fund_draws d WHERE d.id=$1 FOR UPDATE`,
+      [drawId],
+    );
+    if (!current.rows[0]) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Draw not found" });
+    }
+    if (current.rows[0].status === "VOID") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "A void draw cannot be rescheduled" });
+    }
+    const beforeDate = String(current.rows[0].drawDate);
+    await client.query("UPDATE fund_draws SET draw_date=$2 WHERE id=$1", [drawId, drawDate]);
+    await auditOn(client, req.user!.id, "DRAW_DATE_MOVED", `Moved draw #${current.rows[0].drawNumber} from ${beforeDate} to ${drawDate}`, "draw", String(drawId), {
+      cycleId: Number(current.rows[0].cycleId),
+      relatedTransactionId: drawId,
+      reason: reason || "Owner manual draw-date correction",
+      effectiveDate: drawDate,
+      beforeValue: { drawDate: beforeDate, drawNumber: current.rows[0].drawNumber, tanPeriodId: current.rows[0].tanPeriodId },
+      afterValue: { drawDate, drawNumber: current.rows[0].drawNumber, tanPeriodId: current.rows[0].tanPeriodId },
+    });
+    await client.query("COMMIT");
+    return res.json({ id: drawId, cycleId: Number(current.rows[0].cycleId), drawNumber: Number(current.rows[0].drawNumber), drawDate, tanPeriodId: current.rows[0].tanPeriodId });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    req.log.error({ error }, "Draw date move failed");
+    return res.status(409).json({ error: "Draw date could not be moved; no records were changed" });
+  } finally {
+    client.release();
+  }
+});
 router.post("/draws/:id/disbursement", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
   const drawId = Number(req.params.id);
   const payerUserId = Number(req.body?.payerUserId);
@@ -2247,14 +2498,6 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
     if (!member.rows[0]) {
       await client.query("ROLLBACK");
       return res.status(404).json({ error: "Active member not found" });
-    }
-    if (
-      req.user?.role === "COLLECTOR"
-      && member.rows[0].assigned_collector_id !== null
-      && Number(member.rows[0].assigned_collector_id) !== req.user.id
-    ) {
-      await client.query("ROLLBACK");
-      return res.status(403).json({ error: "Collector is not assigned to this member" });
     }
     const expectedVerification = req.user.role === "OWNER"
       ? "OWNER_CONFIRMATION"

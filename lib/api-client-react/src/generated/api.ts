@@ -37,6 +37,8 @@ import type {
   CycleMemberInput,
   Dashboard,
   Draw,
+  DrawDateMoveInput,
+  DrawDateMoveResult,
   DrawDisbursementInput,
   DrawInput,
   DueEntryInput,
@@ -71,6 +73,8 @@ import type {
   TanLockInput,
   TanLockResult,
   TanResponse,
+  TanScheduleActionInput,
+  TanScheduleActionResult,
   TransferSettlementInput,
   User
 } from './api.schemas';
@@ -918,6 +922,138 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getLockTanMutationOptions(options));
+    }
+
+export const getPauseTanUrl = (id: number,) => {
+
+
+
+
+  return `/api/cycles/${id}/tan/pause`
+}
+
+export const pauseTan = async (id: number,
+    tanScheduleActionInput?: TanScheduleActionInput, options?: Parameters<typeof customFetch>[1]): Promise<TanScheduleActionResult> => {
+
+  return customFetch<TanScheduleActionResult>(getPauseTanUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(tanScheduleActionInput)
+  }
+);}
+
+
+
+
+
+export const getPauseTanMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pauseTan>>, TError,{id: number;data?: BodyType<TanScheduleActionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof pauseTan>>, TError,{id: number;data?: BodyType<TanScheduleActionInput>}, TContext> => {
+
+const mutationKey = ['pauseTan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof pauseTan>>, {id: number;data?: BodyType<TanScheduleActionInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  pauseTan(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PauseTanMutationResult = NonNullable<Awaited<ReturnType<typeof pauseTan>>>
+    export type PauseTanMutationBody = BodyType<TanScheduleActionInput> | undefined
+    export type PauseTanMutationError = ErrorType<unknown>
+
+    export const usePauseTan = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pauseTan>>, TError,{id: number;data?: BodyType<TanScheduleActionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof pauseTan>>,
+        TError,
+        {id: number;data?: BodyType<TanScheduleActionInput>},
+        TContext
+      > => {
+      return useMutation(getPauseTanMutationOptions(options));
+    }
+
+export const getResumeTanUrl = (id: number,) => {
+
+
+
+
+  return `/api/cycles/${id}/tan/resume`
+}
+
+export const resumeTan = async (id: number,
+    tanScheduleActionInput?: TanScheduleActionInput, options?: Parameters<typeof customFetch>[1]): Promise<TanScheduleActionResult> => {
+
+  return customFetch<TanScheduleActionResult>(getResumeTanUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(tanScheduleActionInput)
+  }
+);}
+
+
+
+
+
+export const getResumeTanMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeTan>>, TError,{id: number;data?: BodyType<TanScheduleActionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resumeTan>>, TError,{id: number;data?: BodyType<TanScheduleActionInput>}, TContext> => {
+
+const mutationKey = ['resumeTan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resumeTan>>, {id: number;data?: BodyType<TanScheduleActionInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  resumeTan(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResumeTanMutationResult = NonNullable<Awaited<ReturnType<typeof resumeTan>>>
+    export type ResumeTanMutationBody = BodyType<TanScheduleActionInput> | undefined
+    export type ResumeTanMutationError = ErrorType<unknown>
+
+    export const useResumeTan = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeTan>>, TError,{id: number;data?: BodyType<TanScheduleActionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resumeTan>>,
+        TError,
+        {id: number;data?: BodyType<TanScheduleActionInput>},
+        TContext
+      > => {
+      return useMutation(getResumeTanMutationOptions(options));
     }
 
 export const getListCycleMembersUrl = (id: number,) => {
@@ -2910,6 +3046,72 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getCreateDrawDisbursementMutationOptions(options));
+    }
+
+export const getMoveDrawDateUrl = (id: number,) => {
+
+
+
+
+  return `/api/draws/${id}/move-date`
+}
+
+export const moveDrawDate = async (id: number,
+    drawDateMoveInput: DrawDateMoveInput, options?: Parameters<typeof customFetch>[1]): Promise<DrawDateMoveResult> => {
+
+  return customFetch<DrawDateMoveResult>(getMoveDrawDateUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(drawDateMoveInput)
+  }
+);}
+
+
+
+
+
+export const getMoveDrawDateMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof moveDrawDate>>, TError,{id: number;data: BodyType<DrawDateMoveInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof moveDrawDate>>, TError,{id: number;data: BodyType<DrawDateMoveInput>}, TContext> => {
+
+const mutationKey = ['moveDrawDate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof moveDrawDate>>, {id: number;data: BodyType<DrawDateMoveInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  moveDrawDate(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MoveDrawDateMutationResult = NonNullable<Awaited<ReturnType<typeof moveDrawDate>>>
+    export type MoveDrawDateMutationBody = BodyType<DrawDateMoveInput>
+    export type MoveDrawDateMutationError = ErrorType<unknown>
+
+    export const useMoveDrawDate = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof moveDrawDate>>, TError,{id: number;data: BodyType<DrawDateMoveInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof moveDrawDate>>,
+        TError,
+        {id: number;data: BodyType<DrawDateMoveInput>},
+        TContext
+      > => {
+      return useMutation(getMoveDrawDateMutationOptions(options));
     }
 
 export const getReverseDrawDisbursementUrl = (id: number,) => {

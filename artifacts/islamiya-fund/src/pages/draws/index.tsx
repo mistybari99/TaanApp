@@ -7,6 +7,7 @@ import {
   getGetTanQueryKey,
   useCreateDraw,
   useCreateDrawDisbursement,
+  useMoveDrawDate,
   useGetCurrentUser,
   useGetTan,
   useListCashCustodyBalances,
@@ -53,6 +54,7 @@ function DrawSurface({ readOnly }: { readOnly: boolean }) {
   const createDraw = useCreateDraw()
   const createDisbursement = useCreateDrawDisbursement()
   const reverseDisbursement = useReverseDrawDisbursement()
+  const moveDrawDate = useMoveDrawDate()
   const { data: custodyBalances } = useListCashCustodyBalances()
   const selectedCycle = cycles?.find((cycle) => cycle.id === cycleId) ?? cycles?.[0]
   const selectedWinner = cycleMembers?.find((member) => member.memberId === Number(form.winnerMemberId))
@@ -156,6 +158,19 @@ function DrawSurface({ readOnly }: { readOnly: boolean }) {
     })
   }
 
+  const handleMoveDrawDate = (draw: NonNullable<typeof draws>[number]) => {
+    const drawDate = window.prompt("নতুন draw date (YYYY-MM-DD)", draw.drawDate)
+    if (!drawDate || drawDate === draw.drawDate) return
+    const reason = window.prompt("তারিখ পরিবর্তনের কারণ (optional)", "Owner manual draw-date correction") ?? ""
+    moveDrawDate.mutate({ id: draw.id, data: { drawDate, reason } }, {
+      onSuccess: () => {
+        toast.success(`Draw #${draw.drawNumber}-এর তারিখ ${drawDate} হয়েছে; entitlement অপরিবর্তিত আছে`)
+        queryClient.invalidateQueries({ queryKey: getListDrawsQueryKey(drawQuery) })
+      },
+      onError: (error: any) => toast.error(error?.message || "Draw date পরিবর্তন করা যায়নি"),
+    })
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -192,7 +207,7 @@ function DrawSurface({ readOnly }: { readOnly: boolean }) {
              <table className="w-full text-sm">
                <thead className="bg-muted/50"><tr><th className="text-left p-3">তারিখ</th><th className="text-left p-3">চক্র</th><th className="text-left p-3">ড্র নং</th><th className="text-left p-3">বিজয়ী</th><th className="text-right p-3">পরিমাণ</th><th className="text-left p-3">Share draw</th><th className="text-left p-3">ড্র / payout</th><th className="text-left p-3">Action</th></tr></thead>
               <tbody>
-                 {isLoading || drawsLoading ? <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">লোড হচ্ছে...</td></tr> : draws?.length === 0 ? <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">এখনো কোনো ড্র রেকর্ড নেই</td></tr> : draws?.map((draw) => <tr key={draw.id} className="border-t"><td className="p-3">{formatDate(draw.drawDate)}</td><td className="p-3">{draw.cycleName || `Cycle #${draw.cycleNumber}`}</td><td className="p-3">#{draw.drawNumber}</td><td className="p-3"><div className="font-medium">{draw.winnerName}</div><div className="text-xs text-muted-foreground">{draw.winnerMemberCode}</div></td><td className="p-3 text-right font-bold text-primary">{formatCurrency(draw.winningAmount)}</td><td className="p-3">{draw.entitlementNumber ? `Entitlement #${draw.entitlementNumber}` : "—"}</td><td className="p-3"><div className="font-medium">{draw.payoutStatus === "PAID" ? "PAID" : draw.payoutStatus === "REVERSED" ? "REVERSED" : "Pending payout"}</div>{draw.payoutPayerName && <div className="text-xs text-muted-foreground">{draw.payoutPayerName} · {formatCurrency(draw.payoutAmount ?? 0)} · {draw.payoutReference}</div>}</td><td className="p-3">{!readOnly && user?.role === "OWNER" && draw.status === "RECORDED" && draw.payoutStatus !== "PAID" ? <Button size="sm" variant="outline" className="gap-1" onClick={() => openPayout(draw)}><ArrowDownToLine className="h-3.5 w-3.5" /> টাকা প্রদান</Button> : !readOnly && user?.role === "OWNER" && draw.payoutStatus === "PAID" ? <Button size="sm" variant="ghost" className="gap-1 text-destructive" onClick={() => handleReversePayout(draw)} disabled={reverseDisbursement.isPending}><RotateCcw className="h-3.5 w-3.5" /> Reverse</Button> : null}</td></tr>)}
+                 {isLoading || drawsLoading ? <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">লোড হচ্ছে...</td></tr> : draws?.length === 0 ? <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">এখনো কোনো ড্র রেকর্ড নেই</td></tr> : draws?.map((draw) => <tr key={draw.id} className="border-t"><td className="p-3">{formatDate(draw.drawDate)}</td><td className="p-3">{draw.cycleName || `Cycle #${draw.cycleNumber}`}</td><td className="p-3">#{draw.drawNumber}</td><td className="p-3"><div className="font-medium">{draw.winnerName}</div><div className="text-xs text-muted-foreground">{draw.winnerMemberCode}</div></td><td className="p-3 text-right font-bold text-primary">{formatCurrency(draw.winningAmount)}</td><td className="p-3">{draw.entitlementNumber ? `Entitlement #${draw.entitlementNumber}` : "—"}</td><td className="p-3"><div className="font-medium">{draw.payoutStatus === "PAID" ? "PAID" : draw.payoutStatus === "REVERSED" ? "REVERSED" : "Pending payout"}</div>{draw.payoutPayerName && <div className="text-xs text-muted-foreground">{draw.payoutPayerName} · {formatCurrency(draw.payoutAmount ?? 0)} · {draw.payoutReference}</div>}</td><td className="p-3">{!readOnly && user?.role === "OWNER" && <div className="flex flex-wrap gap-2 justify-end"><Button size="sm" variant="ghost" onClick={() => handleMoveDrawDate(draw)} disabled={moveDrawDate.isPending}>তারিখ বদল</Button>{draw.status === "RECORDED" && draw.payoutStatus !== "PAID" ? <Button size="sm" variant="outline" className="gap-1" onClick={() => openPayout(draw)}><ArrowDownToLine className="h-3.5 w-3.5" /> টাকা প্রদান</Button> : draw.payoutStatus === "PAID" ? <Button size="sm" variant="ghost" className="gap-1 text-destructive" onClick={() => handleReversePayout(draw)} disabled={reverseDisbursement.isPending}><RotateCcw className="h-3.5 w-3.5" /> Reverse</Button> : null}</div>}</td></tr>)}
               </tbody>
             </table>
           </div>

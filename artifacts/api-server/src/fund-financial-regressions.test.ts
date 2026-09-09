@@ -14,7 +14,7 @@ test("Dhaka business date changes at the local midnight boundary, not UTC midnig
   assert.equal(businessDateInDhaka(new Date("2026-09-11T18:00:00.000Z")), "2026-09-12");
 });
 
-test("collector assignment and PIN rejection prevent unauthorized payment writes", async () => {
+test("collector can record any member payment while PIN verification remains rejected", async () => {
   const ownerToken = `${prefix}-owner-token`;
   const collectorToken = `${prefix}-collector-token`;
   const otherCollectorToken = `${prefix}-other-collector-token`;
@@ -107,9 +107,12 @@ test("collector assignment and PIN rejection prevent unauthorized payment writes
         body: JSON.stringify({ cycleId, collectionDate: todayInDhaka(), ...body }),
       });
 
-    const unauthorized = await payment(collectorToken, { memberId, amount: 100 });
-    assert.equal(unauthorized.status, 403);
-    assert.deepEqual(await unauthorized.json(), { error: "Collector is not assigned to this member" });
+    const allowed = await payment(collectorToken, {
+      memberId,
+      amount: 100,
+      verificationMethod: "COLLECTOR_CONFIRMATION",
+    });
+    assert.equal(allowed.status, 201);
 
     const pinRejected = await payment(collectorToken, {
       memberId: pinMemberId,
@@ -124,7 +127,7 @@ test("collector assignment and PIN rejection prevent unauthorized payment writes
       "SELECT COUNT(*)::int AS count FROM fund_payments WHERE cycle_id=$1 AND member_id=ANY($2::int[])",
       [cycleId, [memberId, pinMemberId]],
     );
-    assert.equal(Number(persisted.rows[0].count), 0);
+    assert.equal(Number(persisted.rows[0].count), 1);
   } finally {
     if (server) {
       await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
@@ -139,6 +142,7 @@ test("collector assignment and PIN rejection prevent unauthorized payment writes
     if (memberId || pinMemberId) await pool.query("DELETE FROM fund_members WHERE id=ANY($1::int[])", [[memberId, pinMemberId].filter(Boolean)]);
     if (ownsCycle) await pool.query("DELETE FROM fund_cycles WHERE id=$1", [cycleId]);
     if (ownerId) {
+      await pool.query("DELETE FROM fund_audit WHERE actor_id=ANY($1::int[])", [[ownerId, collectorId, otherCollectorId]]);
       await pool.query("DELETE FROM fund_sessions WHERE user_id=ANY($1::int[])", [[ownerId, collectorId, otherCollectorId]]);
       await pool.query("DELETE FROM fund_users WHERE id=ANY($1::int[])", [[ownerId, collectorId, otherCollectorId]]);
     }

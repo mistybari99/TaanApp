@@ -7,6 +7,8 @@ import {
   getGetTanQueryKey,
   useGetTan,
   useLockTan,
+  usePauseTan,
+  useResumeTan,
   useListCycleMembers,
   useListCycles,
   useListMembers,
@@ -34,6 +36,7 @@ export default function CyclesPage() {
   const [trackingStartDate, setTrackingStartDate] = useState("")
   const [tanStartDate, setTanStartDate] = useState("")
   const [drawsPerWeek, setDrawsPerWeek] = useState(4)
+  const [tanActionReason, setTanActionReason] = useState("")
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [newCycle, setNewCycle] = useState({ name: "", startDate: today(), trackingStartDate: "", dailyPerShare: 100 })
   const [shareDrafts, setShareDrafts] = useState<Record<number, number>>({})
@@ -41,6 +44,8 @@ export default function CyclesPage() {
   const createCycle = useCreateCycle()
   const upsertMember = useUpsertCycleMember()
   const lockTan = useLockTan()
+  const pauseTan = usePauseTan()
+  const resumeTan = useResumeTan()
   const selectedCycle = cycles?.find((cycle) => cycle.id === selectedCycleId) ?? cycles?.[0]
   const activeId = selectedCycle?.id ?? null
   const { data: tanData } = useGetTan((activeId ?? 0) as number, {
@@ -79,6 +84,37 @@ export default function CyclesPage() {
         queryClient.invalidateQueries({ queryKey: getListCyclesQueryKey() })
       },
       onError: (error: any) => toast.error(error?.message || "TAN schedule lock করা যায়নি"),
+    })
+  }
+
+  const refreshTan = () => {
+    if (!activeId) return
+    queryClient.invalidateQueries({ queryKey: getGetTanQueryKey(activeId) })
+    queryClient.invalidateQueries({ queryKey: getListCycleMembersQueryKey(activeId) })
+    queryClient.invalidateQueries({ queryKey: getListCyclesQueryKey() })
+  }
+
+  const handlePauseTan = () => {
+    if (!activeId) return
+    pauseTan.mutate({ id: activeId, data: { reason: tanActionReason.trim() || undefined } }, {
+      onSuccess: () => {
+        toast.success("TAN pause হয়েছে; বর্তমান period-এর payment একই period-এ থাকবে")
+        setTanActionReason("")
+        refreshTan()
+      },
+      onError: (error: any) => toast.error(error?.message || "TAN pause করা যায়নি"),
+    })
+  }
+
+  const handleResumeTan = () => {
+    if (!activeId) return
+    resumeTan.mutate({ id: activeId, data: { reason: tanActionReason.trim() || undefined } }, {
+      onSuccess: (result) => {
+        toast.success(`TAN resume হয়েছে; ${result.daysShifted ?? 0} দিনের schedule পিছিয়েছে`)
+        setTanActionReason("")
+        refreshTan()
+      },
+      onError: (error: any) => toast.error(error?.message || "TAN resume করা যায়নি"),
     })
   }
 
@@ -220,13 +256,37 @@ export default function CyclesPage() {
                       <Button onClick={handleLockTan} disabled={lockTan.isPending || !activeId}><LockKeyhole className="mr-2 h-4 w-4" />TAN lock করুন</Button>
                     </div>
                   ) : (
+                    <>
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5 text-sm">
                       <div><p className="text-muted-foreground">মোট share</p><p className="font-bold">{tanData.tan.totalShares}</p></div>
                       <div><p className="text-muted-foreground">Draw/week</p><p className="font-bold">{tanData.tan.drawsPerWeek}</p></div>
                       <div><p className="text-muted-foreground">মোট draw-date</p><p className="font-bold">{tanData.tan.totalDrawDates}</p></div>
                       <div><p className="text-muted-foreground">প্রতি winner</p><p className="font-bold text-primary">{formatCurrency(tanData.tan.perDrawWinnerAmount)}</p></div>
                       <div><p className="text-muted-foreground">বর্তমান period</p><p className="font-bold">{tanData.activePeriod ? `${tanData.activePeriod.sequenceNo}/${tanData.tan.totalDrawDates}` : tanData.nextPeriod ? `পরবর্তী ${tanData.nextPeriod.sequenceNo}` : "শেষ"}</p></div>
+                      <div><p className="text-muted-foreground">TAN status</p><p className={`font-bold ${tanData.tan.status === "PAUSED" ? "text-amber-700" : "text-green-700"}`}>{tanData.tan.status === "PAUSED" ? "PAUSED" : tanData.tan.status}</p></div>
                     </div>
+                    {tanData.activePeriod && (
+                      <p className="text-xs text-muted-foreground">
+                        Period {tanData.activePeriod.sequenceNo}: {formatDate(tanData.activePeriod.periodStart)} – {formatDate(tanData.activePeriod.periodEnd)}
+                        {tanData.tan.status === "PAUSED"
+                          ? " · pause অবস্থায় payment বন্ধ থাকবে; resume হলে একই period-এ payment চলবে"
+                          : ""}
+                      </p>
+                    )}
+                    {user?.role === "OWNER" && tanData.tan.status !== "COMPLETED" && (
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                        <div className="flex-1 space-y-2">
+                          <Label>Pause/resume reason (optional)</Label>
+                          <Input value={tanActionReason} onChange={(event) => setTanActionReason(event.target.value)} placeholder="যেমন: ঈদের ছুটি" />
+                        </div>
+                        {tanData.tan.status === "PAUSED" ? (
+                          <Button variant="outline" onClick={handleResumeTan} disabled={resumeTan.isPending || !activeId}>TAN resume করুন</Button>
+                        ) : (
+                          <Button variant="outline" onClick={handlePauseTan} disabled={pauseTan.isPending || !activeId}>TAN pause করুন</Button>
+                        )}
+                      </div>
+                    )}
+                    </>
                   )}
                 </div>
               )}

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import app from "./app";
-import { allocatePayment, calculateShareTransfer, collectionCalendarState } from "./routes/fund";
+import { allocatePayment, calculateShareTransfer, collectionCalendarState, pausedTanPeriodResumeDates } from "./routes/fund";
 import { pool } from "@workspace/db";
 
 const prefix = `SYN-TAN-${process.pid}-${Date.now()}`;
@@ -37,6 +37,13 @@ test("collection calendar closes on Friday and opens the next period on Saturday
   assert.deepEqual(
     collectionCalendarState("2026-09-11", true, false, null),
     { isFridayClosingDay: true, isSaturdayOpeningDay: false },
+  );
+});
+
+test("mid-period pause keeps the same period window and shifts only its resume date", () => {
+  assert.deepEqual(
+    pausedTanPeriodResumeDates("2026-09-05", "2026-09-11", 3),
+    { periodStart: "2026-09-05", periodEnd: "2026-09-14", drawDate: "2026-09-14" },
   );
 });
 

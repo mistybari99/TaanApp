@@ -396,6 +396,19 @@ export interface DrawDisbursementInput {
   idempotencyKey?: string;
 }
 
+export interface DrawDateMoveInput {
+  drawDate: string;
+  reason?: string;
+}
+
+export interface DrawDateMoveResult {
+  id: number;
+  cycleId: number;
+  drawNumber: number;
+  drawDate: string;
+  tanPeriodId?: number | null;
+}
+
 export interface DrawInput {
   cycleId: number;
   drawDate: string;
@@ -430,6 +443,7 @@ export type TanPeriodComputedStatus = typeof TanPeriodComputedStatus[keyof typeo
 export const TanPeriodComputedStatus = {
   SCHEDULED: 'SCHEDULED',
   OPEN: 'OPEN',
+  PAUSED: 'PAUSED',
   CLOSED: 'CLOSED',
   COMPLETED: 'COMPLETED',
 } as const;
@@ -452,6 +466,7 @@ export type TanConfigStatus = typeof TanConfigStatus[keyof typeof TanConfigStatu
 
 export const TanConfigStatus = {
   LOCKED: 'LOCKED',
+  PAUSED: 'PAUSED',
   COMPLETED: 'COMPLETED',
 } as const;
 
@@ -469,6 +484,11 @@ export interface TanConfig {
   status: TanConfigStatus;
   lockedAt?: string;
   completedAt?: string | null;
+  pauseStartedOn?: string | null;
+  pausePeriodId?: number | null;
+  pauseReason?: string | null;
+  pausedAt?: string | null;
+  resumedAt?: string | null;
 }
 
 export interface TanResponse {
@@ -486,6 +506,31 @@ export interface TanLockResult {
   totalDrawDates: number;
   perDrawWinnerAmount: number;
   tanStartDate: string;
+}
+
+export interface TanScheduleActionInput {
+  reason?: string;
+}
+
+export type TanScheduleActionResultStatus = typeof TanScheduleActionResultStatus[keyof typeof TanScheduleActionResultStatus];
+
+
+export const TanScheduleActionResultStatus = {
+  LOCKED: 'LOCKED',
+  PAUSED: 'PAUSED',
+} as const;
+
+export interface TanScheduleActionResult {
+  cycleId: number;
+  tanConfigId: number;
+  status: TanScheduleActionResultStatus;
+  pauseStartedOn?: string | null;
+  pausePeriodId?: number | null;
+  pauseReason?: string | null;
+  resumedAt?: string | null;
+  resumedPeriodId?: number | null;
+  resumedPeriodSequence?: number | null;
+  daysShifted?: number | null;
 }
 
 export interface MemberCycleSummary {
