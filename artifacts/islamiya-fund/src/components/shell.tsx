@@ -247,20 +247,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         }}
       >
         <SheetContent
-          ref={moreScrollRef}
           side="right"
-          data-more-sheet-scroll
-          onScroll={(event) => {
-            moreScrollTopRef.current = event.currentTarget.scrollTop
-          }}
-          className="max-h-[100dvh] w-[min(92vw,25rem)] overflow-y-auto overscroll-contain border-l border-border bg-background px-4 pb-[calc(1.75rem+env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] sm:px-5 md:hidden"
+          className="more-sheet-content flex h-full max-h-[100dvh] w-[min(92vw,25rem)] flex-col overflow-hidden border-l border-border bg-background px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] sm:px-5 md:hidden"
         >
-          <SheetHeader className="pr-8 text-left">
+          <SheetHeader className="shrink-0 pr-8 text-left">
             <SheetTitle className="text-xl font-extrabold text-primary">আরও <span className="font-semibold text-muted-foreground">· More</span></SheetTitle>
             <SheetDescription>কম ব্যবহৃত কাজ ও আপনার অ্যাকাউন্ট এক জায়গায়।</SheetDescription>
           </SheetHeader>
 
-          <div className="mt-6 flex items-center gap-3 rounded-2xl border border-border/70 bg-card p-3.5">
+          <div className="mt-6 flex shrink-0 items-center gap-3 rounded-2xl border border-border/70 bg-card p-3.5">
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-accent text-base font-bold text-accent-foreground">
               {user.name.slice(0, 1).toUpperCase()}
             </div>
@@ -271,13 +266,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <ShieldCheck className="h-5 w-5 text-accent-foreground" />
           </div>
 
-          <div className="mt-8 space-y-8">
+          <div
+            ref={moreScrollRef}
+            data-more-sheet-scroll
+            onScroll={(event) => {
+              moreScrollTopRef.current = event.currentTarget.scrollTop
+            }}
+            className="more-sheet-scroll hide-scrollbar mt-5 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3 pt-1"
+          >
             {(["operate", "finance", "records", "admin"] as const).map((group) => {
               const items = moreItems.filter((item) => item.group === group)
               if (!items.length) return null
               return (
-                <section key={group} data-more-nav-group={group}>
-                  <div className="sticky top-0 z-10 mb-3 border-b border-border/50 bg-background/95 px-1 py-2 backdrop-blur-sm">
+                <section key={group} className="not-first:mt-8" data-more-nav-group={group} aria-labelledby={`more-group-${group}`}>
+                  <div id={`more-group-${group}`} className="more-sheet-group-heading sticky top-0 z-10 px-1">
                     <p className="text-xs font-bold text-foreground">{groupLabels[group].bn}</p>
                     <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{groupLabels[group].en}</p>
                   </div>
@@ -289,7 +291,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             })}
           </div>
 
-          <div className="mt-8 border-t border-border/70 pt-6">
+          <div className="mt-3 shrink-0 border-t border-border/70 pt-3">
             <button
               onClick={() => {
                 setMoreOpen(false)

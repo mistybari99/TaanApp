@@ -148,3 +148,15 @@ a {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+.more-sheet-group-heading {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid hsl(var(--border) / 0.7);
+  border-left: 2px solid hsl(var(--secondary) / 0.9);
+  background: hsl(var(--background));
+  padding: 0.55rem 0.5rem 0.45rem;
+  box-shadow: 0 3px 8px hsl(var(--background) / 0.72);
+}
