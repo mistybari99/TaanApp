@@ -664,6 +664,100 @@ test("deactivated collectors cannot use otherwise-active delegated financial gra
   }
 });
 
+test("delegated staff cannot administer audit records or business settings", async () => {
+  const ownerToken = `${prefix}-admin-owner-token`;
+  const collectorToken = `${prefix}-admin-collector-token`;
+  let server: ReturnType<typeof app.listen> | undefined;
+  let ownerId = 0;
+  let collectorId = 0;
+
+  try {
+    const owner = await pool.query(
+      `INSERT INTO fund_users(name,username,password_hash,role)
+       VALUES($1,$2,'synthetic','OWNER') RETURNING id`,
+      [`${prefix} admin owner`, `${prefix}-admin-owner`],
+    );
+    ownerId = Number(owner.rows[0].id);
+    const collector = await pool.query(
+      `INSERT INTO fund_users(name,username,password_hash,role)
+       VALUES($1,$2,'synthetic','COLLECTOR') RETURNING id`,
+      [`${prefix} admin collector`, `${prefix}-admin-collector`],
+    );
+    collectorId = Number(collector.rows[0].id);
+    await pool.query(
+      `INSERT INTO fund_sessions(token_hash,user_id,expires_at)
+       VALUES($1,$2,now()+interval '10 minutes'),($3,$4,now()+interval '10 minutes')`,
+      [hashToken(ownerToken), ownerId, hashToken(collectorToken), collectorId],
+    );
+    await pool.query(
+      `INSERT INTO fund_user_permissions(user_id,permission,granted_by,note)
+       VALUES($1,'FULL_ACCESS',$2,'Active operational grant for owner-only administration regression')`,
+      [collectorId, ownerId],
+    );
+
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server?.once("listening", resolve));
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const request = (path: string, token: string, init?: RequestInit) => fetch(`${baseUrl}${path}`, {
+      ...init,
+      headers: {
+        ...init?.headers,
+        cookie: `irf_session=${token}`,
+      },
+    });
+
+    const settingsBefore = await pool.query("SELECT * FROM fund_settings WHERE id=1");
+    const auditBefore = await pool.query("SELECT COUNT(*)::int AS count FROM fund_audit");
+    const deniedAudit = await request("/api/audit", collectorToken);
+    const deniedSettings = await request("/api/settings", collectorToken, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        organizationName: `${prefix} unauthorized organization`,
+        expectedMembers: 999999,
+        defaultDailyPerShare: 999999,
+      }),
+    });
+
+    assert.equal(deniedAudit.status, 403);
+    assert.equal(deniedSettings.status, 403);
+    assert.deepEqual((await pool.query("SELECT * FROM fund_settings WHERE id=1")).rows, settingsBefore.rows);
+    assert.equal(
+      Number((await pool.query("SELECT COUNT(*)::int AS count FROM fund_audit")).rows[0].count),
+      Number(auditBefore.rows[0].count),
+    );
+
+    const ownerAudit = await request("/api/audit", ownerToken);
+    assert.equal(ownerAudit.status, 200);
+    assert.ok(Array.isArray(await ownerAudit.json()));
+
+    const currentSettings = settingsBefore.rows[0];
+    const ownerSettings = await request("/api/settings", ownerToken, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        organizationName: currentSettings.organization_name,
+        expectedMembers: currentSettings.expected_members,
+        defaultDailyPerShare: Number(currentSettings.default_daily_per_share),
+      }),
+    });
+    assert.equal(ownerSettings.status, 200);
+  } finally {
+    if (server) {
+      await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
+    }
+    if (ownerId || collectorId) {
+      const userIds = [ownerId, collectorId].filter(Boolean);
+      await pool.query("DELETE FROM fund_audit WHERE actor_id=ANY($1::int[])", [userIds]);
+      await pool.query("DELETE FROM fund_user_permissions WHERE user_id=ANY($1::int[]) OR granted_by=ANY($1::int[])", [userIds]);
+      await pool.query("DELETE FROM fund_sessions WHERE user_id=ANY($1::int[])", [userIds]);
+      await pool.query("DELETE FROM fund_users WHERE id=ANY($1::int[])", [userIds]);
+    }
+  }
+});
+
 test.after(async () => {
   await pool.end();
 });
