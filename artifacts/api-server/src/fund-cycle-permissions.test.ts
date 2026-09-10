@@ -18,6 +18,9 @@ test("cycle-scoped delegated access cannot be used on another cycle", async () =
   let secondCycleId = 0;
   let firstDrawId = 0;
   let secondDrawId = 0;
+  let firstPaymentId = 0;
+  let secondPaymentId = 0;
+  let firstPayoutId = 0;
 
   try {
     const owner = await pool.query(
@@ -62,6 +65,15 @@ test("cycle-scoped delegated access cannot be used on another cycle", async () =
     );
     firstDrawId = Number(draws.rows.find((row) => Number(row.cycle_id) === firstCycleId)?.id);
     secondDrawId = Number(draws.rows.find((row) => Number(row.cycle_id) === secondCycleId)?.id);
+    const payments = await pool.query(
+      `INSERT INTO fund_payments(receipt_id,member_id,cycle_id,collection_date,shares,amount,collector_id,verification_status,status)
+       VALUES($1,$3,$4,CURRENT_DATE,1,100,$2,'SYNTHETIC','POSTED'),
+             ($5,$3,$6,CURRENT_DATE,1,100,$2,'SYNTHETIC','POSTED')
+       RETURNING id,cycle_id`,
+      [`${prefix}-first-payment`, collectorId, memberId, firstCycleId, `${prefix}-second-payment`, secondCycleId],
+    );
+    firstPaymentId = Number(payments.rows.find((row) => Number(row.cycle_id) === firstCycleId)?.id);
+    secondPaymentId = Number(payments.rows.find((row) => Number(row.cycle_id) === secondCycleId)?.id);
     await pool.query(
       `INSERT INTO fund_sessions(token_hash,user_id,expires_at)
        VALUES($1,$2,now()+interval '10 minutes'),($3,$4,now()+interval '10 minutes')`,
@@ -79,36 +91,116 @@ test("cycle-scoped delegated access cannot be used on another cycle", async () =
       body: JSON.stringify(body),
     });
 
-    const grant = await post("/api/permissions", ownerToken, {
+    const approvalGrant = await post("/api/permissions", ownerToken, {
       userId: collectorId,
-      permission: "DRAW_DATE_CORRECTION",
+      permission: "PAYOUT_APPROVAL",
       cycleId: firstCycleId,
-      note: "Synthetic cycle-only coverage",
+      note: "Synthetic cycle-only payout approval",
     });
-    assert.equal(grant.status, 201);
+    assert.equal(approvalGrant.status, 201);
 
-    const crossCycle = await post(`/api/draws/${secondDrawId}/move-date`, collectorToken, {
-      drawDate: new Date().toISOString().slice(0, 10),
-      reason: "Must remain denied",
-    });
-    assert.equal(crossCycle.status, 403);
-
-    const spoofedCycle = await post(`/api/draws/${secondDrawId}/move-date`, collectorToken, {
+    const payoutDate = new Date().toISOString().slice(0, 10);
+    const inScopePayout = await post(`/api/draws/${firstDrawId}/disbursement`, collectorToken, {
       cycleId: firstCycleId,
-      drawDate: new Date().toISOString().slice(0, 10),
-      reason: "Must remain denied",
+      payerUserId: collectorId,
+      amount: 100,
+      payoutDate,
+      reference: `${prefix}-first-payout`,
+    });
+    assert.equal(inScopePayout.status, 201);
+
+    const crossCyclePayout = await post(`/api/draws/${secondDrawId}/disbursement`, collectorToken, {
+      payerUserId: collectorId,
+      amount: 100,
+      payoutDate,
+      reference: `${prefix}-second-payout`,
+    });
+    assert.equal(crossCyclePayout.status, 403);
+
+    const spoofedCycle = await post(`/api/draws/${secondDrawId}/disbursement`, collectorToken, {
+      cycleId: firstCycleId,
+      payerUserId: collectorId,
+      amount: 100,
+      payoutDate,
+      reference: `${prefix}-spoofed-payout`,
     });
     assert.equal(spoofedCycle.status, 400);
     assert.deepEqual(await spoofedCycle.json(), {
       error: "Request cycle does not match the financial record's cycle",
     });
 
-    const inScope = await post(`/api/draws/${firstDrawId}/move-date`, collectorToken, {
+    firstPayoutId = Number((await pool.query(
+      "SELECT id FROM fund_draw_disbursements WHERE draw_id=$1 AND status='PAID'",
+      [firstDrawId],
+    )).rows[0]?.id);
+    await pool.query(
+      `INSERT INTO fund_draw_disbursements(draw_id,cycle_id,payer_user_id,winner_member_id,amount,payout_date,reference,status,created_by)
+       VALUES($1,$2,$3,$4,100,$5,$6,'PAID',$7)`,
+      [secondDrawId, secondCycleId, collectorId, memberId, payoutDate, `${prefix}-second-payout`, ownerId],
+    );
+
+    const payoutReversalGrant = await post("/api/permissions", ownerToken, {
+      userId: collectorId,
+      permission: "PAYOUT_REVERSAL",
       cycleId: firstCycleId,
-      drawDate: new Date().toISOString().slice(0, 10),
-      reason: "Synthetic in-scope correction",
+      note: "Synthetic cycle-only payout reversal",
     });
-    assert.equal(inScope.status, 200);
+    assert.equal(payoutReversalGrant.status, 201);
+
+    const inScopePayoutReversal = await post(`/api/draw-disbursements/${firstPayoutId}/reverse`, collectorToken, {
+      reason: "Synthetic in-scope payout reversal",
+    });
+    assert.equal(inScopePayoutReversal.status, 200);
+
+    const secondPayoutId = Number((await pool.query(
+      "SELECT id FROM fund_draw_disbursements WHERE draw_id=$1 AND status='PAID'",
+      [secondDrawId],
+    )).rows[0]?.id);
+    const crossCyclePayoutReversal = await post(`/api/draw-disbursements/${secondPayoutId}/reverse`, collectorToken, {
+      reason: "Must remain denied",
+    });
+    assert.equal(crossCyclePayoutReversal.status, 403);
+
+    await pool.query(
+      `INSERT INTO fund_user_permissions(user_id,permission,cycle_id,expires_at,granted_by,note)
+       VALUES($1,'DRAW_DATE_CORRECTION',$2,now()-interval '1 minute',$3,'Expired synthetic cycle grant')`,
+      [collectorId, firstCycleId, ownerId],
+    );
+    const expiredCycleGrant = await post(`/api/draws/${firstDrawId}/move-date`, collectorToken, {
+      drawDate: payoutDate,
+      reason: "Expired grant must remain denied",
+    });
+    assert.equal(expiredCycleGrant.status, 403);
+
+    const paymentReversalGrant = await post("/api/permissions", ownerToken, {
+      userId: collectorId,
+      permission: "PAYMENT_REVERSAL",
+      cycleId: firstCycleId,
+      note: "Synthetic cycle-only payment reversal",
+    });
+    assert.equal(paymentReversalGrant.status, 201);
+
+    const inScopePaymentReversal = await post(`/api/payments/${firstPaymentId}/reverse`, collectorToken, {
+      reason: "Synthetic in-scope payment reversal",
+    });
+    assert.equal(inScopePaymentReversal.status, 200);
+
+    const crossCyclePaymentReversal = await post(`/api/payments/${secondPaymentId}/reverse`, collectorToken, {
+      reason: "Must remain denied",
+    });
+    assert.equal(crossCyclePaymentReversal.status, 403);
+
+    const paymentGrant = await paymentReversalGrant.json() as { id: number };
+    const revokeResponse = await post(`/api/permissions/${paymentGrant.id}/revoke`, ownerToken, {
+      reason: "Synthetic cycle grant revoked",
+    });
+    assert.equal(revokeResponse.status, 200);
+    assert.equal((await revokeResponse.json() as { status: string }).status, "REVOKED");
+
+    const revokedCycleGrant = await post(`/api/payments/${firstPaymentId}/reverse`, collectorToken, {
+      reason: "Revoked grant must remain denied",
+    });
+    assert.equal(revokedCycleGrant.status, 403);
   } finally {
     if (server) {
       await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
@@ -120,7 +212,10 @@ test("cycle-scoped delegated access cannot be used on another cycle", async () =
     }
     if (firstCycleId || secondCycleId) {
       const cycleIds = [firstCycleId, secondCycleId].filter(Boolean);
+      await pool.query("DELETE FROM fund_draw_disbursements WHERE cycle_id=ANY($1::int[])", [cycleIds]);
       await pool.query("DELETE FROM fund_draws WHERE cycle_id=ANY($1::int[])", [cycleIds]);
+      await pool.query("DELETE FROM fund_payments WHERE reversed_payment_id IN (SELECT id FROM fund_payments WHERE cycle_id=ANY($1::int[]))", [cycleIds]);
+      await pool.query("DELETE FROM fund_payments WHERE cycle_id=ANY($1::int[])", [cycleIds]);
       await pool.query("DELETE FROM fund_cycle_members WHERE cycle_id=ANY($1::int[])", [cycleIds]);
       await pool.query("DELETE FROM fund_cycles WHERE id=ANY($1::int[])", [cycleIds]);
     }

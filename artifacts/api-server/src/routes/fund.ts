@@ -2791,7 +2791,7 @@ router.post("/payments/:id/reverse", requireAuth, delegatedPermission("PAYMENT_R
   try {
     await client.query("BEGIN");
     await transactionLock(client, `reversal:${req.params.id}`);
-    const original = await client.query("SELECT * FROM fund_payments WHERE id=$1 FOR UPDATE", [req.params.id]);
+    const original = await client.query("SELECT *,collection_date::text AS collection_date FROM fund_payments WHERE id=$1 FOR UPDATE", [req.params.id]);
     if (!original.rows[0]) {
       await client.query("ROLLBACK");
       return res.status(404).json({ error: "Payment not found" });
