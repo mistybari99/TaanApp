@@ -1,11 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import app from "./app";
 import { allocatePayment, businessDateInDhaka, calculateShareTransfer, collectionCalendarState, pausedTanPeriodResumeDates } from "./routes/fund";
 import { pool } from "@workspace/db";
 
 const prefix = `SYN-TAN-${process.pid}-${Date.now()}`;
+const fundCyclesSql = readFileSync(new URL("../sql/fund-cycles.sql", import.meta.url), "utf8");
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 const isoToday = () => new Date().toISOString().slice(0, 10);
 const addDays = (date: string, days: number) => {
@@ -47,6 +49,104 @@ test("mid-period pause keeps the same period window and shifts only its resume d
     pausedTanPeriodResumeDates("2026-09-05", "2026-09-11", 3),
     { periodStart: "2026-09-05", periodEnd: "2026-09-14", drawDate: "2026-09-14" },
   );
+});
+
+test("fund-cycle migration replaces the legacy exact-week constraint before a paused period extends", async () => {
+  const client = await pool.connect();
+  const username = `migration-smoke-${process.pid}-${Date.now()}`;
+  try {
+    await client.query("BEGIN");
+    await client.query(`
+      ALTER TABLE fund_tan_periods
+        DROP CONSTRAINT IF EXISTS fund_tan_periods_check,
+        DROP CONSTRAINT IF EXISTS fund_tan_periods_period_end_check;
+      ALTER TABLE fund_tan_periods
+        ADD CONSTRAINT fund_tan_periods_check
+        CHECK (period_end = period_start + 6);
+    `);
+
+    const legacyConstraint = await client.query(
+      `SELECT pg_get_constraintdef(oid) AS definition
+         FROM pg_constraint
+        WHERE conrelid='fund_tan_periods'::regclass
+          AND conname='fund_tan_periods_check'`,
+    );
+    assert.equal(legacyConstraint.rows.length, 1);
+    assert.match(legacyConstraint.rows[0].definition, /period_end = \(period_start \+ 6\)/);
+
+    await client.query(fundCyclesSql);
+
+    const compatibleConstraint = await client.query(
+      `SELECT pg_get_constraintdef(oid) AS definition
+         FROM pg_constraint
+        WHERE conrelid='fund_tan_periods'::regclass
+          AND conname='fund_tan_periods_period_end_check'`,
+    );
+    assert.equal(compatibleConstraint.rows.length, 1);
+    assert.match(compatibleConstraint.rows[0].definition, /period_end >= \(period_start \+ 6\)/);
+
+    const legacyConstraintAfterMigration = await client.query(
+      `SELECT 1
+         FROM pg_constraint
+        WHERE conrelid='fund_tan_periods'::regclass
+          AND conname='fund_tan_periods_check'`,
+    );
+    assert.deepEqual(legacyConstraintAfterMigration.rows, []);
+
+    const owner = await client.query(
+      `INSERT INTO fund_users(name,username,password_hash,role)
+       VALUES($1,$2,'migration-smoke','OWNER') RETURNING id`,
+      [username, username],
+    );
+    const cycle = await client.query(
+      `INSERT INTO fund_cycles(cycle_number,name,start_date,status,notes)
+       VALUES((SELECT COALESCE(MAX(cycle_number),0)+1 FROM fund_cycles),$1,'2026-09-05','ACTIVE',$2)
+       RETURNING id`,
+      [username, username],
+    );
+    const tan = await client.query(
+      `INSERT INTO fund_tan_configs(
+         cycle_id,tan_start_date,draws_per_week,total_shares,total_draw_dates,daily_per_share,
+         expected_daily_collection,weekly_collection_unit,per_draw_winner_amount,locked_by
+       ) VALUES($1,'2026-09-05',1,1,1,100,100,700,100,$2)
+       RETURNING id`,
+      [cycle.rows[0].id, owner.rows[0].id],
+    );
+
+    const initialPeriod = await client.query(
+      `INSERT INTO fund_tan_periods(
+         tan_config_id,cycle_id,sequence_no,period_start,period_end,draw_date,expected_collection
+       ) VALUES($1,$2,1,'2026-09-05','2026-09-11','2026-09-11',700)
+       RETURNING id,period_start::text AS period_start,period_end::text AS period_end,draw_date::text AS draw_date`,
+      [tan.rows[0].id, cycle.rows[0].id],
+    );
+    assert.deepEqual(initialPeriod.rows[0], {
+      id: initialPeriod.rows[0].id,
+      period_start: "2026-09-05",
+      period_end: "2026-09-11",
+      draw_date: "2026-09-11",
+    });
+    assert.equal(new Date(`${initialPeriod.rows[0].period_start}T00:00:00Z`).getUTCDay(), 6);
+    assert.equal(new Date(`${initialPeriod.rows[0].period_end}T00:00:00Z`).getUTCDay(), 5);
+
+    const resumedPeriod = await client.query(
+      `UPDATE fund_tan_periods
+          SET period_end='2026-09-18',draw_date='2026-09-18'
+        WHERE id=$1
+      RETURNING period_start::text AS period_start,period_end::text AS period_end,draw_date::text AS draw_date`,
+      [initialPeriod.rows[0].id],
+    );
+    assert.deepEqual(resumedPeriod.rows[0], {
+      period_start: "2026-09-05",
+      period_end: "2026-09-18",
+      draw_date: "2026-09-18",
+    });
+    assert.equal(new Date(`${resumedPeriod.rows[0].period_start}T00:00:00Z`).getUTCDay(), 6);
+    assert.equal(new Date(`${resumedPeriod.rows[0].period_end}T00:00:00Z`).getUTCDay(), 5);
+  } finally {
+    await client.query("ROLLBACK").catch(() => undefined);
+    client.release();
+  }
 });
 
 test("TAN pause and resume preserve payment period links and shift future periods", async () => {
