@@ -916,6 +916,17 @@ router.get("/members/:id/history", requireAuth, async (req: AuthedRequest, res) 
          LEFT JOIN fund_users pu ON pu.id=pd.payer_user_id
          WHERE pd.draw_id=d.id
        ),'[]'::json) AS "payoutHistory"
+       ,COALESCE((
+         SELECT json_agg(json_build_object(
+           'id',pa.id,'payerUserId',pa.payer_user_id,'payerName',pau.name,
+           'amount',pa.amount::float,'payoutDate',pa.payout_date::text,'reference',pa.reference,
+           'note',pa.note,'status',pa.status,'createdAt',pa.created_at,
+           'reversedAt',pa.reversed_at,'reversalReason',pa.reversal_reason
+         ) ORDER BY pa.created_at ASC,pa.id ASC)
+         FROM fund_draw_disbursements pa
+         LEFT JOIN fund_users pau ON pau.id=pa.payer_user_id
+         WHERE pa.draw_id=d.id
+       ),'[]'::json) AS "payoutAttempts"
        FROM fund_draws d JOIN fund_cycles c ON c.id=d.cycle_id
        LEFT JOIN LATERAL (
          SELECT status

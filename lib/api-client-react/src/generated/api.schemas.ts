@@ -726,6 +726,7 @@ export interface MemberDrawHistory {
   entitlementNumber?: number | null;
   payoutStatus?: MemberDrawHistoryPayoutStatus;
   payoutHistory?: DrawPayoutHistory[];
+  payoutAttempts: DrawPayoutAttempt[];
 }
 
 export interface MemberHistory {

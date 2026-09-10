@@ -953,7 +953,7 @@ components:
         drawEntitlementRemaining: { type: integer }
     MemberDrawHistory:
       type: object
-      required: [id, cycleId, cycleNumber, drawNumber, drawDate, winningAmount, status]
+      required: [id, cycleId, cycleNumber, drawNumber, drawDate, winningAmount, status, payoutAttempts]
       properties:
         id: { type: integer }
         cycleId: { type: integer }
@@ -966,6 +966,7 @@ components:
         entitlementNumber: { type: integer, nullable: true }
         payoutStatus: { type: string, enum: [PAID, REVERSED], nullable: true }
         payoutHistory: { type: array, items: { $ref: "#/components/schemas/DrawPayoutHistory" } }
+        payoutAttempts: { type: array, items: { $ref: "#/components/schemas/DrawPayoutAttempt" } }
     MemberInput:
       type: object
       required: [name, mobile, shares, dailyAmount, joiningDate, status]

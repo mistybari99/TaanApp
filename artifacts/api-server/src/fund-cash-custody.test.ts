@@ -541,6 +541,17 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
         id: number;
         payoutStatus: string | null;
         payoutHistory: Array<{ reference: string; status: string }>;
+        payoutAttempts: Array<{
+          payerUserId: number;
+          payerName: string;
+          amount: number;
+          payoutDate: string;
+          reference: string;
+          status: string;
+          createdAt: string;
+          reversedAt: string | null;
+          reversalReason: string | null;
+        }>;
       }>;
     };
     const historicalDraw = memberHistory.draws.find((row) => row.id === drawBody.id);
@@ -551,6 +562,19 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     );
     assert.deepEqual(
       historicalDraw?.payoutHistory.map((payout) => payout.reference),
+      [`${prefix}-payout-1`, `${prefix}-payout-same-key`, `${prefix}-payout-replacement`],
+    );
+    assert.equal(historicalDraw?.payoutAttempts.length, 3);
+    assert.equal(historicalDraw?.payoutAttempts[0].payerUserId, fixture.ownerId);
+    assert.equal(historicalDraw?.payoutAttempts[0].payerName, `${prefix} owner`);
+    assert.equal(historicalDraw?.payoutAttempts[0].amount, 50);
+    assert.equal(historicalDraw?.payoutAttempts[0].payoutDate, drawDateIso);
+    assert.equal(historicalDraw?.payoutAttempts[0].status, "REVERSED");
+    assert.ok(historicalDraw?.payoutAttempts[0].createdAt);
+    assert.ok(historicalDraw?.payoutAttempts[0].reversedAt);
+    assert.equal(historicalDraw?.payoutAttempts[0].reversalReason, "Synthetic reversal coverage");
+    assert.deepEqual(
+      historicalDraw?.payoutAttempts.map((payout) => payout.reference),
       [`${prefix}-payout-1`, `${prefix}-payout-same-key`, `${prefix}-payout-replacement`],
     );
 

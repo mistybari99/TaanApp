@@ -7,6 +7,10 @@ import { Label } from "@/components/ui/label"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { History, UserRound } from "lucide-react"
 
+const formatTimestamp = (value?: string | null) => value
+  ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
+  : "—"
+
 export default function MemberHistoryPage() {
   const [location] = useLocation()
   const pathId = Number(location.match(/\/members\/(\d+)\/history/)?.[1] ?? 0)
@@ -68,7 +72,33 @@ export default function MemberHistoryPage() {
               </Card>
               <Card>
                 <CardHeader><CardTitle className="flex items-center gap-2"><History className="w-5 h-5" /> শুক্রবার ড্র জয়</CardTitle></CardHeader>
-                 <CardContent>{history.draws.length === 0 ? <p className="text-sm text-muted-foreground">এই সদস্য এখনো কোনো ড্র জেতেনি</p> : <div className="space-y-3">{history.draws.map((draw) => <div key={draw.id} className="rounded-lg border p-3"><div className="flex items-center justify-between gap-4"><div><p className="font-medium">Cycle #{draw.cycleNumber} · Draw #{draw.drawNumber}</p><p className="text-xs text-muted-foreground">{formatDate(draw.drawDate)}{draw.entitlementNumber ? ` · Share draw #${draw.entitlementNumber}` : ""}</p></div><p className="font-bold text-primary">{formatCurrency(draw.winningAmount)}</p></div><div className="mt-3 border-t pt-2"><p className="text-xs font-medium text-muted-foreground">Payout correction history</p>{(draw.payoutHistory ?? []).length === 0 ? <p className="mt-1 text-xs text-amber-700">Pending payout</p> : <div className="mt-1 space-y-1">{draw.payoutHistory?.map((payout) => <div key={payout.id} className="flex flex-wrap items-center justify-between gap-2 text-xs"><span>{formatDate(payout.payoutDate)} · {payout.reference} · {payout.payerName ?? "Unknown payer"}</span><span className={payout.status === "REVERSED" ? "font-medium text-destructive" : "font-medium text-emerald-700"}>{payout.status} · {formatCurrency(payout.amount)}{payout.status === "REVERSED" && payout.reversalReason ? ` · ${payout.reversalReason}` : ""}</span></div>)}</div>}</div></div>)}</div>}</CardContent>
+                <CardContent>{history.draws.length === 0 ? <p className="text-sm text-muted-foreground">এই সদস্য এখনো কোনো ড্র জেতেনি</p> : <div className="space-y-3">{history.draws.map((draw) => {
+                  const payoutAttempts = draw.payoutAttempts?.length ? draw.payoutAttempts : (draw.payoutHistory ?? [])
+                  return <div key={draw.id} className="rounded-lg border p-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <div><p className="font-medium">Cycle #{draw.cycleNumber} · Draw #{draw.drawNumber}</p><p className="text-xs text-muted-foreground">{formatDate(draw.drawDate)}{draw.entitlementNumber ? ` · Share draw #${draw.entitlementNumber}` : ""}</p></div>
+                      <p className="font-bold text-primary">{formatCurrency(draw.winningAmount)}</p>
+                    </div>
+                    <div className="mt-3 border-t pt-3">
+                      <p className="text-xs font-medium text-muted-foreground">Payout attempts · পুরনো থেকে নতুন</p>
+                      {payoutAttempts.length === 0 ? <p className="mt-1 text-xs text-amber-700">Pending payout</p> : <div className="mt-2 overflow-x-auto">
+                        <table className="w-full min-w-[760px] text-xs">
+                          <thead className="bg-muted/50"><tr><th className="p-2 text-left font-medium">Payer</th><th className="p-2 text-right font-medium">Amount</th><th className="p-2 text-left font-medium">Reference</th><th className="p-2 text-left font-medium">Status</th><th className="p-2 text-left font-medium">Timestamps</th></tr></thead>
+                          <tbody>{payoutAttempts.map((payout) => <tr key={payout.id} className="border-t align-top">
+                            <td className="p-2">{payout.payerName ?? "Unknown payer"}</td>
+                            <td className="p-2 text-right font-medium">{formatCurrency(payout.amount)}</td>
+                            <td className="p-2">{payout.reference}</td>
+                            <td className={`p-2 font-medium ${payout.status === "REVERSED" ? "text-destructive" : "text-emerald-700"}`}>
+                              <div>{payout.status}</div>
+                              {payout.status === "REVERSED" && payout.reversalReason && <div className="mt-1 font-normal text-destructive">Reason: {payout.reversalReason}</div>}
+                            </td>
+                            <td className="p-2 text-muted-foreground"><div>Payout: {formatDate(payout.payoutDate)}</div><div>Recorded: {formatTimestamp(payout.createdAt)}</div>{payout.reversedAt && <div>Reversed: {formatTimestamp(payout.reversedAt)}</div>}</td>
+                          </tr>)}</tbody>
+                        </table>
+                      </div>}
+                    </div>
+                  </div>
+                })}</div>}</CardContent>
               </Card>
               {selectedMember && <Link href={`/members/${selectedMember.id}/history`} className="text-sm text-primary hover:underline">এই সদস্যের সরাসরি history link</Link>}
             </>
