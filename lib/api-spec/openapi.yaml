@@ -420,6 +420,16 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/PermissionRevocationInput" } } }
       responses:
         "200": { description: Permission revoked, content: { application/json: { schema: { $ref: "#/components/schemas/PermissionRecord" } } } }
+  /permissions/{id}/renew:
+    post:
+      operationId: renewPermission
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/PermissionRenewalInput" } } }
+      responses:
+        "200": { description: Permission renewed or replaced, content: { application/json: { schema: { $ref: "#/components/schemas/PermissionRecord" } } } }
   /audit:
     get:
       operationId: listAudit
@@ -499,6 +509,13 @@ components:
       type: object
       properties:
         reason: { type: string }
+    PermissionRenewalInput:
+      type: object
+      properties:
+        cycleId: { type: integer, minimum: 1, nullable: true, description: Omit to keep the current scope; null replaces it with all cycles }
+        expiresAt: { type: string, nullable: true, description: Omit to keep the current expiry; null makes the grant permanent }
+        note: { type: string, description: Replacement note shown in the grant history }
+        reason: { type: string, description: Audit reason for the explicit renewal or replacement }
     OnboardingStatus:
       type: object
       required: [initialized, demoMode]

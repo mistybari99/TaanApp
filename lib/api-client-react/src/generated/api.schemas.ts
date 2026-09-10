@@ -106,6 +106,20 @@ export interface PermissionRevocationInput {
   reason?: string;
 }
 
+export interface PermissionRenewalInput {
+  /**
+     * Omit to keep the current scope; null replaces it with all cycles
+     * @minimum 1
+     */
+  cycleId?: number | null;
+  /** Omit to keep the current expiry; null makes the grant permanent */
+  expiresAt?: string | null;
+  /** Replacement note shown in the grant history */
+  note?: string;
+  /** Audit reason for the explicit renewal or replacement */
+  reason?: string;
+}
+
 export interface OnboardingStatus {
   initialized: boolean;
   demoMode: boolean;
@@ -1108,7 +1122,7 @@ drawNumber?: number;
 export type ExportReportParams = {
 type: ExportReportType;
 /**
- * Optional cycle filter; draw exports use the active cycle when omitted
+ * Optional cycle filter; draw exports include all active and completed cycles when omitted
  * @minimum 1
  */
 cycleId?: number;

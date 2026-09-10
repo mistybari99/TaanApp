@@ -64,6 +64,7 @@ import type {
   PaymentInput,
   PermissionInput,
   PermissionRecord,
+  PermissionRenewalInput,
   PermissionRevocationInput,
   PreviewShareTransferParams,
   ReversalInput,
@@ -3859,6 +3860,72 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getRevokePermissionMutationOptions(options));
+    }
+
+export const getRenewPermissionUrl = (id: number,) => {
+
+
+
+
+  return `/api/permissions/${id}/renew`
+}
+
+export const renewPermission = async (id: number,
+    permissionRenewalInput?: PermissionRenewalInput, options?: Parameters<typeof customFetch>[1]): Promise<PermissionRecord> => {
+
+  return customFetch<PermissionRecord>(getRenewPermissionUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(permissionRenewalInput)
+  }
+);}
+
+
+
+
+
+export const getRenewPermissionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof renewPermission>>, TError,{id: number;data?: BodyType<PermissionRenewalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof renewPermission>>, TError,{id: number;data?: BodyType<PermissionRenewalInput>}, TContext> => {
+
+const mutationKey = ['renewPermission'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof renewPermission>>, {id: number;data?: BodyType<PermissionRenewalInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  renewPermission(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RenewPermissionMutationResult = NonNullable<Awaited<ReturnType<typeof renewPermission>>>
+    export type RenewPermissionMutationBody = BodyType<PermissionRenewalInput> | undefined
+    export type RenewPermissionMutationError = ErrorType<unknown>
+
+    export const useRenewPermission = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof renewPermission>>, TError,{id: number;data?: BodyType<PermissionRenewalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof renewPermission>>,
+        TError,
+        {id: number;data?: BodyType<PermissionRenewalInput>},
+        TContext
+      > => {
+      return useMutation(getRenewPermissionMutationOptions(options));
     }
 
 export const getListAuditUrl = () => {

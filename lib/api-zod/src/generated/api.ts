@@ -1834,6 +1834,37 @@ export const RevokePermissionResponse = zod.object({
 })
 
 
+export const RenewPermissionParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+
+
+
+export const RenewPermissionBody = zod.object({
+  "cycleId": zod.number().int().min(1).nullish().describe('Omit to keep the current scope; null replaces it with all cycles'),
+  "expiresAt": zod.string().nullish().describe('Omit to keep the current expiry; null makes the grant permanent'),
+  "note": zod.string().optional().describe('Replacement note shown in the grant history'),
+  "reason": zod.string().optional().describe('Audit reason for the explicit renewal or replacement')
+})
+
+export const RenewPermissionResponse = zod.object({
+  "id": zod.number().int(),
+  "userId": zod.number().int(),
+  "userName": zod.string(),
+  "username": zod.string(),
+  "role": zod.enum(['COLLECTOR', 'CASH_RECEIVER']),
+  "permission": zod.enum(['FULL_ACCESS', 'PAYMENT_REVERSAL', 'PAYOUT_APPROVAL', 'PAYOUT_REVERSAL', 'ADVANCE_ALLOCATION', 'FINANCIAL_CORRECTION', 'DRAW_DATE_CORRECTION']),
+  "status": zod.enum(['ACTIVE', 'EXPIRED', 'REVOKED']),
+  "cycleId": zod.number().int().nullish(),
+  "expiresAt": zod.string().nullish(),
+  "revokedAt": zod.string().nullish(),
+  "note": zod.string().optional(),
+  "createdAt": zod.string(),
+  "grantedByName": zod.string().nullish()
+})
+
+
 export const ListAuditResponseItem = zod.object({
   "id": zod.number().int(),
   "actor": zod.string(),
@@ -1882,7 +1913,7 @@ export const UpdateSettingsResponse = zod.object({
 
 export const ExportReportQueryParams = zod.object({
   "type": zod.enum(['members', 'payments', 'collectors', 'settlements', 'draws', 'audit', 'daily', 'weekly', 'monthly', 'due', 'collector']),
-  "cycleId": zod.coerce.number().int().min(1).optional().describe('Optional cycle filter; draw exports use the active cycle when omitted'),
+  "cycleId": zod.coerce.number().int().min(1).optional().describe('Optional cycle filter; draw exports include all active and completed cycles when omitted'),
   "startDate": zod.date().optional().describe('Optional inclusive payout date lower bound for draw exports'),
   "endDate": zod.date().optional().describe('Optional inclusive payout date upper bound for draw exports')
 })

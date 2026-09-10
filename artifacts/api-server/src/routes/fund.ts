@@ -3493,7 +3493,149 @@ router.post("/permissions", requireAuth, ownerOnly, async (req: AuthedRequest, r
     client.release();
   }
 });
-router.post("/permissions/:id/revoke", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+router.post("/permissions/:id/renew", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const permissionId = Number(req.params.id);
+  const body = req.body ?? {};
+  const hasCycleScope = Object.prototype.hasOwnProperty.call(body, "cycleId");
+  const hasExpiry = Object.prototype.hasOwnProperty.call(body, "expiresAt");
+  const hasNote = Object.prototype.hasOwnProperty.call(body, "note");
+  const reason = String(body.reason ?? "").trim() || "Owner renewed delegated permission";
+  if (!Number.isInteger(permissionId) || permissionId <= 0) {
+    return res.status(400).json({ error: "A valid permission is required" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const current = await client.query(
+      `SELECT p.id,p.user_id AS "userId",u.name AS "userName",u.username,u.role,u.active,
+              p.permission,p.cycle_id AS "cycleId",p.expires_at AS "expiresAt",
+              p.revoked_at AS "revokedAt",p.note,p.created_at AS "createdAt",
+              g.name AS "grantedByName",
+              CASE WHEN p.revoked_at IS NOT NULL THEN 'REVOKED'
+                   WHEN p.expires_at IS NOT NULL AND p.expires_at <= now() THEN 'EXPIRED'
+                   ELSE 'ACTIVE' END AS status
+         FROM fund_user_permissions p
+         JOIN fund_users u ON u.id=p.user_id
+         LEFT JOIN fund_users g ON g.id=p.granted_by
+        WHERE p.id=$1
+        FOR UPDATE OF p`,
+      [permissionId],
+    );
+    if (!current.rows[0]) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Permission not found" });
+    }
+    const before = current.rows[0];
+    if (before.revokedAt) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "Revoked permissions cannot be renewed" });
+    }
+    if (!before.active || !["COLLECTOR", "CASH_RECEIVER"].includes(before.role)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Permissions can only be delegated to an active Collector or Cash Receiver" });
+    }
+
+    const cycleId = hasCycleScope
+      ? (body.cycleId == null || body.cycleId === "" ? null : Number(body.cycleId))
+      : before.cycleId;
+    const expiresAt = hasExpiry
+      ? (body.expiresAt ? new Date(String(body.expiresAt)) : null)
+      : (before.expiresAt ? new Date(String(before.expiresAt)) : null);
+    const note = hasNote ? String(body.note ?? "").trim() : before.note;
+    if (cycleId !== null && (!Number.isInteger(cycleId) || cycleId <= 0)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Cycle scope must be a valid cycle" });
+    }
+    if (cycleId !== null) {
+      const cycle = await client.query("SELECT 1 FROM fund_cycles WHERE id=$1", [cycleId]);
+      if (!cycle.rows[0]) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "Cycle scope not found" });
+      }
+    }
+    if (expiresAt && (Number.isNaN(expiresAt.getTime()) || expiresAt <= new Date())) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Permission expiry must be a future date-time" });
+    }
+
+    const sameScope = (before.cycleId ?? null) === cycleId;
+    let renewed;
+    let action: "PERMISSION_RENEWED" | "PERMISSION_REPLACED";
+    if (sameScope) {
+      const updated = await client.query(
+        `UPDATE fund_user_permissions
+            SET expires_at=$2,note=$3
+          WHERE id=$1
+          RETURNING id,user_id AS "userId",permission,cycle_id AS "cycleId",
+                    expires_at AS "expiresAt",revoked_at AS "revokedAt",
+                    note,created_at AS "createdAt",'ACTIVE' AS status`,
+        [permissionId, expiresAt?.toISOString() ?? null, note],
+      );
+      renewed = { ...updated.rows[0], userName: before.userName, username: before.username, role: before.role, grantedByName: before.grantedByName };
+      action = "PERMISSION_RENEWED";
+    } else {
+      const destination = await client.query(
+        `SELECT p.id,p.user_id AS "userId",u.name AS "userName",u.username,u.role,
+                p.permission,p.cycle_id AS "cycleId",p.expires_at AS "expiresAt",
+                p.revoked_at AS "revokedAt",p.note,p.created_at AS "createdAt",
+                g.name AS "grantedByName"
+           FROM fund_user_permissions p
+           JOIN fund_users u ON u.id=p.user_id
+           LEFT JOIN fund_users g ON g.id=p.granted_by
+          WHERE p.user_id=$1 AND p.permission=$2
+            AND COALESCE(p.cycle_id,0)=COALESCE($3::int,0)
+            AND p.revoked_at IS NULL
+          FOR UPDATE OF p`,
+        [before.userId, before.permission, cycleId],
+      );
+      if (destination.rows[0]) {
+        const updated = await client.query(
+          `UPDATE fund_user_permissions
+              SET expires_at=$2,note=$3
+            WHERE id=$1
+            RETURNING id,user_id AS "userId",permission,cycle_id AS "cycleId",
+                      expires_at AS "expiresAt",revoked_at AS "revokedAt",
+                      note,created_at AS "createdAt",'ACTIVE' AS status`,
+          [destination.rows[0].id, expiresAt?.toISOString() ?? null, note],
+        );
+        renewed = { ...updated.rows[0], userName: before.userName, username: before.username, role: before.role, grantedByName: destination.rows[0].grantedByName };
+      } else {
+        const inserted = await client.query(
+          `INSERT INTO fund_user_permissions(user_id,permission,cycle_id,expires_at,granted_by,note)
+           VALUES($1,$2,$3,$4,$5,$6)
+           RETURNING id,user_id AS "userId",permission,cycle_id AS "cycleId",
+                     expires_at AS "expiresAt",revoked_at AS "revokedAt",
+                     note,created_at AS "createdAt",'ACTIVE' AS status`,
+          [before.userId, before.permission, cycleId, expiresAt?.toISOString() ?? null, req.user!.id, note],
+        );
+        renewed = { ...inserted.rows[0], userName: before.userName, username: before.username, role: before.role, grantedByName: req.user!.name };
+      }
+      await client.query(
+        "UPDATE fund_user_permissions SET revoked_by=$2,revoked_at=now() WHERE id=$1",
+        [permissionId, req.user!.id],
+      );
+      action = "PERMISSION_REPLACED";
+    }
+
+    await auditOn(client, req.user!.id, action,
+      `${action === "PERMISSION_RENEWED" ? "Renewed" : "Replaced"} ${before.permission} for ${before.userName}`,
+      "user_permission", String(renewed.id), {
+        reason,
+        beforeValue: before,
+        afterValue: { ...renewed, replacedPermissionId: sameScope ? null : permissionId },
+      });
+    await client.query("COMMIT");
+    return res.json(renewed);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    req.log.error({ error }, "Permission renewal failed");
+    return res.status(409).json({ error: "Permission could not be renewed; no records were changed" });
+  } finally {
+    client.release();
+  }
+});
+router.post("/permissions/:id/revoke", requireAuth, ownerOnly, async (req: AuthedRequest, res: Response) => {
   const permissionId = Number(req.params.id);
   const reason = String(req.body?.reason ?? "").trim() || "Owner revoked delegated permission";
   if (!Number.isInteger(permissionId) || permissionId <= 0) return res.status(400).json({ error: "A valid permission is required" });

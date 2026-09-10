@@ -13,6 +13,7 @@ import {
   getListPermissionsQueryKey,
   useListPermissions,
   useGrantPermission,
+  useRenewPermission,
   useRevokePermission,
 } from "@workspace/api-client-react"
 import { useQueryClient } from "@tanstack/react-query"
@@ -38,6 +39,7 @@ export default function CollectorsPage() {
   const upsertCollectorTarget = useUpsertCollectorTarget()
   const { data: permissions } = useListPermissions()
   const grantPermission = useGrantPermission()
+  const renewPermission = useRenewPermission()
   const revokePermission = useRevokePermission()
   const queryClient = useQueryClient()
 
@@ -55,6 +57,7 @@ export default function CollectorsPage() {
     expiresAt: "",
     note: "",
   })
+  const [renewalTargetId, setRenewalTargetId] = useState<number | null>(null)
 
   const refreshStaff = () => {
     refetch()
@@ -138,6 +141,50 @@ export default function CollectorsPage() {
         onError: (err: any) => toast.error(err.message || "Permission দেওয়া যায়নি"),
       },
     )
+  }
+
+  const handleStartRenewal = (permission: NonNullable<typeof permissions>[number]) => {
+    const expiresAt = permission.expiresAt ? new Date(permission.expiresAt) : null
+    const localExpiry = expiresAt && !Number.isNaN(expiresAt.getTime())
+      ? new Date(expiresAt.getTime() - expiresAt.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+      : ""
+    setRenewalTargetId(permission.id)
+    setPermissionForm({
+      userId: String(permission.userId),
+      permission: permission.permission,
+      cycleId: permission.cycleId ? String(permission.cycleId) : "",
+      expiresAt: localExpiry,
+      note: permission.note ?? "",
+    })
+  }
+
+  const handleRenewPermission = () => {
+    if (!renewalTargetId) return
+    renewPermission.mutate(
+      {
+        id: renewalTargetId,
+        data: {
+          cycleId: permissionForm.cycleId ? Number(permissionForm.cycleId) : null,
+          expiresAt: permissionForm.expiresAt ? new Date(permissionForm.expiresAt).toISOString() : null,
+          note: permissionForm.note.trim(),
+          reason: permissionForm.note.trim() || "Owner renewed delegated access",
+        },
+      },
+      {
+        onSuccess: () => {
+          toast.success("Delegated permission renew / replace হয়েছে")
+          setRenewalTargetId(null)
+          setPermissionForm({ userId: "", permission: "PAYOUT_APPROVAL", cycleId: "", expiresAt: "", note: "" })
+          queryClient.invalidateQueries({ queryKey: getListPermissionsQueryKey() })
+        },
+        onError: (err: any) => toast.error(err.message || "Permission renew করা যায়নি"),
+      },
+    )
+  }
+
+  const cancelRenewal = () => {
+    setRenewalTargetId(null)
+    setPermissionForm({ userId: "", permission: "PAYOUT_APPROVAL", cycleId: "", expiresAt: "", note: "" })
   }
 
   const handleRevokePermission = (permissionId: number) => {
@@ -287,19 +334,19 @@ export default function CollectorsPage() {
       <div className="grid gap-4 lg:grid-cols-[1fr_1.4fr]">
         <div className="rounded-xl border bg-card p-5 space-y-4">
           <div>
-            <h2 className="font-semibold">Delegated permissions</h2>
-            <p className="text-sm text-muted-foreground">Owner-only controls আলাদা রেখে নির্দিষ্ট operational access দিন।</p>
+            <h2 className="font-semibold">{renewalTargetId ? "Renew or replace delegated access" : "Delegated permissions"}</h2>
+            <p className="text-sm text-muted-foreground">{renewalTargetId ? "Extend the expiry or change the cycle scope in one audited action." : "Owner-only controls আলাদা রেখে নির্দিষ্ট operational access দিন।"}</p>
           </div>
           <div className="space-y-2">
             <Label>কর্মী</Label>
-            <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={permissionForm.userId} onChange={(event) => setPermissionForm({ ...permissionForm, userId: event.target.value })}>
+            <select disabled={renewalTargetId !== null} className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={permissionForm.userId} onChange={(event) => setPermissionForm({ ...permissionForm, userId: event.target.value })}>
               <option value="">কর্মী নির্বাচন করুন</option>
               {staff.filter((user) => user.active).map((user) => <option key={user.id} value={user.id}>{user.name} · {user.role}</option>)}
             </select>
           </div>
           <div className="space-y-2">
             <Label>Permission</Label>
-            <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={permissionForm.permission} onChange={(event) => setPermissionForm({ ...permissionForm, permission: event.target.value })}>
+            <select disabled={renewalTargetId !== null} className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={permissionForm.permission} onChange={(event) => setPermissionForm({ ...permissionForm, permission: event.target.value })}>
               <option value="PAYOUT_APPROVAL">Payout approval</option>
               <option value="PAYOUT_REVERSAL">Payout reversal</option>
               <option value="PAYMENT_REVERSAL">Payment reversal</option>
@@ -324,7 +371,16 @@ export default function CollectorsPage() {
             <Label>কারণ / নোট</Label>
             <Input value={permissionForm.note} onChange={(event) => setPermissionForm({ ...permissionForm, note: event.target.value })} placeholder="Why this access is needed" />
           </div>
-          <Button onClick={handleGrantPermission} disabled={!permissionForm.userId || grantPermission.isPending}>Permission দিন</Button>
+          <div className="flex flex-wrap gap-2">
+            {renewalTargetId ? (
+              <>
+                <Button onClick={handleRenewPermission} disabled={!permissionForm.userId || renewPermission.isPending}>Renew / replace access</Button>
+                <Button variant="outline" onClick={cancelRenewal} disabled={renewPermission.isPending}>Cancel</Button>
+              </>
+            ) : (
+              <Button onClick={handleGrantPermission} disabled={!permissionForm.userId || grantPermission.isPending}>Permission দিন</Button>
+            )}
+          </div>
         </div>
         <div className="rounded-xl border bg-card p-5">
           <h2 className="font-semibold">Current and past delegation</h2>
@@ -334,9 +390,12 @@ export default function CollectorsPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="font-medium">{permission.userName} · {permission.permission}</p>
-                    <p className="text-xs text-muted-foreground">{permission.role} · {permission.cycleId ? `Cycle ${permission.cycleId}` : "all cycles"} · {permission.expiresAt ? `expires ${new Date(permission.expiresAt).toLocaleString()}` : "permanent"}{permission.note ? ` · ${permission.note}` : ""}</p>
+                    <p className="text-xs text-muted-foreground">{permission.role} · {permission.cycleId ? `Cycle ${permission.cycleId}` : "all cycles"} · {permission.expiresAt ? `expires ${new Date(permission.expiresAt).toLocaleString()}` : "permanent"} · granted {new Date(permission.createdAt).toLocaleString()}{permission.revokedAt ? ` · ended ${new Date(permission.revokedAt).toLocaleString()}` : ""}{permission.note ? ` · ${permission.note}` : ""}</p>
                   </div>
-                  {permission.status !== "ACTIVE" ? <span className={`text-xs font-semibold ${permission.status === "EXPIRED" ? "text-amber-700" : "text-destructive"}`}>{permission.status}</span> : <Button size="sm" variant="outline" onClick={() => handleRevokePermission(permission.id)} disabled={revokePermission.isPending}>Revoke</Button>}
+                  <div className="flex items-center gap-2">
+                    {permission.status !== "REVOKED" && <Button size="sm" variant="outline" onClick={() => handleStartRenewal(permission)} disabled={renewPermission.isPending}>Renew / replace</Button>}
+                    {permission.status !== "ACTIVE" ? <span className={`text-xs font-semibold ${permission.status === "EXPIRED" ? "text-amber-700" : "text-destructive"}`}>{permission.status}</span> : <Button size="sm" variant="outline" onClick={() => handleRevokePermission(permission.id)} disabled={revokePermission.isPending}>Revoke</Button>}
+                  </div>
                 </div>
               </div>
             ))}

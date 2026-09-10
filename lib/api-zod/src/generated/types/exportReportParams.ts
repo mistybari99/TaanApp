@@ -10,7 +10,7 @@ import type { ExportReportType } from './exportReportType';
 export type ExportReportParams = {
 type: ExportReportType;
 /**
- * Optional cycle filter; draw exports use the active cycle when omitted
+ * Optional cycle filter; draw exports include all active and completed cycles when omitted
  * @minimum 1
  */
 cycleId?: number;
