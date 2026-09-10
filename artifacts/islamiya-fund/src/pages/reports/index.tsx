@@ -83,7 +83,7 @@ export default function ReportsPage() {
       <Card>
         <CardHeader>
           <CardTitle>ডাটা ব্যাকআপ (CSV Backup)</CardTitle>
-          <CardDescription>ডাউনলোড করা ফাইল Google Drive-এ manually সংরক্ষণ করতে পারবেন।</CardDescription>
+            <CardDescription>ডাউনলোড করা ফাইল Google Drive-এ manually সংরক্ষণ করতে পারবেন। Draw export-এ completed cycle-সহ সব cycle থাকবে।</CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {[

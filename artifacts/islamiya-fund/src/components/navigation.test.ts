@@ -46,3 +46,19 @@ test("More rows keep their keyboard and narrow-screen contracts", () => {
   assert.match(shellSource, /w-\[min\(92vw,25rem\)\]/)
   assert.match(shellSource, /overflow-y-auto/)
 })
+
+test("More sheet remains usable on short screens", () => {
+  assert.match(shellSource, /data-more-sheet-scroll/)
+  assert.match(shellSource, /max-h-\[100dvh\]/)
+  assert.match(shellSource, /overscroll-contain/)
+  assert.match(shellSource, /env\(safe-area-inset-top\)/)
+  assert.match(shellSource, /env\(safe-area-inset-bottom\)/)
+})
+
+test("More sheet keeps group context and restores the previous scroll position", () => {
+  assert.match(shellSource, /data-more-nav-group=\{group\}/)
+  assert.match(shellSource, /sticky top-0 z-10/)
+  assert.match(shellSource, /moreScrollTopRef/)
+  assert.match(shellSource, /moreScrollRef\.current\?\.scrollTo/)
+  assert.match(shellSource, /onScroll=\{\(event\) =>/)
+})

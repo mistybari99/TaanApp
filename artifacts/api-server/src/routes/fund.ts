@@ -334,7 +334,7 @@ const drawSelect = `
     d.winning_amount::float AS "winningAmount",d.status,d.notes,d.created_at AS "createdAt",
     d.tan_period_id AS "tanPeriodId",d.draw_slot AS "drawSlot",
     d.entitlement_id AS "entitlementId",d.entitlement_number AS "entitlementNumber",
-    pd.id AS "payoutId",pd.payer_user_id AS "payoutPayerId",pu.name AS "payoutPayerName",
+    pd.id AS "payoutId",pd.status AS "payoutStatus",pd.payer_user_id AS "payoutPayerId",pu.name AS "payoutPayerName",
     pd.amount::float AS "payoutAmount",pd.payout_date::text AS "payoutDate",pd.reference AS "payoutReference",
     pd.reversed_at AS "payoutReversedAt",pd.reversal_reason AS "payoutReversalReason",
     COALESCE((
@@ -418,17 +418,29 @@ const permissionScopeTable = (path: string) => {
 };
 const resolvePermissionCycleId = async (req: AuthedRequest) => {
   const explicitCycleId = Number(req.body?.cycleId ?? req.query?.cycleId ?? 0);
-  if (Number.isInteger(explicitCycleId) && explicitCycleId > 0) return explicitCycleId;
   const entityId = Number(req.params.id);
   const table = permissionScopeTable(req.path);
-  if (!Number.isInteger(entityId) || entityId <= 0 || !table) return 0;
-  const result = await pool.query(`SELECT cycle_id AS "cycleId" FROM ${table} WHERE id=$1`, [entityId]);
-  return Number(result.rows[0]?.cycleId ?? 0);
+  if (Number.isInteger(entityId) && entityId > 0 && table) {
+    const result = await pool.query(`SELECT cycle_id AS "cycleId" FROM ${table} WHERE id=$1`, [entityId]);
+    const entityCycleId = Number(result.rows[0]?.cycleId ?? 0);
+    const hasExplicitCycle = Number.isInteger(explicitCycleId) && explicitCycleId > 0;
+    return {
+      cycleId: entityCycleId,
+      conflict: Boolean(entityCycleId && hasExplicitCycle && explicitCycleId !== entityCycleId),
+    };
+  }
+  return {
+    cycleId: Number.isInteger(explicitCycleId) && explicitCycleId > 0 ? explicitCycleId : 0,
+    conflict: false,
+  };
 };
 const delegatedPermission = (permission: DelegatedPermission) => async (req: AuthedRequest, res: Response, next: NextFunction) => {
   if (req.user?.role === "OWNER") return next();
   if (!req.user) return res.status(401).json({ error: "Sign in required" });
-  const requestedCycleId = await resolvePermissionCycleId(req);
+  const scope = await resolvePermissionCycleId(req);
+  if (scope.conflict) {
+    return res.status(400).json({ error: "Request cycle does not match the financial record's cycle" });
+  }
   const result = await pool.query(
     `SELECT 1
        FROM fund_user_permissions
@@ -437,7 +449,7 @@ const delegatedPermission = (permission: DelegatedPermission) => async (req: Aut
         AND (permission=$2 OR permission='FULL_ACCESS')
         AND (cycle_id IS NULL OR ($3::int > 0 AND cycle_id=$3))
       LIMIT 1`,
-    [req.user.id, permission, requestedCycleId],
+    [req.user.id, permission, scope.cycleId],
   );
   return result.rows[0]
     ? next()
@@ -3578,6 +3590,10 @@ const sendCsv = (res: Response, filename: string, headers: string[], rows: unkno
 
 router.get("/reports/export", requireAuth, ownerOnly, async (req, res) => {
   const type = String(req.query.type ?? "payments").toLowerCase().replace(/[^a-z-]/g, "");
+  const requestedCycleId = req.query.cycleId == null || req.query.cycleId === "" ? null : Number(req.query.cycleId);
+  if (requestedCycleId !== null && (!Number.isInteger(requestedCycleId) || requestedCycleId <= 0)) {
+    return res.status(400).json({ error: "Cycle filter must be a valid cycle" });
+  }
   const activeCycle = await pool.query("SELECT id FROM fund_cycles WHERE status='ACTIVE' LIMIT 1");
   const activeCycleId = Number(activeCycle.rows[0]?.id ?? 0);
 
@@ -3606,7 +3622,7 @@ router.get("/reports/export", requireAuth, ownerOnly, async (req, res) => {
 
   if (type === "draws") {
     const r = await pool.query(
-      `SELECT d.id,d.cycle_id AS "cycleId",c.cycle_number AS "cycleNumber",d.draw_date::text AS "drawDate",
+      `SELECT d.id,d.cycle_id AS "cycleId",c.cycle_number AS "cycleNumber",c.name AS "cycleName",d.draw_date::text AS "drawDate",
         d.draw_number AS "drawNumber",COALESCE(m.public_member_id,m.member_id) AS "winnerMemberCode",m.name AS "winnerName",
         d.winning_amount::float AS "winningAmount",d.status AS "drawStatus",
         pd.id AS "payoutId",COALESCE(pd.status,'PENDING') AS "payoutStatus",
@@ -3620,13 +3636,13 @@ router.get("/reports/export", requireAuth, ownerOnly, async (req, res) => {
        JOIN fund_members m ON m.id=d.winner_member_id
        LEFT JOIN fund_draw_disbursements pd ON pd.draw_id=d.id
        LEFT JOIN fund_users pu ON pu.id=pd.payer_user_id
-       WHERE d.cycle_id=$1
+        WHERE ($1::int IS NULL OR d.cycle_id=$1)
        ORDER BY d.draw_date DESC,d.draw_number DESC,pd.created_at ASC,pd.id ASC`,
-      [activeCycleId],
+      [requestedCycleId],
     );
     return sendCsv(res, "draw-payouts-backup",
-      ["Draw ID", "Cycle ID", "Draw Date", "Draw Number", "Winner Member ID", "Winner", "Winning Amount", "Draw Status", "Payout Ledger ID", "Payout Status", "Payout Date", "Payer ID", "Payer", "Payout Amount", "Reference", "Payout Note", "Payout Created At", "Payout Reversed At", "Reversal Reason"],
-      r.rows.map((x) => [x.id, x.cycleId, x.drawDate, x.drawNumber, x.winnerMemberCode, x.winnerName, x.winningAmount, x.drawStatus, x.payoutId, x.payoutStatus, x.payoutDate, x.payoutPayerId, x.payoutPayerName, x.payoutAmount, x.payoutReference, x.payoutNote, x.payoutCreatedAt, x.payoutReversedAt, x.payoutReversalReason]));
+      ["Draw ID", "Cycle ID", "Cycle Number", "Cycle Name", "Draw Date", "Draw Number", "Winner Member ID", "Winner", "Winning Amount", "Draw Status", "Payout Ledger ID", "Payout Status", "Payout Date", "Payer ID", "Payer", "Payout Amount", "Reference", "Payout Note", "Payout Created At", "Payout Reversed At", "Reversal Reason"],
+      r.rows.map((x) => [x.id, x.cycleId, x.cycleNumber, x.cycleName, x.drawDate, x.drawNumber, x.winnerMemberCode, x.winnerName, x.winningAmount, x.drawStatus, x.payoutId, x.payoutStatus, x.payoutDate, x.payoutPayerId, x.payoutPayerName, x.payoutAmount, x.payoutReference, x.payoutNote, x.payoutCreatedAt, x.payoutReversedAt, x.payoutReversalReason]));
   }
 
   if (type === "audit") {

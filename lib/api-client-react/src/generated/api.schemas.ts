@@ -1066,6 +1066,11 @@ drawNumber?: number;
 
 export type ExportReportParams = {
 type: ExportReportType;
+/**
+ * Optional cycle filter; draw exports include every cycle when omitted
+ * @minimum 1
+ */
+cycleId?: number;
 };
 
 export type ExportReportType = typeof ExportReportType[keyof typeof ExportReportType];

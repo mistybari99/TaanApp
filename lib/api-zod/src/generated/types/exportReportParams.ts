@@ -9,4 +9,9 @@ import type { ExportReportType } from './exportReportType';
 
 export type ExportReportParams = {
 type: ExportReportType;
+/**
+ * Optional cycle filter; draw exports include every cycle when omitted
+ * @minimum 1
+ */
+cycleId?: number;
 };

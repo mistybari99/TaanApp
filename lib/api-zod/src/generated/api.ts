@@ -1823,8 +1823,12 @@ export const UpdateSettingsResponse = zod.object({
 })
 
 
+
+
+
 export const ExportReportQueryParams = zod.object({
-  "type": zod.enum(['members', 'payments', 'collectors', 'settlements', 'draws', 'audit', 'daily', 'weekly', 'monthly', 'due', 'collector'])
+  "type": zod.enum(['members', 'payments', 'collectors', 'settlements', 'draws', 'audit', 'daily', 'weekly', 'monthly', 'due', 'collector']),
+  "cycleId": zod.coerce.number().int().min(1).optional().describe('Optional cycle filter; draw exports include every cycle when omitted')
 })
 
 export const ExportReportResponse = zod.unknown()

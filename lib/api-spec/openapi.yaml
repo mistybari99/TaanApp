@@ -437,6 +437,7 @@ paths:
       operationId: exportReport
       parameters:
         - { name: type, in: query, required: true, schema: { type: string, enum: [members, payments, collectors, settlements, draws, audit, daily, weekly, monthly, due, collector] } }
+        - { name: cycleId, in: query, required: false, schema: { type: integer, minimum: 1 }, description: Optional cycle filter; draw exports include every cycle when omitted }
       responses:
         "200": { description: CSV, content: { text/csv: { schema: { type: string } } } }
 components:

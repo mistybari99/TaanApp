@@ -50,12 +50,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { isOnline, pendingCount, syncQueue, isSyncing } = useSync()
   const [moreOpen, setMoreOpen] = React.useState(false)
   const [logoutOpen, setLogoutOpen] = React.useState(false)
+  const moreScrollRef = React.useRef<HTMLDivElement>(null)
+  const moreScrollTopRef = React.useRef(0)
 
   React.useEffect(() => {
     if (!isLoading && !user && location !== "/") {
       setLocation("/")
     }
   }, [user, isLoading, location, setLocation])
+
+  React.useEffect(() => {
+    if (!moreOpen) return
+    const frame = window.requestAnimationFrame(() => {
+      moreScrollRef.current?.scrollTo({ top: moreScrollTopRef.current })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [moreOpen])
 
   if (isLoading) return null
   if (!user) return <>{children}</>
@@ -229,8 +239,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </button>
       </nav>
 
-      <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
-        <SheetContent side="right" className="w-[min(92vw,25rem)] overflow-y-auto border-l border-border bg-background px-4 pb-[calc(1.75rem+env(safe-area-inset-bottom))] pt-6 sm:px-5 md:hidden">
+      <Sheet
+        open={moreOpen}
+        onOpenChange={(open) => {
+          if (!open && moreScrollRef.current) moreScrollTopRef.current = moreScrollRef.current.scrollTop
+          setMoreOpen(open)
+        }}
+      >
+        <SheetContent
+          ref={moreScrollRef}
+          side="right"
+          data-more-sheet-scroll
+          onScroll={(event) => {
+            moreScrollTopRef.current = event.currentTarget.scrollTop
+          }}
+          className="max-h-[100dvh] w-[min(92vw,25rem)] overflow-y-auto overscroll-contain border-l border-border bg-background px-4 pb-[calc(1.75rem+env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] sm:px-5 md:hidden"
+        >
           <SheetHeader className="pr-8 text-left">
             <SheetTitle className="text-xl font-extrabold text-primary">আরও <span className="font-semibold text-muted-foreground">· More</span></SheetTitle>
             <SheetDescription>কম ব্যবহৃত কাজ ও আপনার অ্যাকাউন্ট এক জায়গায়।</SheetDescription>
@@ -252,8 +276,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               const items = moreItems.filter((item) => item.group === group)
               if (!items.length) return null
               return (
-                <section key={group}>
-                  <div className="mb-3 px-1">
+                <section key={group} data-more-nav-group={group}>
+                  <div className="sticky top-0 z-10 mb-3 border-b border-border/50 bg-background/95 px-1 py-2 backdrop-blur-sm">
                     <p className="text-xs font-bold text-foreground">{groupLabels[group].bn}</p>
                     <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{groupLabels[group].en}</p>
                   </div>
