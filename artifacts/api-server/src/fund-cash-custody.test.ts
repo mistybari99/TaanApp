@@ -542,6 +542,7 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
         payoutStatus: string | null;
         payoutHistory: Array<{ reference: string; status: string }>;
         payoutAttempts: Array<{
+          id: number;
           payerUserId: number;
           payerName: string;
           amount: number;
@@ -569,6 +570,7 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     assert.equal(historicalDraw?.payoutAttempts[0].payerName, `${prefix} owner`);
     assert.equal(historicalDraw?.payoutAttempts[0].amount, 50);
     assert.equal(historicalDraw?.payoutAttempts[0].payoutDate, drawDateIso);
+    assert.equal(historicalDraw?.payoutAttempts[0].reference, payoutPayloads[winnerIndex].reference);
     assert.equal(historicalDraw?.payoutAttempts[0].status, "REVERSED");
     assert.ok(historicalDraw?.payoutAttempts[0].createdAt);
     assert.ok(historicalDraw?.payoutAttempts[0].reversedAt);
@@ -616,6 +618,28 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     assert.equal(correctedDraw?.payoutAttempts[2].status, "PAID");
     assert.ok(correctedDraw?.payoutAttempts[2].createdAt);
 
+    const unpaidDrawResponse = await request(baseUrl, "/api/draws", fixture.ownerToken, {
+      cycleId: fixture.cycleId,
+      drawDate: drawDateIso,
+      winnerMemberId: fixture.memberId,
+      winningAmount: 75,
+      idempotencyKey: `${prefix}-draw-unpaid`,
+    });
+    assert.equal(unpaidDrawResponse.status, 201);
+    const unpaidDraw = await unpaidDrawResponse.json() as { id: number };
+    const unpaidMemberHistoryResponse = await request(baseUrl, `/api/members/${fixture.memberId}/history`, fixture.ownerToken);
+    assert.equal(unpaidMemberHistoryResponse.status, 200);
+    const unpaidMemberHistory = await unpaidMemberHistoryResponse.json() as {
+      draws: Array<{
+        id: number;
+        payoutStatus: string | null;
+        payoutAttempts: Array<unknown>;
+      }>;
+    };
+    const unpaidHistoricalDraw = unpaidMemberHistory.draws.find((row) => row.id === unpaidDraw.id);
+    assert.equal(unpaidHistoricalDraw?.payoutStatus, null);
+    assert.deepEqual(unpaidHistoricalDraw?.payoutAttempts, []);
+
     await pool.query("UPDATE fund_cycles SET status='COMPLETED',end_date=CURRENT_DATE WHERE id=$1", [fixture.cycleId]);
     const drawExport = await request(
       baseUrl,
@@ -637,7 +661,7 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     assert.equal(allCycleDrawExport.status, 200);
     const allCycleDrawExportCsv = await allCycleDrawExport.text();
     assert.match(allCycleDrawExportCsv, new RegExp(`${prefix}-payout-replacement`));
-    assert.equal(allCycleDrawExportCsv.split("\n").filter((line) => line.includes(prefix)).length, 3);
+    assert.equal(allCycleDrawExportCsv.split("\n").filter((line) => line.includes(prefix)).length, 4);
 
     const handoverReplay = await request(baseUrl, "/api/cash-handovers", fixture.collectorToken, handoverPayload);
     assert.equal(handoverReplay.status, 200);
