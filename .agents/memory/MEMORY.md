@@ -12,3 +12,4 @@
 - [TAN pause continuity](tan-pauses.md) — pausing freezes the current period identity; resume shifts only remaining schedule dates and blocks new payments while paused.
 - [Delegated permissions](delegated-permissions.md) — Owner grants auditable, expiring or cycle-scoped operational access; sensitive controls retain Owner fallback.
 - [Payment allocation](payment-allocation.md) — previous due clears first, current due is capped, and overpayment remains visible as separate advance credit.
+- [Payout export scope](payout-export-scope.md) — draw exports default to the active cycle; completed-cycle reconciliation must pass an explicit cycle and optional payout-date bounds.

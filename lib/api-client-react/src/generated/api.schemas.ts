@@ -1108,10 +1108,18 @@ drawNumber?: number;
 export type ExportReportParams = {
 type: ExportReportType;
 /**
- * Optional cycle filter; draw exports include every cycle when omitted
+ * Optional cycle filter; draw exports use the active cycle when omitted
  * @minimum 1
  */
 cycleId?: number;
+/**
+ * Optional inclusive payout date lower bound for draw exports
+ */
+startDate?: string;
+/**
+ * Optional inclusive payout date upper bound for draw exports
+ */
+endDate?: string;
 };
 
 export type ExportReportType = typeof ExportReportType[keyof typeof ExportReportType];

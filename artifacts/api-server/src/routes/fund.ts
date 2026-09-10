@@ -3665,6 +3665,14 @@ router.get("/reports/export", requireAuth, ownerOnly, async (req, res) => {
   if (requestedCycleId !== null && (!Number.isInteger(requestedCycleId) || requestedCycleId <= 0)) {
     return res.status(400).json({ error: "Cycle filter must be a valid cycle" });
   }
+  const requestedStartDate = req.query.startDate == null || req.query.startDate === "" ? null : String(req.query.startDate);
+  const requestedEndDate = req.query.endDate == null || req.query.endDate === "" ? null : String(req.query.endDate);
+  if ((requestedStartDate !== null && !isIsoDate(requestedStartDate)) || (requestedEndDate !== null && !isIsoDate(requestedEndDate))) {
+    return res.status(400).json({ error: "Date filters must use YYYY-MM-DD" });
+  }
+  if (requestedStartDate && requestedEndDate && requestedStartDate > requestedEndDate) {
+    return res.status(400).json({ error: "Start date cannot be after end date" });
+  }
   const activeCycle = await pool.query("SELECT id FROM fund_cycles WHERE status='ACTIVE' LIMIT 1");
   const activeCycleId = Number(activeCycle.rows[0]?.id ?? 0);
 
@@ -3707,9 +3715,19 @@ router.get("/reports/export", requireAuth, ownerOnly, async (req, res) => {
        JOIN fund_members m ON m.id=d.winner_member_id
        LEFT JOIN fund_draw_disbursements pd ON pd.draw_id=d.id
        LEFT JOIN fund_users pu ON pu.id=pd.payer_user_id
-        WHERE ($1::int IS NULL OR d.cycle_id=$1)
+        WHERE d.cycle_id=COALESCE($1::int,(SELECT id FROM fund_cycles WHERE status='ACTIVE' LIMIT 1))
+          AND (
+            ($2::date IS NULL AND $3::date IS NULL)
+            OR EXISTS (
+              SELECT 1
+              FROM fund_draw_disbursements pfilter
+              WHERE pfilter.draw_id=d.id
+                AND ($2::date IS NULL OR pfilter.payout_date >= $2::date)
+                AND ($3::date IS NULL OR pfilter.payout_date <= $3::date)
+            )
+          )
        ORDER BY d.draw_date DESC,d.draw_number DESC,pd.created_at ASC,pd.id ASC`,
-      [requestedCycleId],
+      [requestedCycleId, requestedStartDate, requestedEndDate],
     );
     return sendCsv(res, "draw-payouts-backup",
       ["Draw ID", "Cycle ID", "Cycle Number", "Cycle Name", "Draw Date", "Draw Number", "Winner Member ID", "Winner", "Winning Amount", "Draw Status", "Payout Ledger ID", "Payout Status", "Payout Date", "Payer ID", "Payer", "Payout Amount", "Reference", "Payout Note", "Payout Created At", "Payout Reversed At", "Reversal Reason"],

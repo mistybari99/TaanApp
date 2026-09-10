@@ -442,7 +442,9 @@ paths:
       operationId: exportReport
       parameters:
         - { name: type, in: query, required: true, schema: { type: string, enum: [members, payments, collectors, settlements, draws, audit, daily, weekly, monthly, due, collector] } }
-        - { name: cycleId, in: query, required: false, schema: { type: integer, minimum: 1 }, description: Optional cycle filter; draw exports include every cycle when omitted }
+        - { name: cycleId, in: query, required: false, schema: { type: integer, minimum: 1 }, description: Optional cycle filter; draw exports use the active cycle when omitted }
+        - { name: startDate, in: query, required: false, schema: { type: string, format: date }, description: Optional inclusive payout date lower bound for draw exports }
+        - { name: endDate, in: query, required: false, schema: { type: string, format: date }, description: Optional inclusive payout date upper bound for draw exports }
       responses:
         "200": { description: CSV, content: { text/csv: { schema: { type: string } } } }
 components:

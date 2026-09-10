@@ -617,7 +617,11 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     assert.ok(correctedDraw?.payoutAttempts[2].createdAt);
 
     await pool.query("UPDATE fund_cycles SET status='COMPLETED',end_date=CURRENT_DATE WHERE id=$1", [fixture.cycleId]);
-    const drawExport = await request(baseUrl, "/api/reports/export?type=draws", fixture.ownerToken);
+    const drawExport = await request(
+      baseUrl,
+      `/api/reports/export?type=draws&cycleId=${fixture.cycleId}&startDate=${drawDateIso}&endDate=${drawDateIso}`,
+      fixture.ownerToken,
+    );
     assert.equal(drawExport.status, 200);
     const drawExportCsv = await drawExport.text();
     assert.match(drawExportCsv, /Payout Ledger ID/);

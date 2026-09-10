@@ -1882,7 +1882,9 @@ export const UpdateSettingsResponse = zod.object({
 
 export const ExportReportQueryParams = zod.object({
   "type": zod.enum(['members', 'payments', 'collectors', 'settlements', 'draws', 'audit', 'daily', 'weekly', 'monthly', 'due', 'collector']),
-  "cycleId": zod.coerce.number().int().min(1).optional().describe('Optional cycle filter; draw exports include every cycle when omitted')
+  "cycleId": zod.coerce.number().int().min(1).optional().describe('Optional cycle filter; draw exports use the active cycle when omitted'),
+  "startDate": zod.date().optional().describe('Optional inclusive payout date lower bound for draw exports'),
+  "endDate": zod.date().optional().describe('Optional inclusive payout date upper bound for draw exports')
 })
 
 export const ExportReportResponse = zod.unknown()
