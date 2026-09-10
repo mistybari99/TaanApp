@@ -4,16 +4,21 @@ import { getGetMemberHistoryQueryKey, useGetMemberHistory, useListMembers } from
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { History, UserRound } from "lucide-react"
+
+type PayoutStatusFilter = "ALL" | "PAID" | "REVERSED"
 
 const formatTimestamp = (value?: string | null) => value
   ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
   : "—"
 
 export default function MemberHistoryPage() {
-  const [location] = useLocation()
+  const [location, setLocation] = useLocation()
   const pathId = Number(location.match(/\/members\/(\d+)\/history/)?.[1] ?? 0)
+  const payoutStatusParam = new URLSearchParams(location.split("?")[1] ?? "").get("payoutStatus")
+  const payoutStatus: PayoutStatusFilter = payoutStatusParam === "PAID" || payoutStatusParam === "REVERSED" ? payoutStatusParam : "ALL"
   const { data: members } = useListMembers()
   const [selectedId, setSelectedId] = useState<number>(pathId)
   const [search, setSearch] = useState("")
@@ -28,6 +33,11 @@ export default function MemberHistoryPage() {
   useEffect(() => {
     if (!selectedId && members?.[0]) setSelectedId(members[0].id)
   }, [members, selectedId])
+
+  const updatePayoutStatus = (value: PayoutStatusFilter) => {
+    const [pathname] = location.split("?")
+    setLocation(value === "ALL" ? pathname : `${pathname}?payoutStatus=${value}`)
+  }
 
   return (
     <div className="space-y-6">
@@ -71,9 +81,25 @@ export default function MemberHistoryPage() {
                 <CardContent><div className="border rounded-lg overflow-x-auto"><table className="w-full text-sm"><thead className="bg-muted/50"><tr><th className="text-left p-3">তারিখ</th><th className="text-left p-3">ধরন</th><th className="text-left p-3">অন্য সদস্য</th><th className="text-right p-3">শেয়ার</th><th className="text-right p-3">Accumulated value</th><th className="text-right p-3">Settlement</th></tr></thead><tbody>{history.transfers.length === 0 ? <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">কোনো share transfer নেই</td></tr> : history.transfers.map((transfer) => { const outgoing = transfer.fromMemberId === history.member.id; return <tr key={transfer.id} className="border-t"><td className="p-3">{formatDate(transfer.transferDate)}</td><td className="p-3">{outgoing ? "Outgoing" : "Incoming"}{transfer.overrideWinner ? " · Override" : ""}</td><td className="p-3">{outgoing ? transfer.toMemberName : transfer.fromMemberName}</td><td className="p-3 text-right font-bold">{transfer.shares}</td><td className="p-3 text-right">{formatCurrency(transfer.accumulatedValue)}</td><td className="p-3 text-right">{transfer.settlementAmount == null ? "—" : formatCurrency(transfer.settlementAmount)}</td></tr> })}</tbody></table></div></CardContent>
               </Card>
               <Card>
-                <CardHeader><CardTitle className="flex items-center gap-2"><History className="w-5 h-5" /> শুক্রবার ড্র জয়</CardTitle></CardHeader>
+                <CardHeader className="flex flex-row items-start justify-between gap-4">
+                  <div><CardTitle className="flex items-center gap-2"><History className="w-5 h-5" /> শুক্রবার ড্র জয়</CardTitle><CardDescription>Payout attempts · পুরনো থেকে নতুন</CardDescription></div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Label htmlFor="payout-status-filter" className="text-sm">Payout status</Label>
+                    <Select value={payoutStatus} onValueChange={(value) => updatePayoutStatus(value as PayoutStatusFilter)}>
+                      <SelectTrigger id="payout-status-filter" className="w-[132px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ALL">All</SelectItem>
+                        <SelectItem value="PAID">Paid</SelectItem>
+                        <SelectItem value="REVERSED">Reversed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </CardHeader>
                 <CardContent>{history.draws.length === 0 ? <p className="text-sm text-muted-foreground">এই সদস্য এখনো কোনো ড্র জেতেনি</p> : <div className="space-y-3">{history.draws.map((draw) => {
-                  const payoutAttempts = draw.payoutAttempts?.length ? draw.payoutAttempts : (draw.payoutHistory ?? [])
+                  const allPayoutAttempts = draw.payoutAttempts?.length ? draw.payoutAttempts : (draw.payoutHistory ?? [])
+                  const payoutAttempts = payoutStatus === "ALL" ? allPayoutAttempts : allPayoutAttempts.filter((payout) => payout.status === payoutStatus)
                   return <div key={draw.id} className="rounded-lg border p-3">
                     <div className="flex items-center justify-between gap-4">
                       <div><p className="font-medium">Cycle #{draw.cycleNumber} · Draw #{draw.drawNumber}</p><p className="text-xs text-muted-foreground">{formatDate(draw.drawDate)}{draw.entitlementNumber ? ` · Share draw #${draw.entitlementNumber}` : ""}</p></div>
@@ -81,7 +107,7 @@ export default function MemberHistoryPage() {
                     </div>
                     <div className="mt-3 border-t pt-3">
                       <p className="text-xs font-medium text-muted-foreground">Payout attempts · পুরনো থেকে নতুন</p>
-                      {payoutAttempts.length === 0 ? <p className="mt-1 text-xs text-amber-700">Pending payout</p> : <div className="mt-2 overflow-x-auto">
+                      {payoutAttempts.length === 0 ? <p className={`mt-1 text-xs ${allPayoutAttempts.length === 0 ? "text-amber-700" : "text-muted-foreground"}`}>{allPayoutAttempts.length === 0 ? "Pending payout" : `No ${payoutStatus === "PAID" ? "paid" : "reversed"} payout attempts`}</p> : <div className="mt-2 overflow-x-auto">
                         <table className="w-full min-w-[760px] text-xs">
                           <thead className="bg-muted/50"><tr><th className="p-2 text-left font-medium">Payer</th><th className="p-2 text-right font-medium">Amount</th><th className="p-2 text-left font-medium">Reference</th><th className="p-2 text-left font-medium">Status</th><th className="p-2 text-left font-medium">Timestamps</th></tr></thead>
                           <tbody>{payoutAttempts.map((payout) => <tr key={payout.id} className="border-t align-top">
