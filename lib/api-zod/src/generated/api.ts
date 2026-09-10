@@ -1336,7 +1336,20 @@ export const ListDrawsResponseItem = zod.object({
   "createdAt": zod.string(),
   "reversedAt": zod.string().nullish(),
   "reversalReason": zod.string().nullish()
-})).optional()
+})).optional(),
+  "payoutAttempts": zod.array(zod.object({
+  "id": zod.number().int(),
+  "payerUserId": zod.number().int(),
+  "payerName": zod.string(),
+  "amount": zod.number(),
+  "payoutDate": zod.string(),
+  "reference": zod.string(),
+  "note": zod.string().optional(),
+  "status": zod.enum(['PAID', 'REVERSED']),
+  "createdAt": zod.string(),
+  "reversedAt": zod.string().nullish(),
+  "reversalReason": zod.string().nullish()
+}))
 })
 export const ListDrawsResponse = zod.array(ListDrawsResponseItem)
 
@@ -1400,7 +1413,20 @@ export const CreateDrawResponse = zod.object({
   "createdAt": zod.string(),
   "reversedAt": zod.string().nullish(),
   "reversalReason": zod.string().nullish()
-})).optional()
+})).optional(),
+  "payoutAttempts": zod.array(zod.object({
+  "id": zod.number().int(),
+  "payerUserId": zod.number().int(),
+  "payerName": zod.string(),
+  "amount": zod.number(),
+  "payoutDate": zod.string(),
+  "reference": zod.string(),
+  "note": zod.string().optional(),
+  "status": zod.enum(['PAID', 'REVERSED']),
+  "createdAt": zod.string(),
+  "reversedAt": zod.string().nullish(),
+  "reversalReason": zod.string().nullish()
+}))
 })
 
 
@@ -1467,7 +1493,20 @@ export const CreateDrawDisbursementResponse = zod.object({
   "createdAt": zod.string(),
   "reversedAt": zod.string().nullish(),
   "reversalReason": zod.string().nullish()
-})).optional()
+})).optional(),
+  "payoutAttempts": zod.array(zod.object({
+  "id": zod.number().int(),
+  "payerUserId": zod.number().int(),
+  "payerName": zod.string(),
+  "amount": zod.number(),
+  "payoutDate": zod.string(),
+  "reference": zod.string(),
+  "note": zod.string().optional(),
+  "status": zod.enum(['PAID', 'REVERSED']),
+  "createdAt": zod.string(),
+  "reversedAt": zod.string().nullish(),
+  "reversalReason": zod.string().nullish()
+}))
 })
 
 
@@ -1539,7 +1578,20 @@ export const ReverseDrawDisbursementResponse = zod.object({
   "createdAt": zod.string(),
   "reversedAt": zod.string().nullish(),
   "reversalReason": zod.string().nullish()
-})).optional()
+})).optional(),
+  "payoutAttempts": zod.array(zod.object({
+  "id": zod.number().int(),
+  "payerUserId": zod.number().int(),
+  "payerName": zod.string(),
+  "amount": zod.number(),
+  "payoutDate": zod.string(),
+  "reference": zod.string(),
+  "note": zod.string().optional(),
+  "status": zod.enum(['PAID', 'REVERSED']),
+  "createdAt": zod.string(),
+  "reversedAt": zod.string().nullish(),
+  "reversalReason": zod.string().nullish()
+}))
 })
 
 

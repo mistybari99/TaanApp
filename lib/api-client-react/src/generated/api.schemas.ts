@@ -440,6 +440,28 @@ export interface DrawPayoutHistory {
   reversalReason?: string | null;
 }
 
+export type DrawPayoutAttemptStatus = typeof DrawPayoutAttemptStatus[keyof typeof DrawPayoutAttemptStatus];
+
+
+export const DrawPayoutAttemptStatus = {
+  PAID: 'PAID',
+  REVERSED: 'REVERSED',
+} as const;
+
+export interface DrawPayoutAttempt {
+  id: number;
+  payerUserId: number;
+  payerName: string;
+  amount: number;
+  payoutDate: string;
+  reference: string;
+  note?: string;
+  status: DrawPayoutAttemptStatus;
+  createdAt: string;
+  reversedAt?: string | null;
+  reversalReason?: string | null;
+}
+
 export interface Draw {
   id: number;
   cycleId: number;
@@ -470,6 +492,7 @@ export interface Draw {
   payoutReversedAt?: string | null;
   payoutReversalReason?: string | null;
   payoutHistory?: DrawPayoutHistory[];
+  payoutAttempts: DrawPayoutAttempt[];
 }
 
 export interface DrawDisbursementInput {

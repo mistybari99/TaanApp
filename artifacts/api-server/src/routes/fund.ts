@@ -336,7 +336,6 @@ const drawSelect = `
     d.entitlement_id AS "entitlementId",d.entitlement_number AS "entitlementNumber",
     pd.id AS "payoutId",pd.payer_user_id AS "payoutPayerId",pu.name AS "payoutPayerName",
     pd.amount::float AS "payoutAmount",pd.payout_date::text AS "payoutDate",pd.reference AS "payoutReference",
-    pd.note AS "payoutNote",pd.status AS "payoutStatus",pd.created_at AS "payoutCreatedAt",
     pd.reversed_at AS "payoutReversedAt",pd.reversal_reason AS "payoutReversalReason",
     COALESCE((
       SELECT json_agg(json_build_object(
@@ -356,7 +355,26 @@ const drawSelect = `
       FROM fund_draw_disbursements ph
       LEFT JOIN fund_users phu ON phu.id=ph.payer_user_id
       WHERE ph.draw_id=d.id
-    ),'[]'::json) AS "payoutHistory"
+    ),'[]'::json) AS "payoutHistory",
+    COALESCE((
+      SELECT json_agg(json_build_object(
+        'id',pa.id,
+        'drawId',pa.draw_id,
+        'payerUserId',pa.payer_user_id,
+        'payerName',pua.name,
+        'amount',pa.amount::float,
+        'payoutDate',pa.payout_date::text,
+        'reference',pa.reference,
+        'note',pa.note,
+        'status',pa.status,
+        'createdAt',pa.created_at,
+        'reversedAt',pa.reversed_at,
+        'reversalReason',pa.reversal_reason
+      ) ORDER BY pa.created_at ASC,pa.id ASC)
+      FROM fund_draw_disbursements pa
+      LEFT JOIN fund_users pua ON pua.id=pa.payer_user_id
+      WHERE pa.draw_id=d.id
+    ),'[]'::json) AS "payoutAttempts"
   FROM fund_draws d
     JOIN fund_cycles c ON c.id=d.cycle_id
     JOIN fund_members m ON m.id=d.winner_member_id
@@ -3587,10 +3605,28 @@ router.get("/reports/export", requireAuth, ownerOnly, async (req, res) => {
   }
 
   if (type === "draws") {
-    const r = await pool.query(`${drawSelect} WHERE d.cycle_id=$1 ORDER BY d.draw_date DESC,d.draw_number DESC`, [activeCycleId]);
+    const r = await pool.query(
+      `SELECT d.id,d.cycle_id AS "cycleId",c.cycle_number AS "cycleNumber",d.draw_date::text AS "drawDate",
+        d.draw_number AS "drawNumber",COALESCE(m.public_member_id,m.member_id) AS "winnerMemberCode",m.name AS "winnerName",
+        d.winning_amount::float AS "winningAmount",d.status AS "drawStatus",
+        pd.id AS "payoutId",COALESCE(pd.status,'PENDING') AS "payoutStatus",
+        pd.payout_date::text AS "payoutDate",pu.name AS "payoutPayerName",
+        pd.payer_user_id AS "payoutPayerId",pd.amount::float AS "payoutAmount",
+        pd.reference AS "payoutReference",pd.note AS "payoutNote",
+        pd.created_at AS "payoutCreatedAt",pd.reversed_at AS "payoutReversedAt",
+        pd.reversal_reason AS "payoutReversalReason"
+       FROM fund_draws d
+       JOIN fund_cycles c ON c.id=d.cycle_id
+       JOIN fund_members m ON m.id=d.winner_member_id
+       LEFT JOIN fund_draw_disbursements pd ON pd.draw_id=d.id
+       LEFT JOIN fund_users pu ON pu.id=pd.payer_user_id
+       WHERE d.cycle_id=$1
+       ORDER BY d.draw_date DESC,d.draw_number DESC,pd.created_at ASC,pd.id ASC`,
+      [activeCycleId],
+    );
     return sendCsv(res, "draw-payouts-backup",
-      ["Draw ID", "Cycle ID", "Draw Date", "Draw Number", "Winner Member ID", "Winner", "Winning Amount", "Draw Status", "Payout Status", "Payout Date", "Payer", "Payout Amount", "Reference", "Payout Note", "Reversal Reason"],
-      r.rows.map((x) => [x.id, x.cycleId, x.drawDate, x.drawNumber, x.winnerMemberCode, x.winnerName, x.winningAmount, x.status, x.payoutStatus ?? "PENDING", x.payoutDate, x.payoutPayerName, x.payoutAmount, x.payoutReference, x.payoutNote, x.payoutReversalReason]));
+      ["Draw ID", "Cycle ID", "Draw Date", "Draw Number", "Winner Member ID", "Winner", "Winning Amount", "Draw Status", "Payout Ledger ID", "Payout Status", "Payout Date", "Payer ID", "Payer", "Payout Amount", "Reference", "Payout Note", "Payout Created At", "Payout Reversed At", "Reversal Reason"],
+      r.rows.map((x) => [x.id, x.cycleId, x.drawDate, x.drawNumber, x.winnerMemberCode, x.winnerName, x.winningAmount, x.drawStatus, x.payoutId, x.payoutStatus, x.payoutDate, x.payoutPayerId, x.payoutPayerName, x.payoutAmount, x.payoutReference, x.payoutNote, x.payoutCreatedAt, x.payoutReversedAt, x.payoutReversalReason]));
   }
 
   if (type === "audit") {

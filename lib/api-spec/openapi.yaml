@@ -737,7 +737,7 @@ components:
         idempotencyKey: { type: string, minLength: 8 }
     Draw:
       type: object
-      required: [id, cycleId, cycleNumber, drawNumber, drawDate, winnerMemberId, winnerMemberCode, winnerName, winningAmount, status]
+      required: [id, cycleId, cycleNumber, drawNumber, drawDate, winnerMemberId, winnerMemberCode, winnerName, winningAmount, status, payoutAttempts]
       properties:
         id: { type: integer }
         cycleId: { type: integer }
@@ -768,6 +768,7 @@ components:
         payoutReversedAt: { type: string, nullable: true }
         payoutReversalReason: { type: string, nullable: true }
         payoutHistory: { type: array, items: { $ref: "#/components/schemas/DrawPayoutHistory" } }
+        payoutAttempts: { type: array, items: { $ref: "#/components/schemas/DrawPayoutAttempt" } }
     DrawPayoutHistory:
       type: object
       required: [id, drawId, payerUserId, amount, payoutDate, reference, status, createdAt]
@@ -776,6 +777,21 @@ components:
         drawId: { type: integer }
         payerUserId: { type: integer }
         payerName: { type: string, nullable: true }
+        amount: { type: number }
+        payoutDate: { type: string }
+        reference: { type: string }
+        note: { type: string }
+        status: { type: string, enum: [PAID, REVERSED] }
+        createdAt: { type: string }
+        reversedAt: { type: string, nullable: true }
+        reversalReason: { type: string, nullable: true }
+    DrawPayoutAttempt:
+      type: object
+      required: [id, payerUserId, payerName, amount, payoutDate, reference, status, createdAt]
+      properties:
+        id: { type: integer }
+        payerUserId: { type: integer }
+        payerName: { type: string }
         amount: { type: number }
         payoutDate: { type: string }
         reference: { type: string }

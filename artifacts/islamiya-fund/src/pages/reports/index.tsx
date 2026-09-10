@@ -91,7 +91,7 @@ export default function ReportsPage() {
             ["payments", "পেমেন্ট (Payments)"],
             ["collectors", "কালেক্টর (Collectors)"],
             ["settlements", "জমা (Settlements)"],
-            ["draws", "ড্র payout (Draw Payouts)"],
+            ["draws", "ড্র ও payout ledger (Draw History)"],
             ["audit", "অডিট লগ (Audit Log)"],
             ["monthly", "মাসিক রিপোর্ট (Monthly Report)"],
           ].map(([type, label]) => (
@@ -100,6 +100,7 @@ export default function ReportsPage() {
             </Button>
           ))}
         </CardContent>
+          <p className="px-6 pb-6 text-xs text-muted-foreground">এই export-এ প্রতিটি draw-এর summary-এর সঙ্গে প্রতিটি payout attempt-এর আলাদা ledger row থাকবে, reversal-সহ।</p>
       </Card>
 
       <Card>

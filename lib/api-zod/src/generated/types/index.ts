@@ -34,6 +34,8 @@ export * from './drawDateMoveInput';
 export * from './drawDateMoveResult';
 export * from './drawDisbursementInput';
 export * from './drawInput';
+export * from './drawPayoutAttempt';
+export * from './drawPayoutAttemptStatus';
 export * from './drawPayoutHistory';
 export * from './drawPayoutHistoryStatus';
 export * from './drawPayoutStatus';

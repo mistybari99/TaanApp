@@ -395,6 +395,7 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     const balancesAfterReversal = await request(baseUrl, "/api/cash-custody/balances", fixture.ownerToken);
     const restoredRows = await balancesAfterReversal.json() as Array<{ userId: number; availableAmount: number; drawPayouts: number }>;
     const restoredOwnerBalance = restoredRows.find((row) => row.userId === fixture.ownerId);
+
     assert.equal(restoredOwnerBalance?.availableAmount, 200);
     assert.equal(restoredOwnerBalance?.drawPayouts, 0);
 
@@ -510,6 +511,51 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
       historicalDraw?.payoutHistory.map((payout) => payout.reference),
       [`${prefix}-payout-1`, `${prefix}-payout-same-key`, `${prefix}-payout-replacement`],
     );
+
+    const drawHistoryResponse = await request(baseUrl, "/api/draws", fixture.ownerToken);
+    assert.equal(drawHistoryResponse.status, 200);
+    const drawHistory = await drawHistoryResponse.json() as Array<{
+      id: number;
+      payoutStatus: string;
+      payoutAttempts: Array<{
+        id: number;
+        payerUserId: number;
+        payerName: string;
+        amount: number;
+        payoutDate: string;
+        reference: string;
+        status: string;
+        createdAt: string;
+        reversedAt: string | null;
+        reversalReason: string | null;
+      }>;
+    }>;
+    const correctedDraw = drawHistory.find((row) => row.id === drawBody.id);
+    assert.equal(correctedDraw?.payoutStatus, "PAID");
+    assert.equal(correctedDraw?.payoutAttempts.length, 3);
+    assert.equal(correctedDraw?.payoutAttempts[0].id, actualPayoutId);
+    assert.equal(correctedDraw?.payoutAttempts[0].payerUserId, fixture.ownerId);
+    assert.equal(correctedDraw?.payoutAttempts[0].payerName, `${prefix} owner`);
+    assert.equal(correctedDraw?.payoutAttempts[0].amount, 50);
+    assert.equal(correctedDraw?.payoutAttempts[0].payoutDate, drawDateIso);
+    assert.equal(correctedDraw?.payoutAttempts[0].reference, payoutPayloads[winnerIndex].reference);
+    assert.equal(correctedDraw?.payoutAttempts[0].status, "REVERSED");
+    assert.ok(correctedDraw?.payoutAttempts[0].createdAt);
+    assert.ok(correctedDraw?.payoutAttempts[0].reversedAt);
+    assert.equal(correctedDraw?.payoutAttempts[0].reversalReason, "Synthetic reversal coverage");
+    assert.equal(correctedDraw?.payoutAttempts[1].reference, sameKeyPayoutPayload.reference);
+    assert.equal(correctedDraw?.payoutAttempts[1].status, "REVERSED");
+    assert.equal(correctedDraw?.payoutAttempts[1].reversalReason, "Synthetic same-key retry cleanup");
+    assert.equal(correctedDraw?.payoutAttempts[2].reference, `${prefix}-payout-replacement`);
+    assert.equal(correctedDraw?.payoutAttempts[2].status, "PAID");
+    assert.ok(correctedDraw?.payoutAttempts[2].createdAt);
+
+    const drawExport = await request(baseUrl, "/api/reports/export?type=draws", fixture.ownerToken);
+    assert.equal(drawExport.status, 200);
+    const drawExportCsv = await drawExport.text();
+    assert.match(drawExportCsv, /Payout Ledger ID/);
+    assert.match(drawExportCsv, new RegExp(`${prefix}-payout-replacement`));
+    assert.equal(drawExportCsv.split("\n").filter((line) => line.includes(prefix)).length, 3);
 
     const handoverReplay = await request(baseUrl, "/api/cash-handovers", fixture.collectorToken, handoverPayload);
     assert.equal(handoverReplay.status, 200);

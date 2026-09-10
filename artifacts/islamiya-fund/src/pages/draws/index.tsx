@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
 import {
   getListDrawsQueryKey,
   getListCycleMembersQueryKey,
@@ -23,10 +23,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { businessDate, formatCurrency, formatDate } from "@/lib/utils"
 import { toast } from "sonner"
-import { ArrowDownToLine, RotateCcw, Trophy } from "lucide-react"
+import { ArrowDownToLine, ChevronDown, ChevronRight, RotateCcw, Trophy } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 const today = businessDate
+const formatTimestamp = (value?: string | null) => value
+  ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
+  : "—"
 
 export default function DrawsPage() {
   return <DrawSurface readOnly={false} />
@@ -66,6 +69,7 @@ function DrawSurface({ readOnly }: { readOnly: boolean }) {
   const [payoutDate, setPayoutDate] = useState(today())
   const [payoutReference, setPayoutReference] = useState("")
   const [payoutNote, setPayoutNote] = useState("")
+  const [expandedDrawId, setExpandedDrawId] = useState<number | null>(null)
 
   useEffect(() => {
     if (!cycleId && cycles?.[0]) setCycleId(cycles[0].id)
@@ -207,7 +211,69 @@ function DrawSurface({ readOnly }: { readOnly: boolean }) {
              <table className="w-full text-sm">
                <thead className="bg-muted/50"><tr><th className="text-left p-3">তারিখ</th><th className="text-left p-3">চক্র</th><th className="text-left p-3">ড্র নং</th><th className="text-left p-3">বিজয়ী</th><th className="text-right p-3">পরিমাণ</th><th className="text-left p-3">Share draw</th><th className="text-left p-3">ড্র / payout</th><th className="text-left p-3">Action</th></tr></thead>
               <tbody>
-                 {isLoading || drawsLoading ? <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">লোড হচ্ছে...</td></tr> : draws?.length === 0 ? <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">এখনো কোনো ড্র রেকর্ড নেই</td></tr> : draws?.map((draw) => <tr key={draw.id} className="border-t"><td className="p-3">{formatDate(draw.drawDate)}</td><td className="p-3">{draw.cycleName || `Cycle #${draw.cycleNumber}`}</td><td className="p-3">#{draw.drawNumber}</td><td className="p-3"><div className="font-medium">{draw.winnerName}</div><div className="text-xs text-muted-foreground">{draw.winnerMemberCode}</div></td><td className="p-3 text-right font-bold text-primary">{formatCurrency(draw.winningAmount)}</td><td className="p-3">{draw.entitlementNumber ? `Entitlement #${draw.entitlementNumber}` : "—"}</td><td className="p-3"><div className="font-medium">{draw.payoutStatus === "PAID" ? "PAID" : draw.payoutStatus === "REVERSED" ? "REVERSED" : "Pending payout"}</div>{draw.payoutPayerName && <div className="text-xs text-muted-foreground">{draw.payoutPayerName} · {formatCurrency(draw.payoutAmount ?? 0)} · {draw.payoutReference}</div>}</td><td className="p-3">{!readOnly && user?.role === "OWNER" && <div className="flex flex-wrap gap-2 justify-end"><Button size="sm" variant="ghost" onClick={() => handleMoveDrawDate(draw)} disabled={moveDrawDate.isPending}>তারিখ বদল</Button>{draw.status === "RECORDED" && draw.payoutStatus !== "PAID" ? <Button size="sm" variant="outline" className="gap-1" onClick={() => openPayout(draw)}><ArrowDownToLine className="h-3.5 w-3.5" /> টাকা প্রদান</Button> : draw.payoutStatus === "PAID" ? <Button size="sm" variant="ghost" className="gap-1 text-destructive" onClick={() => handleReversePayout(draw)} disabled={reverseDisbursement.isPending}><RotateCcw className="h-3.5 w-3.5" /> Reverse</Button> : null}</div>}</td></tr>)}
+                  {isLoading || drawsLoading ? <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">লোড হচ্ছে...</td></tr> : draws?.length === 0 ? <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">এখনো কোনো ড্র রেকর্ড নেই</td></tr> : draws?.map((draw) => {
+                    const payoutAttempts = draw.payoutAttempts ?? []
+                    const isExpanded = expandedDrawId === draw.id
+                    return (
+                      <Fragment key={draw.id}>
+                        <tr className="border-t">
+                          <td className="p-3">{formatDate(draw.drawDate)}</td>
+                          <td className="p-3">{draw.cycleName || `Cycle #${draw.cycleNumber}`}</td>
+                          <td className="p-3">#{draw.drawNumber}</td>
+                          <td className="p-3"><div className="font-medium">{draw.winnerName}</div><div className="text-xs text-muted-foreground">{draw.winnerMemberCode}</div></td>
+                          <td className="p-3 text-right font-bold text-primary">{formatCurrency(draw.winningAmount)}</td>
+                          <td className="p-3">{draw.entitlementNumber ? `Entitlement #${draw.entitlementNumber}` : "—"}</td>
+                          <td className="p-3">
+                            <div className="font-medium">{draw.payoutStatus === "PAID" ? "PAID" : draw.payoutStatus === "REVERSED" ? "REVERSED" : "Pending payout"}</div>
+                            {draw.payoutPayerName && <div className="text-xs text-muted-foreground">{draw.payoutPayerName} · {formatCurrency(draw.payoutAmount ?? 0)} · {draw.payoutReference}</div>}
+                            {payoutAttempts.length > 0 && <Button
+                              size="sm"
+                              variant="link"
+                              className="h-auto px-0 text-xs"
+                              onClick={() => setExpandedDrawId(isExpanded ? null : draw.id)}
+                              aria-expanded={isExpanded}
+                              aria-label={`${isExpanded ? "Hide" : "Show"} payout history for draw ${draw.drawNumber}`}
+                            >
+                              {isExpanded ? <ChevronDown className="mr-1 h-3 w-3" /> : <ChevronRight className="mr-1 h-3 w-3" />}
+                              {payoutAttempts.length}টি payout attempt
+                            </Button>}
+                          </td>
+                          <td className="p-3">{!readOnly && user?.role === "OWNER" && <div className="flex flex-wrap gap-2 justify-end"><Button size="sm" variant="ghost" onClick={() => handleMoveDrawDate(draw)} disabled={moveDrawDate.isPending}>তারিখ বদল</Button>{draw.status === "RECORDED" && draw.payoutStatus !== "PAID" ? <Button size="sm" variant="outline" className="gap-1" onClick={() => openPayout(draw)}><ArrowDownToLine className="h-3.5 w-3.5" /> টাকা প্রদান</Button> : draw.payoutStatus === "PAID" ? <Button size="sm" variant="ghost" className="gap-1 text-destructive" onClick={() => handleReversePayout(draw)} disabled={reverseDisbursement.isPending}><RotateCcw className="h-3.5 w-3.5" /> Reverse</Button> : null}</div>}</td>
+                        </tr>
+                        {isExpanded && <tr className="border-t bg-muted/20">
+                          <td colSpan={8} className="p-4">
+                            <div className="mb-3 text-sm font-semibold">Payout ledger · {payoutAttempts.length}টি attempt · পুরনো থেকে নতুন</div>
+                            <div className="overflow-x-auto rounded-md border bg-background">
+                              <table className="w-full text-xs">
+                                <thead className="bg-muted/50">
+                                  <tr>
+                                    <th className="p-2 text-left">Ledger timestamp</th>
+                                    <th className="p-2 text-left">Payout date</th>
+                                    <th className="p-2 text-left">Payer</th>
+                                    <th className="p-2 text-right">Amount</th>
+                                    <th className="p-2 text-left">Reference</th>
+                                    <th className="p-2 text-left">Status</th>
+                                    <th className="p-2 text-left">Reversal reason / timestamp</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {payoutAttempts.map((attempt) => <tr key={attempt.id} className="border-t align-top">
+                                    <td className="p-2 whitespace-nowrap">{formatTimestamp(attempt.createdAt)}</td>
+                                    <td className="p-2 whitespace-nowrap">{formatDate(attempt.payoutDate)}</td>
+                                    <td className="p-2">{attempt.payerName}</td>
+                                    <td className="p-2 text-right font-medium">{formatCurrency(attempt.amount)}</td>
+                                    <td className="p-2">{attempt.reference}{attempt.note && <div className="text-muted-foreground">{attempt.note}</div>}</td>
+                                    <td className="p-2 font-medium">{attempt.status}</td>
+                                    <td className="p-2">{attempt.reversalReason ? <><div>{attempt.reversalReason}</div><div className="text-muted-foreground">{formatTimestamp(attempt.reversedAt)}</div></> : "—"}</td>
+                                  </tr>)}
+                                </tbody>
+                              </table>
+                            </div>
+                          </td>
+                        </tr>}
+                      </Fragment>
+                    )
+                  })}
               </tbody>
             </table>
           </div>

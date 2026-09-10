@@ -5,6 +5,7 @@
  * ISLAMIYA Revolving Fund API
  * OpenAPI spec version: 1.0.0
  */
+import type { DrawPayoutAttempt } from './drawPayoutAttempt';
 import type { DrawPayoutHistory } from './drawPayoutHistory';
 import type { DrawPayoutStatus } from './drawPayoutStatus';
 
@@ -38,4 +39,5 @@ export interface Draw {
   payoutReversedAt?: string | null;
   payoutReversalReason?: string | null;
   payoutHistory?: DrawPayoutHistory[];
+  payoutAttempts: DrawPayoutAttempt[];
 }
