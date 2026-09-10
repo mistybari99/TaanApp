@@ -15,6 +15,8 @@ import {
   useGrantPermission,
   useRenewPermission,
   useRevokePermission,
+  useListPermissionAudit,
+  getListPermissionAuditQueryKey,
 } from "@workspace/api-client-react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -23,7 +25,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
-import { UserSquare, Plus, KeyRound } from "lucide-react"
+import { UserSquare, Plus, KeyRound, History } from "lucide-react"
 import { toast } from "sonner"
 import { formatCurrency } from "@/lib/utils"
 
@@ -58,6 +60,11 @@ export default function CollectorsPage() {
     note: "",
   })
   const [renewalTargetId, setRenewalTargetId] = useState<number | null>(null)
+  const [auditPermissionId, setAuditPermissionId] = useState<number | null>(null)
+  const { data: permissionAudit, isLoading: permissionAuditLoading } = useListPermissionAudit(
+    auditPermissionId ?? 0,
+    { query: { queryKey: getListPermissionAuditQueryKey(auditPermissionId ?? 0), enabled: auditPermissionId !== null } },
+  )
 
   const refreshStaff = () => {
     refetch()
@@ -393,6 +400,9 @@ export default function CollectorsPage() {
                     <p className="text-xs text-muted-foreground">{permission.role} · {permission.cycleId ? `Cycle ${permission.cycleId}` : "all cycles"} · {permission.expiresAt ? `expires ${new Date(permission.expiresAt).toLocaleString()}` : "permanent"} · granted {new Date(permission.createdAt).toLocaleString()}{permission.revokedAt ? ` · ended ${new Date(permission.revokedAt).toLocaleString()}` : ""}{permission.note ? ` · ${permission.note}` : ""}</p>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => setAuditPermissionId(permission.id)}>
+                      <History className="mr-1 h-4 w-4" /> History
+                    </Button>
                     {permission.status !== "REVOKED" && <Button size="sm" variant="outline" onClick={() => handleStartRenewal(permission)} disabled={renewPermission.isPending}>Renew / replace</Button>}
                     {permission.status !== "ACTIVE" ? <span className={`text-xs font-semibold ${permission.status === "EXPIRED" ? "text-amber-700" : "text-destructive"}`}>{permission.status}</span> : <Button size="sm" variant="outline" onClick={() => handleRevokePermission(permission.id)} disabled={revokePermission.isPending}>Revoke</Button>}
                   </div>
@@ -402,6 +412,52 @@ export default function CollectorsPage() {
           </div>
         </div>
       </div>
+
+      <Dialog open={auditPermissionId !== null} onOpenChange={(open) => !open && setAuditPermissionId(null)}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Delegated-access audit trail</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            {permissionAuditLoading ? (
+              <p className="text-sm text-muted-foreground">Audit history loading...</p>
+            ) : (permissionAudit ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">No audit entries were found.</p>
+            ) : permissionAudit?.map((entry) => {
+              const before = entry.beforeValue ?? {}
+              const after = entry.afterValue ?? {}
+              const scope = (value: Record<string, unknown>) => value.cycleId ? `Cycle ${String(value.cycleId)}` : "All cycles"
+              const expiry = (value: Record<string, unknown>) => value.expiresAt ? new Date(String(value.expiresAt)).toLocaleString() : "Permanent"
+              return (
+                <div key={entry.id} className="rounded-lg border p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="font-medium">{entry.action.replaceAll("_", " ")}</p>
+                      <p className="text-xs text-muted-foreground">{entry.actor} · {new Date(entry.createdAt).toLocaleString()}</p>
+                    </div>
+                    {entry.reason && <span className="max-w-full rounded bg-muted px-2 py-1 text-xs">{entry.reason}</span>}
+                  </div>
+                  <p className="mt-2 text-sm">{entry.detail}</p>
+                  {(entry.action === "PERMISSION_RENEWED" || entry.action === "PERMISSION_REPLACED" || entry.action === "PERMISSION_REVOKED") && (
+                    <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+                      <div className="rounded-md bg-muted/60 p-2">
+                        <p className="mb-1 font-semibold text-muted-foreground">Before</p>
+                        <p>Scope: {scope(before)}</p>
+                        <p>Expiry: {expiry(before)}</p>
+                      </div>
+                      <div className="rounded-md bg-muted/60 p-2">
+                        <p className="mb-1 font-semibold text-muted-foreground">After</p>
+                        <p>Scope: {scope(after)}</p>
+                        <p>Expiry: {expiry(after)}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Password Reset Dialog */}
       <Dialog open={!!editTarget} onOpenChange={(open) => !open && setEditTarget(null)}>

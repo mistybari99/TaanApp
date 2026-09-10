@@ -410,6 +410,13 @@ paths:
       operationId: listMyPermissions
       responses:
         "200": { description: Delegated permissions for the signed-in staff member, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/PermissionRecord" } } } } }
+  /permissions/{id}/audit:
+    get:
+      operationId: listPermissionAudit
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200": { description: Full audit trail for the delegated permission lineage, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AuditEntry" } } } } }
   /permissions/{id}/revoke:
     post:
       operationId: revokePermission

@@ -1809,6 +1809,32 @@ export const ListMyPermissionsResponseItem = zod.object({
 export const ListMyPermissionsResponse = zod.array(ListMyPermissionsResponseItem)
 
 
+
+
+
+export const ListPermissionAuditParams = zod.object({
+  "id": zod.coerce.number().int().min(1)
+})
+
+export const ListPermissionAuditResponseItem = zod.object({
+  "id": zod.number().int(),
+  "actor": zod.string(),
+  "action": zod.string(),
+  "detail": zod.string(),
+  "entityType": zod.string().nullish(),
+  "entityId": zod.string().nullish(),
+  "memberId": zod.string().nullish(),
+  "cycleId": zod.number().int().nullish(),
+  "relatedTransactionId": zod.string().nullish(),
+  "reason": zod.string().nullish(),
+  "effectiveDate": zod.string().nullish(),
+  "beforeValue": zod.record(zod.string(), zod.unknown()).nullish(),
+  "afterValue": zod.record(zod.string(), zod.unknown()).nullish(),
+  "createdAt": zod.string()
+})
+export const ListPermissionAuditResponse = zod.array(ListPermissionAuditResponseItem)
+
+
 export const RevokePermissionParams = zod.object({
   "id": zod.coerce.number().int()
 })

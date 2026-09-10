@@ -3798,6 +3798,77 @@ export function useListMyPermissions<TData = Awaited<ReturnType<typeof listMyPer
 
 
 
+export const getListPermissionAuditUrl = (id: number,) => {
+
+
+
+
+  return `/api/permissions/${id}/audit`
+}
+
+export const listPermissionAudit = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<AuditEntry[]> => {
+
+  return customFetch<AuditEntry[]>(getListPermissionAuditUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPermissionAuditQueryKey = (id: number,) => {
+    return [
+    `/api/permissions/${id}/audit`
+    ] as const;
+    }
+
+
+export const getListPermissionAuditQueryOptions = <TData = Awaited<ReturnType<typeof listPermissionAudit>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPermissionAudit>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPermissionAuditQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPermissionAudit>>> = ({ signal }) => listPermissionAudit(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPermissionAudit>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPermissionAuditQueryResult = NonNullable<Awaited<ReturnType<typeof listPermissionAudit>>>
+export type ListPermissionAuditQueryError = ErrorType<unknown>
+
+
+
+export function useListPermissionAudit<TData = Awaited<ReturnType<typeof listPermissionAudit>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPermissionAudit>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPermissionAuditQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getRevokePermissionUrl = (id: number,) => {
 
 

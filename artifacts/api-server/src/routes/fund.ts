@@ -3635,6 +3635,50 @@ router.post("/permissions/:id/renew", requireAuth, ownerOnly, async (req: Authed
     client.release();
   }
 });
+router.get("/permissions/:id/audit", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
+  const permissionId = Number(req.params.id);
+  if (!Number.isInteger(permissionId) || permissionId <= 0) {
+    return res.status(400).json({ error: "A valid permission is required" });
+  }
+  const permission = await pool.query("SELECT 1 FROM fund_user_permissions WHERE id=$1", [permissionId]);
+  if (!permission.rows[0]) return res.status(404).json({ error: "Permission not found" });
+
+  const result = await pool.query(
+    `WITH RECURSIVE permission_lineage(id) AS (
+       SELECT $1::text
+       UNION
+       SELECT CASE
+                WHEN a.entity_id = l.id THEN a.after_value->>'replacedPermissionId'
+                ELSE a.entity_id
+              END
+         FROM permission_lineage l
+         JOIN fund_audit a
+           ON a.entity_type='user_permission'
+          AND a.action='PERMISSION_REPLACED'
+          AND (
+            a.entity_id = l.id
+            OR a.after_value->>'replacedPermissionId' = l.id
+          )
+        WHERE CASE
+                WHEN a.entity_id = l.id THEN a.after_value->>'replacedPermissionId'
+                ELSE a.entity_id
+              END IS NOT NULL
+     )
+     SELECT a.id,COALESCE(u.name,'System') actor,a.action,a.detail,
+            a.entity_type AS "entityType",a.entity_id AS "entityId",
+            a.cycle_id AS "cycleId",a.related_transaction_id AS "relatedTransactionId",
+            a.reason,a.effective_date::text AS "effectiveDate",
+            a.before_value AS "beforeValue",a.after_value AS "afterValue",
+            a.created_at AS "createdAt"
+       FROM fund_audit a
+       LEFT JOIN fund_users u ON u.id=a.actor_id
+      WHERE a.entity_type='user_permission'
+        AND a.entity_id IN (SELECT id FROM permission_lineage)
+      ORDER BY a.created_at DESC,a.id DESC`,
+    [permissionId],
+  );
+  return res.json(result.rows);
+});
 router.post("/permissions/:id/revoke", requireAuth, ownerOnly, async (req: AuthedRequest, res: Response) => {
   const permissionId = Number(req.params.id);
   const reason = String(req.body?.reason ?? "").trim() || "Owner revoked delegated permission";
