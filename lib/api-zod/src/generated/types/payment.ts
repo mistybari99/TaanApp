@@ -24,6 +24,10 @@ export interface Payment {
   previousDueApplied?: number;
   currentPeriodApplied?: number;
   advanceCredit?: number;
+  remainingPreviousDue?: number;
+  remainingCurrentPeriodDue?: number;
+  remainingTotalDue?: number;
+  allocationDecision?: string;
   createdAt: string;
   status: string;
 }

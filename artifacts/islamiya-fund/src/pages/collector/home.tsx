@@ -19,10 +19,15 @@ export default function CollectorHome() {
   const [notes, setNotes] = useState("")
   const [confirmDialog, setConfirmDialog] = useState(false)
   const [isDuplicateConfirm, setIsDuplicateConfirm] = useState(false)
+  const [duplicateReviewRequired, setDuplicateReviewRequired] = useState(false)
+  const [duplicatePayments, setDuplicatePayments] = useState<Array<{ receiptId: string; amount: number; previousDueApplied?: number; currentPeriodApplied?: number; advanceCredit?: number }>>([])
+  const [selectedCycleId, setSelectedCycleId] = useState<number | null>(null)
   
   const { data: members, isLoading, refetch } = useListMembers({ search: search.length > 2 ? search : undefined })
   const { data: cycles } = useListCycles()
-  const activeCycle = cycles?.find((cycle) => cycle.status === "ACTIVE") ?? cycles?.[0]
+  const activeCycles = cycles?.filter((cycle) => cycle.status === "ACTIVE") ?? []
+  const defaultCycle = activeCycles[0]
+  const activeCycle = activeCycles.find((cycle) => cycle.id === selectedCycleId) ?? defaultCycle
   const { data: tanData } = useGetTan((activeCycle?.id ?? 0) as number, {
     query: { enabled: Boolean(activeCycle?.id), queryKey: getGetTanQueryKey((activeCycle?.id ?? 0) as number) },
   })
@@ -59,6 +64,10 @@ export default function CollectorHome() {
   const membersLoading = activeCycle ? isCycleMembersLoading : isLoading
 
   useEffect(() => {
+    if (!selectedCycleId && defaultCycle?.id) setSelectedCycleId(defaultCycle.id)
+  }, [defaultCycle?.id, selectedCycleId])
+
+  useEffect(() => {
     const onSynced = (event: Event) => {
       const result = (event as CustomEvent<{ result?: any }>).detail?.result
       if (!result) return
@@ -83,11 +92,9 @@ export default function CollectorHome() {
     if (member) {
       const totalDue = member.totalDue ?? ((member.previousDue ?? 0) + (member.currentPeriodDue ?? 0))
       setAmount((totalDue > 0 ? totalDue : member.dailyAmount ?? 0).toString())
-      if (member.todayPaid > 0) {
-        setIsDuplicateConfirm(true)
-      } else {
-        setIsDuplicateConfirm(false)
-      }
+      setDuplicateReviewRequired(member.todayPaid > 0)
+      setIsDuplicateConfirm(false)
+      setDuplicatePayments([])
     }
     setNotes("")
     setSearch("")
@@ -123,7 +130,8 @@ export default function CollectorHome() {
     } else {
       try {
         const result = await createPayment.mutateAsync({ data: payload });
-        toast.success("পেমেন্ট সেভ হয়েছে (Payment Recorded)");
+        const payment = result as typeof result & { remainingPreviousDue?: number; advanceCredit?: number }
+        toast.success(`পেমেন্ট সেভ হয়েছে · Previous Due বাকি ${formatCurrency(payment.remainingPreviousDue ?? 0)}${(payment.advanceCredit ?? 0) > 0 ? ` · Advance ${formatCurrency(payment.advanceCredit ?? 0)}` : ""}`);
         receiptRef.current?.show({
           receiptId: result.receiptId, memberName: selectedMember.name, memberId: selectedMember.memberId,
           amount: result.amount, date: result.createdAt, collectorName: result.collectorName || userState?.name || "Collector",
@@ -134,6 +142,13 @@ export default function CollectorHome() {
         queryClient.invalidateQueries({ queryKey: getListMembersQueryKey() });
         if (activeCycle?.id) queryClient.invalidateQueries({ queryKey: getListCycleMembersQueryKey(activeCycle.id) });
       } catch (error: any) {
+        if (String(error?.message ?? "").includes("already exists")) {
+          setDuplicateReviewRequired(true)
+          setIsDuplicateConfirm(false)
+          setDuplicatePayments(error?.data?.existingPayments ?? [])
+          toast.error("আজকের আগের payment review করে checkbox টিক দিন, তারপর আবার Confirm করুন")
+          return
+        }
         toast.error(error?.message || "পেমেন্ট সেভ করা যায়নি (Payment failed)");
         return;
       }
@@ -142,6 +157,9 @@ export default function CollectorHome() {
     setSelectedMemberId(null);
     setAmount("");
     setNotes("");
+    setDuplicateReviewRequired(false)
+    setIsDuplicateConfirm(false)
+    setDuplicatePayments([])
 
   }
 
@@ -307,6 +325,20 @@ export default function CollectorHome() {
 
       {!selectedMemberId ? (
         <div className="space-y-4">
+          {activeCycles.length > 1 && (
+            <div className="space-y-2">
+              <Label>Target cycle নির্বাচন করুন</Label>
+              <select
+                value={activeCycle?.id ?? ""}
+                onChange={(event) => { setSelectedCycleId(Number(event.target.value)); setSelectedMemberId(null); setSearch("") }}
+                className="h-12 w-full rounded-xl border border-input bg-background px-3"
+              >
+                <option value="">চক্র নির্বাচন করুন...</option>
+                {activeCycles.map((cycle) => <option key={cycle.id} value={cycle.id}>{cycle.name} · Cycle #{cycle.cycleNumber}</option>)}
+              </select>
+              <p className="text-xs text-muted-foreground">একাধিক চক্রে থাকা সদস্যের payment পোস্ট করার আগে target cycle নির্ধারণ করুন।</p>
+            </div>
+          )}
           <div className="relative">
             <Search className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
             <Input 
@@ -341,7 +373,7 @@ export default function CollectorHome() {
                       <div>
                         <div className="font-bold text-base flex items-center gap-2">
                           {member.name}
-                          {member.todayPaid > 0 && <CheckCircle2 className="w-4 h-4 text-green-600" />}
+                           {member.todayPaid > 0 && <CheckCircle2 className="w-4 h-4 text-green-600" />}
                         </div>
                         <div className="text-sm text-muted-foreground">ID: {member.memberId}{member.mobile ? ` · ${member.mobile}` : ""}</div>
                         <div className="mt-2 flex flex-wrap gap-1 text-[11px] font-semibold">
@@ -412,6 +444,22 @@ export default function CollectorHome() {
                     ))}
                   </div>
                     <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="নোট (ঐচ্ছিক)" className="mt-3" />
+                   {(() => {
+                     const entered = Math.max(0, Number(amount) || 0)
+                     const previousDue = selectedMember?.previousDue ?? 0
+                     const currentDue = selectedMember?.currentPeriodDue ?? 0
+                     const previousApplied = Math.min(entered, previousDue)
+                     const currentApplied = Math.min(Math.max(0, entered - previousApplied), currentDue)
+                     const advance = Math.max(0, entered - previousApplied - currentApplied)
+                     return (
+                       <div className="rounded-lg border bg-background p-3 text-xs">
+                         <p className="font-semibold">এই payment-এর allocation review</p>
+                         <p className="mt-1">Previous Due: {formatCurrency(previousApplied)} · বাকি {formatCurrency(Math.max(0, previousDue - previousApplied))}</p>
+                         <p>Current collection: {formatCurrency(currentApplied)}</p>
+                         {advance > 0 && <p className="font-medium text-blue-700">Advance Credit: {formatCurrency(advance)} (shares কমবে না)</p>}
+                       </div>
+                     )
+                   })()}
                 </div>
 
                 <Button 
@@ -443,9 +491,16 @@ export default function CollectorHome() {
               <p className="text-4xl font-bold text-primary">{formatCurrency(Number(amount))}</p>
             </div>
             
-            {isDuplicateConfirm && (
+            {duplicateReviewRequired && (
               <div className="bg-destructive/10 p-3 rounded-lg border border-destructive/20 text-destructive text-sm font-medium">
-                সতর্কতা: এই সদস্য আজ ইতিমধ্যে পেমেন্ট করেছে!
+                 সতর্কতা: এই সদস্য আজ ইতিমধ্যে পেমেন্ট করেছে। Partial/split payment হলে আগের receipt review করুন।
+                 {duplicatePayments.length > 0 && <div className="mt-2 rounded border border-destructive/20 bg-background p-2 text-xs text-foreground">
+                   {duplicatePayments.map((payment) => <div key={payment.receiptId}>আগের receipt {payment.receiptId}: {formatCurrency(payment.amount)} · P {formatCurrency(payment.previousDueApplied ?? 0)} · C {formatCurrency(payment.currentPeriodApplied ?? 0)}{(payment.advanceCredit ?? 0) > 0 ? ` · A ${formatCurrency(payment.advanceCredit ?? 0)}` : ""}</div>)}
+                 </div>}
+                 <label className="mt-3 flex items-start gap-2 text-left font-normal">
+                   <input type="checkbox" checked={isDuplicateConfirm} onChange={(event) => setIsDuplicateConfirm(event.target.checked)} className="mt-0.5" />
+                   <span>আমি আগের payment review করেছি এবং এই অতিরিক্ত/partial paymentটি ইচ্ছাকৃত।</span>
+                 </label>
               </div>
             )}
 
@@ -459,7 +514,8 @@ export default function CollectorHome() {
             </Button>
             <Button 
               className="flex-1 h-12" 
-              onClick={handleCollect}
+               onClick={handleCollect}
+               disabled={duplicateReviewRequired && !isDuplicateConfirm}
             >
               নিশ্চিত (Confirm)
             </Button>

@@ -60,6 +60,7 @@ import type {
   OnboardingInput,
   OnboardingStatus,
   Payment,
+  PaymentDuplicateReview,
   PaymentInput,
   PermissionInput,
   PermissionRecord,
@@ -2052,7 +2053,7 @@ export const createPayment = async (paymentInput: PaymentInput, options?: Parame
 
 
 
-export const getCreatePaymentMutationOptions = <TError = ErrorType<void>,
+export const getCreatePaymentMutationOptions = <TError = ErrorType<PaymentDuplicateReview>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPayment>>, TError,{data: BodyType<PaymentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createPayment>>, TError,{data: BodyType<PaymentInput>}, TContext> => {
 
@@ -2081,9 +2082,9 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreatePaymentMutationResult = NonNullable<Awaited<ReturnType<typeof createPayment>>>
     export type CreatePaymentMutationBody = BodyType<PaymentInput>
-    export type CreatePaymentMutationError = ErrorType<void>
+    export type CreatePaymentMutationError = ErrorType<PaymentDuplicateReview>
 
-    export const useCreatePayment = <TError = ErrorType<void>,
+    export const useCreatePayment = <TError = ErrorType<PaymentDuplicateReview>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPayment>>, TError,{data: BodyType<PaymentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createPayment>>,

@@ -78,6 +78,7 @@ export default function PaymentsPage() {
                   <TableCell className="text-xs text-muted-foreground">
                     <div>P {formatCurrency(payment.previousDueApplied ?? 0)} · C {formatCurrency(payment.currentPeriodApplied ?? 0)}</div>
                     {(payment.advanceCredit ?? 0) > 0 && <div className="font-medium text-blue-700">A {formatCurrency(payment.advanceCredit ?? 0)}</div>}
+                    <div className="mt-1 text-[11px]">Previous Due first</div>
                   </TableCell>
                   <TableCell>
                     <span className={`text-xs px-2 py-1 rounded-full ${

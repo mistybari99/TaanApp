@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import app from "./app";
-import { businessDateInDhaka } from "./routes/fund";
+import { allocatePayment, businessDateInDhaka } from "./routes/fund";
 import { pool } from "@workspace/db";
 
 const prefix = `SYN-PAY-ALLOC-${process.pid}-${Date.now()}-${randomBytes(3).toString("hex")}`;
@@ -100,6 +100,30 @@ test("overpayment is split into previous due, current due, and visible advance c
     assert.equal(members[0].todayDue, 0);
     assert.equal(members[0].totalDue, 0);
     assert.equal(members[0].advanceCredit, 350);
+
+    const duplicateReview = await fetch(`${baseUrl}/api/payments`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `irf_session=${token}` },
+      body: JSON.stringify({
+        memberId,
+        cycleId,
+        collectionDate: paidDate,
+        amount: 10,
+        verificationMethod: "OWNER_CONFIRMATION",
+        confirmDuplicate: false,
+        idempotencyKey: `${prefix}-duplicate-review`,
+      }),
+    });
+    assert.equal(duplicateReview.status, 409);
+    const duplicateBody = await duplicateReview.json() as {
+      code: string;
+      existingPayments: Array<{ amount: number; previousDueApplied: number; currentPeriodApplied: number; advanceCredit: number }>;
+    };
+    assert.equal(duplicateBody.code, "DUPLICATE_PAYMENT_REVIEW_REQUIRED");
+    assert.equal(duplicateBody.existingPayments[0].amount, 500);
+    assert.equal(duplicateBody.existingPayments[0].previousDueApplied, 50);
+    assert.equal(duplicateBody.existingPayments[0].currentPeriodApplied, 100);
+    assert.equal(duplicateBody.existingPayments[0].advanceCredit, 350);
   } finally {
     if (server) {
       const runningServer = server;
@@ -119,6 +143,14 @@ test("overpayment is split into previous due, current due, and visible advance c
     await pool.query("DELETE FROM fund_users WHERE id=$1", [ownerId]);
     if (previousActiveCycleId) await pool.query("UPDATE fund_cycles SET status='ACTIVE' WHERE id=$1", [previousActiveCycleId]);
   }
+});
+
+test("partial allocation leaves the remaining previous due visible", () => {
+  assert.deepEqual(allocatePayment(25, 50, 100), {
+    previousDueApplied: 25,
+    currentPeriodApplied: 0,
+    advanceCredit: 0,
+  });
 });
 
 test.after(async () => {

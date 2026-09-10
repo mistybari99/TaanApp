@@ -141,6 +141,10 @@ export const GetDashboardResponse = zod.object({
   "previousDueApplied": zod.number().optional(),
   "currentPeriodApplied": zod.number().optional(),
   "advanceCredit": zod.number().optional(),
+  "remainingPreviousDue": zod.number().optional(),
+  "remainingCurrentPeriodDue": zod.number().optional(),
+  "remainingTotalDue": zod.number().optional(),
+  "allocationDecision": zod.string().optional(),
   "createdAt": zod.string(),
   "status": zod.string()
 })),
@@ -855,6 +859,10 @@ export const GetMemberHistoryResponse = zod.object({
   "previousDueApplied": zod.number().optional(),
   "currentPeriodApplied": zod.number().optional(),
   "advanceCredit": zod.number().optional(),
+  "remainingPreviousDue": zod.number().optional(),
+  "remainingCurrentPeriodDue": zod.number().optional(),
+  "remainingTotalDue": zod.number().optional(),
+  "allocationDecision": zod.string().optional(),
   "createdAt": zod.string(),
   "status": zod.string()
 })),
@@ -932,6 +940,10 @@ export const ListPaymentsResponseItem = zod.object({
   "previousDueApplied": zod.number().optional(),
   "currentPeriodApplied": zod.number().optional(),
   "advanceCredit": zod.number().optional(),
+  "remainingPreviousDue": zod.number().optional(),
+  "remainingCurrentPeriodDue": zod.number().optional(),
+  "remainingTotalDue": zod.number().optional(),
+  "allocationDecision": zod.string().optional(),
   "createdAt": zod.string(),
   "status": zod.string()
 })
@@ -944,7 +956,7 @@ export const createPaymentBodyIdempotencyKeyMin = 8;
 
 export const CreatePaymentBody = zod.object({
   "memberId": zod.number().int(),
-  "cycleId": zod.number().int().optional(),
+  "cycleId": zod.number().int(),
   "collectionDate": zod.string().optional(),
   "notes": zod.string().optional(),
   "amount": zod.number(),
@@ -971,6 +983,10 @@ export const CreatePaymentResponse = zod.object({
   "previousDueApplied": zod.number().optional(),
   "currentPeriodApplied": zod.number().optional(),
   "advanceCredit": zod.number().optional(),
+  "remainingPreviousDue": zod.number().optional(),
+  "remainingCurrentPeriodDue": zod.number().optional(),
+  "remainingTotalDue": zod.number().optional(),
+  "allocationDecision": zod.string().optional(),
   "createdAt": zod.string(),
   "status": zod.string()
 })
@@ -1001,6 +1017,10 @@ export const ReversePaymentResponse = zod.object({
   "previousDueApplied": zod.number().optional(),
   "currentPeriodApplied": zod.number().optional(),
   "advanceCredit": zod.number().optional(),
+  "remainingPreviousDue": zod.number().optional(),
+  "remainingCurrentPeriodDue": zod.number().optional(),
+  "remainingTotalDue": zod.number().optional(),
+  "allocationDecision": zod.string().optional(),
   "createdAt": zod.string(),
   "status": zod.string()
 })

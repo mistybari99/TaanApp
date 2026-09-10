@@ -225,7 +225,7 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/PaymentInput" } } }
       responses:
         "201": { description: Posted, content: { application/json: { schema: { $ref: "#/components/schemas/Payment" } } } }
-        "409": { description: Duplicate warning }
+        "409": { description: Duplicate review required, content: { application/json: { schema: { $ref: "#/components/schemas/PaymentDuplicateReview" } } } }
   /payments/{id}/reverse:
     post:
       operationId: reversePayment
@@ -1066,11 +1066,39 @@ components:
         previousDueApplied: { type: number }
         currentPeriodApplied: { type: number }
         advanceCredit: { type: number }
+        remainingPreviousDue: { type: number }
+        remainingCurrentPeriodDue: { type: number }
+        remainingTotalDue: { type: number }
+        allocationDecision: { type: string }
         createdAt: { type: string }
         status: { type: string }
+    PaymentDuplicateReview:
+      type: object
+      required: [error, code, memberId, cycleId, collectionDate, existingPayments]
+      properties:
+        error: { type: string }
+        code: { type: string, enum: [DUPLICATE_PAYMENT_REVIEW_REQUIRED] }
+        memberId: { type: integer }
+        cycleId: { type: integer }
+        collectionDate: { type: string }
+        existingPayments:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentDuplicateRecord"
+    PaymentDuplicateRecord:
+      type: object
+      required: [id, receiptId, amount, previousDueApplied, currentPeriodApplied, advanceCredit, createdAt]
+      properties:
+        id: { type: integer }
+        receiptId: { type: string }
+        amount: { type: number }
+        previousDueApplied: { type: number }
+        currentPeriodApplied: { type: number }
+        advanceCredit: { type: number }
+        createdAt: { type: string }
     PaymentInput:
       type: object
-      required: [memberId, amount, verificationMethod, confirmDuplicate]
+      required: [memberId, cycleId, amount, verificationMethod, confirmDuplicate]
       properties:
         memberId: { type: integer }
         cycleId: { type: integer }

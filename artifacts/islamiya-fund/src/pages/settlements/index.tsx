@@ -35,9 +35,12 @@ export default function SettlementsPage() {
   const queryClient = useQueryClient()
   const { data: user } = useGetCurrentUser({ query: { queryKey: getGetCurrentUserQueryKey() } })
   const { data: cycles } = useListCycles()
-  const activeCycle = cycles?.find((cycle) => cycle.status === "ACTIVE") ?? cycles?.[0]
-  const { data: members } = useListCycleMembers(activeCycle?.id ?? 0, {
-    query: { enabled: Boolean(activeCycle?.id), queryKey: getListCycleMembersQueryKey(activeCycle?.id ?? 0) },
+  const activeCycles = cycles?.filter((cycle) => cycle.status === "ACTIVE") ?? []
+  const activeCycle = activeCycles[0]
+  const [selectedCycleId, setSelectedCycleId] = useState<number | null>(null)
+  const paymentCycle = activeCycles.find((cycle) => cycle.id === selectedCycleId) ?? activeCycle
+  const { data: members } = useListCycleMembers(paymentCycle?.id ?? 0, {
+    query: { enabled: Boolean(paymentCycle?.id), queryKey: getListCycleMembersQueryKey(paymentCycle?.id ?? 0) },
   })
   const { data: dashboard } = useGetDashboard({ query: { queryKey: getGetDashboardQueryKey(), refetchInterval: 15000 } })
   const { data: handovers, isLoading } = useListCashHandovers({ query: { queryKey: getListCashHandoversQueryKey(), refetchOnMount: "always" } })
@@ -53,6 +56,9 @@ export default function SettlementsPage() {
   const [directMemberId, setDirectMemberId] = useState("")
   const [directAmount, setDirectAmount] = useState("")
   const [directNote, setDirectNote] = useState("")
+  const [directDuplicateReviewRequired, setDirectDuplicateReviewRequired] = useState(false)
+  const [directDuplicateConfirmed, setDirectDuplicateConfirmed] = useState(false)
+  const [directDuplicatePayments, setDirectDuplicatePayments] = useState<Array<{ receiptId: string; amount: number; previousDueApplied?: number; currentPeriodApplied?: number; advanceCredit?: number }>>([])
   const [toUserId, setToUserId] = useState("")
   const [handoverAmount, setHandoverAmount] = useState("")
   const [collectionDate, setCollectionDate] = useState(today())
@@ -83,20 +89,23 @@ export default function SettlementsPage() {
     setDirectMemberId("")
     setDirectAmount("")
     setDirectNote("")
+    setDirectDuplicateReviewRequired(false)
+    setDirectDuplicateConfirmed(false)
+    setDirectDuplicatePayments([])
   }
 
   const handleDirectPayment = () => {
-    if (!user || !activeCycle?.id || !directMemberId || Number(directAmount) <= 0) return
+    if (!user || !paymentCycle?.id || !directMemberId || Number(directAmount) <= 0) return
     const verificationMethod = user.role === "OWNER" ? "OWNER_CONFIRMATION" : "CASH_RECEIVER_CONFIRMATION"
     createPayment.mutate(
       {
         data: {
           memberId: Number(directMemberId),
-          cycleId: activeCycle.id,
+          cycleId: paymentCycle.id,
           amount: Number(directAmount),
           notes: directNote || undefined,
           verificationMethod,
-          confirmDuplicate: true,
+          confirmDuplicate: directDuplicateConfirmed,
           idempotencyKey: crypto.randomUUID(),
         },
       },
@@ -105,10 +114,19 @@ export default function SettlementsPage() {
           toast.success(`সরাসরি receipt ${result.receiptId} তৈরি হয়েছে`)
           queryClient.invalidateQueries({ queryKey: getListPaymentsQueryKey() })
           queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() })
-          queryClient.invalidateQueries({ queryKey: getListCycleMembersQueryKey(activeCycle.id) })
+          queryClient.invalidateQueries({ queryKey: getListCycleMembersQueryKey(paymentCycle.id) })
           resetDirect()
         },
-        onError: (error: any) => toast.error(error?.message || "Direct payment save করা যায়নি"),
+        onError: (error: any) => {
+          if (String(error?.message ?? "").includes("already exists")) {
+            setDirectDuplicateReviewRequired(true)
+            setDirectDuplicateConfirmed(false)
+            setDirectDuplicatePayments(error?.data?.existingPayments ?? [])
+            toast.error("আজকের আগের payment review করে checkbox টিক দিন, তারপর আবার receipt তৈরি করুন")
+            return
+          }
+          toast.error(error?.message || "Direct payment save করা যায়নি")
+        },
       },
     )
   }
@@ -285,9 +303,17 @@ export default function SettlementsPage() {
             <DialogDescription>{user?.name}-এর account-এই actual receiver হিসেবে receipt হবে।</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-3">
+            {activeCycles.length > 1 && <div className="space-y-2">
+              <Label>Target cycle</Label>
+              <select value={paymentCycle?.id ?? ""} onChange={(event) => { setSelectedCycleId(Number(event.target.value)); setDirectMemberId(""); setDirectAmount(""); setDirectDuplicateReviewRequired(false); setDirectDuplicateConfirmed(false) }} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm">
+                <option value="">চক্র নির্বাচন করুন</option>
+                {activeCycles.map((cycle) => <option key={cycle.id} value={cycle.id}>{cycle.name} · Cycle #{cycle.cycleNumber}</option>)}
+              </select>
+              <p className="text-xs text-muted-foreground">একাধিক চক্রে থাকা সদস্যের জন্য payment-এর target cycle আগে নির্ধারণ করুন।</p>
+            </div>}
             <div className="space-y-2">
               <Label>সদস্য</Label>
-              <select value={directMemberId} onChange={(event) => { setDirectMemberId(event.target.value); const member = members?.find((item) => item.memberId === Number(event.target.value)); setDirectAmount(member?.totalDue ? String(member.totalDue) : "") }} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm">
+              <select value={directMemberId} onChange={(event) => { setDirectMemberId(event.target.value); setDirectDuplicateConfirmed(false); setDirectDuplicatePayments([]); const member = members?.find((item) => item.memberId === Number(event.target.value)); setDirectDuplicateReviewRequired(Boolean(member && member.todayDue < member.dailyContribution)); setDirectAmount(member?.totalDue ? String(member.totalDue) : "") }} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm">
                 <option value="">সদস্য নির্বাচন করুন</option>
                 {(members ?? []).map((member) => <option key={member.memberId} value={member.memberId}>{member.name} · {member.memberCode} · due {formatCurrency(member.totalDue ?? 0)}</option>)}
               </select>
@@ -298,8 +324,18 @@ export default function SettlementsPage() {
               {selectedMember && <p className="text-xs text-muted-foreground">বর্তমান মোট due: {formatCurrency(selectedMember.totalDue ?? 0)}</p>}
             </div>
             <div className="space-y-2"><Label>নোট (optional)</Label><Input value={directNote} onChange={(event) => setDirectNote(event.target.value)} placeholder="Cash desk note" /></div>
+            {directDuplicateReviewRequired && <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+              এই সদস্য আজ payment করেছে। আগের receipt review করে এই checkbox নিশ্চিত করুন।
+              {directDuplicatePayments.length > 0 && <div className="mt-2 rounded border border-destructive/20 bg-background p-2 text-xs text-foreground">
+                {directDuplicatePayments.map((payment) => <div key={payment.receiptId}>আগের receipt {payment.receiptId}: {formatCurrency(payment.amount)} · P {formatCurrency(payment.previousDueApplied ?? 0)} · C {formatCurrency(payment.currentPeriodApplied ?? 0)}{(payment.advanceCredit ?? 0) > 0 ? ` · A ${formatCurrency(payment.advanceCredit ?? 0)}` : ""}</div>)}
+              </div>}
+              <label className="mt-3 flex items-start gap-2 text-left text-foreground">
+                <input type="checkbox" checked={directDuplicateConfirmed} onChange={(event) => setDirectDuplicateConfirmed(event.target.checked)} className="mt-0.5" />
+                <span>আমি আগের payment review করেছি এবং এই direct paymentটি ইচ্ছাকৃত।</span>
+              </label>
+            </div>}
           </div>
-          <DialogFooter><Button onClick={handleDirectPayment} disabled={createPayment.isPending || !directMemberId || Number(directAmount) <= 0}>{createPayment.isPending ? "সংরক্ষণ হচ্ছে..." : "Receipt তৈরি করুন"}</Button></DialogFooter>
+          <DialogFooter><Button onClick={handleDirectPayment} disabled={createPayment.isPending || !directMemberId || Number(directAmount) <= 0 || (directDuplicateReviewRequired && !directDuplicateConfirmed)}>{createPayment.isPending ? "সংরক্ষণ হচ্ছে..." : "Receipt তৈরি করুন"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

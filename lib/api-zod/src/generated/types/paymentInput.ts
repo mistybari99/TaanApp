@@ -9,7 +9,7 @@ import type { PaymentInputVerificationMethod } from './paymentInputVerificationM
 
 export interface PaymentInput {
   memberId: number;
-  cycleId?: number;
+  cycleId: number;
   collectionDate?: string;
   notes?: string;
   amount: number;

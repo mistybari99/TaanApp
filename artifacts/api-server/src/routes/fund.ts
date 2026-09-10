@@ -2598,7 +2598,7 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
   const idempotencyKey = idempotency(req.body.idempotencyKey);
   if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) return res.status(400).json({ error: "Amount must be greater than zero" });
   const selectedCycleId = Number(cycleId);
-  if (!selectedCycleId) return res.status(400).json({ error: "An active cycle is required for every payment" });
+  if (!selectedCycleId) return res.status(400).json({ error: "Choose the target active cycle before recording a payment" });
   const paidDate = isIsoDate(collectionDate) ? collectionDate : todayIso();
   const client = await pool.connect();
   try {
@@ -2648,10 +2648,26 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
       }
       tanPeriodId = tanPeriod.periodId;
     }
-    const duplicate = await client.query("SELECT 1 FROM fund_payments WHERE member_id=$1 AND cycle_id=$2 AND collection_date=$3 AND status='POSTED' LIMIT 1", [memberId, selectedCycleId, paidDate]);
-    if (duplicate.rowCount && !confirmDuplicate) {
+    const duplicate = await client.query(
+      `SELECT p.id,p.receipt_id AS "receiptId",p.amount::float,
+        p.previous_due_applied::float AS "previousDueApplied",
+        p.current_period_applied::float AS "currentPeriodApplied",
+        p.advance_credit::float AS "advanceCredit",p.created_at AS "createdAt"
+       FROM fund_payments p
+       WHERE p.member_id=$1 AND p.cycle_id=$2 AND p.collection_date=$3::date AND p.status='POSTED'
+       ORDER BY p.created_at DESC`,
+      [memberId, selectedCycleId, paidDate],
+    );
+    if (duplicate.rowCount && confirmDuplicate !== true) {
       await client.query("ROLLBACK");
-      return res.status(409).json({ error: "A payment already exists today. Confirm to add another or partial payment." });
+      return res.status(409).json({
+        error: "A payment already exists today. Review the existing payment before adding another or partial payment.",
+        code: "DUPLICATE_PAYMENT_REVIEW_REQUIRED",
+        memberId: Number(memberId),
+        cycleId: selectedCycleId,
+        collectionDate: paidDate,
+        existingPayments: duplicate.rows,
+      });
     }
     const member = await client.query(
       "SELECT id,name,assigned_collector_id FROM fund_members WHERE id=$1 AND status='active' FOR SHARE",
@@ -2703,6 +2719,10 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
       : Math.max(0, requiredCurrentPeriod - currentPeriodAlreadyApplied);
     const allocation = allocatePayment(Number(amount), previousDueOutstanding, currentPeriodOutstanding);
     const { previousDueApplied, currentPeriodApplied, advanceCredit } = allocation;
+    const remainingPreviousDue = roundMoney(Math.max(0, previousDueOutstanding - previousDueApplied));
+    const remainingCurrentPeriodDue = roundMoney(Math.max(0, currentPeriodOutstanding - currentPeriodApplied));
+    const remainingTotalDue = roundMoney(remainingPreviousDue + remainingCurrentPeriodDue);
+    const allocationDecision = "Previous Due first; then current period due; any remainder is advance credit";
     const receiptId = `IRF-${paidDate.replaceAll("-","")}-${randomBytes(3).toString("hex").toUpperCase()}`;
      const receiptSource = req.user.role === "OWNER" ? "OWNER_DIRECT" : req.user.role === "CASH_RECEIVER" ? "CASH_RECEIVER_DIRECT" : "COLLECTOR";
      const collectorId = req.user.role === "COLLECTOR" ? req.user.id : null;
@@ -2716,7 +2736,7 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id,receipt_id AS "receiptId",member_id AS "memberId",cycle_id AS "cycleId",collection_date::text AS "collectionDate",shares,notes,amount::float,previous_due_applied::float AS "previousDueApplied",current_period_applied::float AS "currentPeriodApplied",advance_credit::float AS "advanceCredit",verification_status AS "verificationStatus",created_at AS "createdAt",status`,
        [receiptId,memberId,selectedCycleId,paidDate,Number(cycleMember.rows[0].shares),amount,collectorId,req.user.id,receiptSource,verification,notes ?? "",idempotencyKey ?? null,previousDueApplied,currentPeriodApplied,advanceCredit,tanPeriodId],
     );
-    await auditOn(client, req.user.id, "PAYMENT_POSTED", `${receiptId}: BDT ${amount}; previous due ${previousDueApplied}; current period ${currentPeriodApplied}; advance credit ${advanceCredit}; receiver ${req.user.role}`, "payment", String(r.rows[0].id), {
+    await auditOn(client, req.user.id, "PAYMENT_POSTED", `${receiptId}: BDT ${amount}; Previous Due applied ${previousDueApplied}; Current Period applied ${currentPeriodApplied}; Advance Credit ${advanceCredit}; Previous Due remaining ${remainingPreviousDue}; receiver ${req.user.role}`, "payment", String(r.rows[0].id), {
       memberId,
       cycleId: selectedCycleId,
       relatedTransactionId: receiptId,
@@ -2726,6 +2746,10 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
         previousDueApplied,
         currentPeriodApplied,
         advanceCredit,
+        remainingPreviousDue,
+        remainingCurrentPeriodDue,
+        remainingTotalDue,
+        allocationDecision,
       },
     });
     await client.query("COMMIT");
@@ -2735,6 +2759,10 @@ router.post("/payments", requireAuth, async (req: AuthedRequest, res) => {
        collectorName: req.user.role === "COLLECTOR" ? req.user.name : null,
       receiverName: req.user.name,
       receiptSource,
+      remainingPreviousDue,
+      remainingCurrentPeriodDue,
+      remainingTotalDue,
+      allocationDecision,
     });
   } catch (error) {
     await client.query("ROLLBACK");

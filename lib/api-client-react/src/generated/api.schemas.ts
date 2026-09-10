@@ -698,6 +698,10 @@ export interface Payment {
   previousDueApplied?: number;
   currentPeriodApplied?: number;
   advanceCredit?: number;
+  remainingPreviousDue?: number;
+  remainingCurrentPeriodDue?: number;
+  remainingTotalDue?: number;
+  allocationDecision?: string;
   createdAt: string;
   status: string;
 }
@@ -808,6 +812,32 @@ export interface MemberImportResult {
   previewRows?: MemberImportPreviewRow[];
 }
 
+export type PaymentDuplicateReviewCode = typeof PaymentDuplicateReviewCode[keyof typeof PaymentDuplicateReviewCode];
+
+
+export const PaymentDuplicateReviewCode = {
+  DUPLICATE_PAYMENT_REVIEW_REQUIRED: 'DUPLICATE_PAYMENT_REVIEW_REQUIRED',
+} as const;
+
+export interface PaymentDuplicateRecord {
+  id: number;
+  receiptId: string;
+  amount: number;
+  previousDueApplied: number;
+  currentPeriodApplied: number;
+  advanceCredit: number;
+  createdAt: string;
+}
+
+export interface PaymentDuplicateReview {
+  error: string;
+  code: PaymentDuplicateReviewCode;
+  memberId: number;
+  cycleId: number;
+  collectionDate: string;
+  existingPayments: PaymentDuplicateRecord[];
+}
+
 export type PaymentInputVerificationMethod = typeof PaymentInputVerificationMethod[keyof typeof PaymentInputVerificationMethod];
 
 
@@ -820,7 +850,7 @@ export const PaymentInputVerificationMethod = {
 
 export interface PaymentInput {
   memberId: number;
-  cycleId?: number;
+  cycleId: number;
   collectionDate?: string;
   notes?: string;
   amount: number;
