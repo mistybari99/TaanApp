@@ -429,6 +429,20 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
       status: "PAID",
       reference: sameKeyPayoutPayload.reference,
     }]);
+    const sameKeyAudits = await pool.query(
+      `SELECT id
+         FROM fund_audit
+        WHERE actor_id=$1 AND cycle_id=$2 AND action='DRAW_PAYOUT_RECORDED'
+          AND entity_type='draw_disbursement' AND entity_id=$3`,
+      [fixture.ownerId, fixture.cycleId, String(sameKeyBodies[0].payoutId)],
+    );
+    assert.equal(sameKeyAudits.rows.length, 1);
+    const balancesAfterSameKeyPayout = await request(baseUrl, "/api/cash-custody/balances", fixture.ownerToken);
+    assert.equal(balancesAfterSameKeyPayout.status, 200);
+    const sameKeyBalanceRows = await balancesAfterSameKeyPayout.json() as Array<{ userId: number; availableAmount: number; drawPayouts: number }>;
+    const sameKeyOwnerBalance = sameKeyBalanceRows.find((row) => row.userId === fixture.ownerId);
+    assert.equal(sameKeyOwnerBalance?.availableAmount, 150);
+    assert.equal(sameKeyOwnerBalance?.drawPayouts, 50);
     const sameKeyReversal = await request(baseUrl, `/api/draw-disbursements/${sameKeyBodies[0].payoutId}/reverse`, fixture.ownerToken, {
       reason: "Synthetic same-key retry cleanup",
     });

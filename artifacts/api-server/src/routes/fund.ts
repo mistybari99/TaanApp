@@ -2251,6 +2251,9 @@ router.post("/draws/:id/disbursement", requireAuth, delegatedPermission("PAYOUT_
   let payoutCycleId: number | null = null;
   try {
     await client.query("BEGIN");
+    if (idempotencyKey) {
+      await transactionLock(client, `draw-disbursement-idempotency:${payerUserId}:${idempotencyKey}`);
+    }
     await transactionLock(client, `draw-disbursement:${drawId}`);
     if (idempotencyKey) {
       const replay = await client.query(
