@@ -629,6 +629,16 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     assert.match(drawExportCsv, new RegExp(`${prefix}-payout-replacement`));
     assert.equal(drawExportCsv.split("\n").filter((line) => line.includes(prefix)).length, 3);
 
+    const allCycleDrawExport = await request(
+      baseUrl,
+      "/api/reports/export?type=draws",
+      fixture.ownerToken,
+    );
+    assert.equal(allCycleDrawExport.status, 200);
+    const allCycleDrawExportCsv = await allCycleDrawExport.text();
+    assert.match(allCycleDrawExportCsv, new RegExp(`${prefix}-payout-replacement`));
+    assert.equal(allCycleDrawExportCsv.split("\n").filter((line) => line.includes(prefix)).length, 3);
+
     const handoverReplay = await request(baseUrl, "/api/cash-handovers", fixture.collectorToken, handoverPayload);
     assert.equal(handoverReplay.status, 200);
     const handoverReplayBody = await handoverReplay.json() as { id: number };

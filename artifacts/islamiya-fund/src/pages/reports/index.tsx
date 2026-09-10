@@ -20,7 +20,7 @@ export default function ReportsPage() {
   const selectedCycle = cycles?.find((cycle) => String(cycle.id) === cycleId)
   const scopeLabel = selectedCycle
     ? `Cycle #${selectedCycle.cycleNumber} — ${selectedCycle.name}`
-    : "Active cycle (default)"
+    : "All cycles (default)"
   const dateLabel = startDate || endDate
     ? `${startDate || "any date"} to ${endDate || "any date"}`
     : "all payout dates"
@@ -46,7 +46,7 @@ export default function ReportsPage() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      const suffix = type === "draws" ? `_${cycleId ? `cycle-${cycleId}` : "active-cycle"}${startDate || endDate ? `_${startDate || "start"}-to-${endDate || "end"}` : ""}` : ""
+      const suffix = type === "draws" ? `_${cycleId ? `cycle-${cycleId}` : "all-cycles"}${startDate || endDate ? `_${startDate || "start"}-to-${endDate || "end"}` : ""}` : ""
       a.download = `ISLAMIYA_Revolving_Fund_${type}_Report${suffix}.csv`
       document.body.appendChild(a)
       a.click()
@@ -111,23 +111,23 @@ export default function ReportsPage() {
       <Card>
         <CardHeader>
           <CardTitle>ডাটা ব্যাকআপ (CSV Backup)</CardTitle>
-            <CardDescription>ডাউনলোড করা ফাইল Google Drive-এ manually সংরক্ষণ করতে পারবেন। Draw export-এ active বা নির্বাচিত completed cycle-এর payout history থাকবে।</CardDescription>
+            <CardDescription>ডাউনলোড করা ফাইল Google Drive-এ manually সংরক্ষণ করতে পারবেন। Draw export-এ defaultভাবে active ও completed সব cycle-এর payout history থাকবে।</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
             <div>
               <p className="font-medium">Draw payout ledger scope</p>
-              <p className="text-xs text-muted-foreground">চক্র বাছাই না করলে active cycle ব্যবহার হবে। তারিখের সীমা payout date অনুযায়ী inclusive হবে।</p>
+              <p className="text-xs text-muted-foreground">চক্র বাছাই না করলে active ও completed সব cycle থাকবে। তারিখের সীমা payout date অনুযায়ী inclusive হবে।</p>
             </div>
             <div className="grid gap-3 md:grid-cols-3">
               <div className="space-y-1.5">
                 <Label htmlFor="draw-export-cycle">Cycle</Label>
-                <Select value={cycleId || "active"} onValueChange={(value) => setCycleId(value === "active" ? "" : value)}>
+                <Select value={cycleId || "all"} onValueChange={(value) => setCycleId(value === "all" ? "" : value)}>
                   <SelectTrigger id="draw-export-cycle">
-                    <SelectValue placeholder="Active cycle (default)" />
+                    <SelectValue placeholder="All cycles (default)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="active">Active cycle (default)</SelectItem>
+                    <SelectItem value="all">All cycles (default)</SelectItem>
                     {cycles?.map((cycle) => (
                       <SelectItem key={cycle.id} value={String(cycle.id)}>
                         Cycle #{cycle.cycleNumber} — {cycle.name} ({cycle.status})

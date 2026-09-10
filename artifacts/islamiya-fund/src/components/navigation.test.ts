@@ -15,6 +15,7 @@ const ownerMoreHrefs = [
 ]
 
 const collectorMoreHrefs = ["/cash-custody", "/draw-history", "/member-history"]
+const cashReceiverMoreHrefs = ["/cash-custody", "/draw-history", "/member-history"]
 const shellSource = readFileSync(new URL("./shell.tsx", import.meta.url), "utf8")
 
 test("Owner More navigation exposes only Owner destinations", () => {
@@ -25,8 +26,12 @@ test("Collector More navigation exposes only Collector destinations", () => {
   assert.deepEqual(getMoreItems("COLLECTOR").map((item) => item.href), collectorMoreHrefs)
 })
 
+test("Cash Receiver More navigation exposes only Cash Receiver destinations", () => {
+  assert.deepEqual(getMoreItems("CASH_RECEIVER").map((item) => item.href), cashReceiverMoreHrefs)
+})
+
 test("More destinations have an accessible name, helper id, and unique route", () => {
-  for (const role of ["OWNER", "COLLECTOR"] as const) {
+  for (const role of ["OWNER", "COLLECTOR", "CASH_RECEIVER"] as const) {
     const items = getMoreItems(role)
     assert.equal(new Set(items.map((item) => item.href)).size, items.length)
 
@@ -59,6 +64,8 @@ test("More sheet keeps group context and restores the previous scroll position",
   assert.match(shellSource, /data-more-nav-group=\{group\}/)
   assert.match(shellSource, /sticky top-0 z-10/)
   assert.match(shellSource, /moreScrollTopRef/)
+  assert.match(shellSource, /moreScrollUserIdRef/)
+  assert.match(shellSource, /moreScrollTopRef\.current = 0/)
   assert.match(shellSource, /moreScrollRef\.current\?\.scrollTo/)
   assert.match(shellSource, /onScroll=\{\(event\) =>/)
 })

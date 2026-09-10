@@ -52,12 +52,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [logoutOpen, setLogoutOpen] = React.useState(false)
   const moreScrollRef = React.useRef<HTMLDivElement>(null)
   const moreScrollTopRef = React.useRef(0)
+  const moreScrollUserIdRef = React.useRef<number | null>(null)
 
   React.useEffect(() => {
     if (!isLoading && !user && location !== "/") {
       setLocation("/")
     }
   }, [user, isLoading, location, setLocation])
+
+  React.useEffect(() => {
+    const userId = user?.id ?? null
+    if (moreScrollUserIdRef.current !== userId) {
+      moreScrollTopRef.current = 0
+      moreScrollRef.current?.scrollTo({ top: 0 })
+      moreScrollUserIdRef.current = userId
+    }
+  }, [user?.id])
 
   React.useEffect(() => {
     if (!moreOpen) return
