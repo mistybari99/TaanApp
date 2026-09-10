@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import app from "./app";
+import { businessDateInDhaka } from "./routes/fund";
 import { pool } from "@workspace/db";
 
 const prefix = `CYCLE-PERM-${process.pid}-${Date.now()}`;
@@ -98,6 +99,7 @@ test("cycle-scoped delegated access cannot be used on another cycle", async () =
       note: "Synthetic cycle-only payout approval",
     });
     assert.equal(approvalGrant.status, 201);
+    const approvalGrantId = Number((await approvalGrant.json() as { id: number }).id);
 
     const payoutDate = new Date().toISOString().slice(0, 10);
     const inScopePayout = await post(`/api/draws/${firstDrawId}/disbursement`, collectorToken, {
@@ -108,6 +110,26 @@ test("cycle-scoped delegated access cannot be used on another cycle", async () =
       reference: `${prefix}-first-payout`,
     });
     assert.equal(inScopePayout.status, 201);
+    await pool.query("UPDATE fund_user_permissions SET expires_at=now()-interval '1 minute' WHERE id=$1", [approvalGrantId]);
+    const expiredApproval = await post(`/api/draws/${firstDrawId}/disbursement`, collectorToken, {
+      payerUserId: collectorId,
+      amount: 100,
+      payoutDate,
+      reference: `${prefix}-expired-approval`,
+    });
+    assert.equal(expiredApproval.status, 403);
+    await pool.query("UPDATE fund_user_permissions SET expires_at=NULL WHERE id=$1", [approvalGrantId]);
+    const revokeApproval = await post(`/api/permissions/${approvalGrantId}/revoke`, ownerToken, {
+      reason: "Synthetic payout approval grant revoked",
+    });
+    assert.equal(revokeApproval.status, 200);
+    const revokedApproval = await post(`/api/draws/${firstDrawId}/disbursement`, collectorToken, {
+      payerUserId: collectorId,
+      amount: 100,
+      payoutDate,
+      reference: `${prefix}-revoked-approval`,
+    });
+    assert.equal(revokedApproval.status, 403);
 
     const crossCyclePayout = await post(`/api/draws/${secondDrawId}/disbursement`, collectorToken, {
       payerUserId: collectorId,
@@ -146,11 +168,26 @@ test("cycle-scoped delegated access cannot be used on another cycle", async () =
       note: "Synthetic cycle-only payout reversal",
     });
     assert.equal(payoutReversalGrant.status, 201);
+    const payoutReversalGrantId = Number((await payoutReversalGrant.json() as { id: number }).id);
 
     const inScopePayoutReversal = await post(`/api/draw-disbursements/${firstPayoutId}/reverse`, collectorToken, {
       reason: "Synthetic in-scope payout reversal",
     });
     assert.equal(inScopePayoutReversal.status, 200);
+    await pool.query("UPDATE fund_user_permissions SET expires_at=now()-interval '1 minute' WHERE id=$1", [payoutReversalGrantId]);
+    const expiredPayoutReversal = await post(`/api/draw-disbursements/${firstPayoutId}/reverse`, collectorToken, {
+      reason: "Expired grant must remain denied",
+    });
+    assert.equal(expiredPayoutReversal.status, 403);
+    await pool.query("UPDATE fund_user_permissions SET expires_at=NULL WHERE id=$1", [payoutReversalGrantId]);
+    const revokePayoutReversal = await post(`/api/permissions/${payoutReversalGrantId}/revoke`, ownerToken, {
+      reason: "Synthetic payout reversal grant revoked",
+    });
+    assert.equal(revokePayoutReversal.status, 200);
+    const revokedPayoutReversal = await post(`/api/draw-disbursements/${firstPayoutId}/reverse`, collectorToken, {
+      reason: "Revoked grant must remain denied",
+    });
+    assert.equal(revokedPayoutReversal.status, 403);
 
     const secondPayoutId = Number((await pool.query(
       "SELECT id FROM fund_draw_disbursements WHERE draw_id=$1 AND status='PAID'",
@@ -191,6 +228,12 @@ test("cycle-scoped delegated access cannot be used on another cycle", async () =
     assert.equal(crossCyclePaymentReversal.status, 403);
 
     const paymentGrant = await paymentReversalGrant.json() as { id: number };
+    await pool.query("UPDATE fund_user_permissions SET expires_at=now()-interval '1 minute' WHERE id=$1", [paymentGrant.id]);
+    const expiredPaymentReversal = await post(`/api/payments/${firstPaymentId}/reverse`, collectorToken, {
+      reason: "Expired grant must remain denied",
+    });
+    assert.equal(expiredPaymentReversal.status, 403);
+    await pool.query("UPDATE fund_user_permissions SET expires_at=NULL WHERE id=$1", [paymentGrant.id]);
     const revokeResponse = await post(`/api/permissions/${paymentGrant.id}/revoke`, ownerToken, {
       reason: "Synthetic cycle grant revoked",
     });
@@ -201,6 +244,14 @@ test("cycle-scoped delegated access cannot be used on another cycle", async () =
       reason: "Revoked grant must remain denied",
     });
     assert.equal(revokedCycleGrant.status, 403);
+
+    const ownerOnlyChecks = await Promise.all([
+      post(`/api/cycles/${firstCycleId}/tan/pause`, collectorToken, { reason: "Delegated staff must not pause TAN" }),
+      post("/api/cycles", collectorToken, { name: "Delegated staff must not create cycles" }),
+      post("/api/share-transfers", collectorToken, { cycleId: firstCycleId, fromMemberId: memberId, toMemberId: memberId, quantity: 1 }),
+      post("/api/collectors", collectorToken, { name: "Delegated staff must not manage users" }),
+    ]);
+    assert.deepEqual(ownerOnlyChecks.map((response) => response.status), [403, 403, 403, 403]);
   } finally {
     if (server) {
       await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
@@ -226,6 +277,213 @@ test("cycle-scoped delegated access cannot be used on another cycle", async () =
   }
 });
 
+
 test.after(async () => {
   await pool.end();
+});
+
+test("advance allocation and financial correction remain cycle-scoped after expiry or revocation", async () => {
+  const ownerToken = `${prefix}-actions-owner-token`;
+  const collectorToken = `${prefix}-actions-collector-token`;
+  let server: ReturnType<typeof app.listen> | undefined;
+  let ownerId = 0;
+  let collectorId = 0;
+  let sourceMemberId = 0;
+  let receiverMemberId = 0;
+  let firstCycleId = 0;
+  let secondCycleId = 0;
+  let firstTransferId = 0;
+  let secondTransferId = 0;
+  let previousActiveCycleId = 0;
+
+  try {
+    const previousActive = await pool.query("UPDATE fund_cycles SET status='COMPLETED' WHERE status='ACTIVE' RETURNING id");
+    previousActiveCycleId = Number(previousActive.rows[0]?.id ?? 0);
+    const owner = await pool.query(
+      `INSERT INTO fund_users(name,username,password_hash,role)
+       VALUES($1,$2,'synthetic','OWNER') RETURNING id`,
+      [`${prefix} actions owner`, `${prefix}-actions-owner`],
+    );
+    ownerId = Number(owner.rows[0].id);
+    const collector = await pool.query(
+      `INSERT INTO fund_users(name,username,password_hash,role)
+       VALUES($1,$2,'synthetic','COLLECTOR') RETURNING id`,
+      [`${prefix} actions collector`, `${prefix}-actions-collector`],
+    );
+    collectorId = Number(collector.rows[0].id);
+    const members = await pool.query(
+      `INSERT INTO fund_members(member_id,name,mobile,address,shares,daily_amount,joining_date,status)
+       VALUES
+         ($1,$2,$3,'synthetic',1,100,CURRENT_DATE,'active'),
+         ($4,$5,$6,'synthetic',1,100,CURRENT_DATE,'active')
+       RETURNING id,member_id`,
+      [
+        `${prefix}-actions-source`, `${prefix} actions source`, `017${String(process.pid).padStart(8, "0")}`,
+        `${prefix}-actions-receiver`, `${prefix} actions receiver`, `016${String(process.pid).padStart(8, "0")}`,
+      ],
+    );
+    sourceMemberId = Number(members.rows.find((row) => row.member_id === `${prefix}-actions-source`)?.id);
+    receiverMemberId = Number(members.rows.find((row) => row.member_id === `${prefix}-actions-receiver`)?.id);
+    const cycles = await pool.query(
+      `INSERT INTO fund_cycles(cycle_number,name,start_date,tracking_start_date,end_date,daily_per_share,status,notes)
+       VALUES
+         ((SELECT COALESCE(MAX(cycle_number),0)+1 FROM fund_cycles),$1,CURRENT_DATE,CURRENT_DATE,NULL,100,'ACTIVE',$3),
+         ((SELECT COALESCE(MAX(cycle_number),0)+2 FROM fund_cycles),$2,CURRENT_DATE,CURRENT_DATE,CURRENT_DATE+1,100,'COMPLETED',$3)
+       RETURNING id,name`,
+      [`${prefix} actions active`, `${prefix} actions completed`, prefix],
+    );
+    firstCycleId = Number(cycles.rows.find((row) => row.name === `${prefix} actions active`)?.id);
+    secondCycleId = Number(cycles.rows.find((row) => row.name === `${prefix} actions completed`)?.id);
+    await pool.query(
+      `INSERT INTO fund_cycle_members(cycle_id,member_id,shares,daily_contribution)
+       VALUES
+         ($1,$2,1,100),($1,$3,1,100),
+         ($4,$2,1,100),($4,$3,1,100)`,
+      [firstCycleId, sourceMemberId, receiverMemberId, secondCycleId],
+    );
+    const transfers = await pool.query(
+      `INSERT INTO fund_share_transfers
+         (transfer_id,cycle_id,from_member_id,to_member_id,share_quantity,accumulated_value,transfer_date,notes,created_by)
+       VALUES
+         ($1,$3,$5,$6,1,100,CURRENT_DATE,'Synthetic active transfer',$2),
+         ($4,$7,$5,$6,1,100,CURRENT_DATE,'Synthetic completed transfer',$2)
+       RETURNING id,cycle_id`,
+      [
+        `${prefix}-actions-active-transfer`, ownerId, firstCycleId,
+        `${prefix}-actions-completed-transfer`, sourceMemberId, receiverMemberId, secondCycleId,
+      ],
+    );
+    firstTransferId = Number(transfers.rows.find((row) => Number(row.cycle_id) === firstCycleId)?.id);
+    secondTransferId = Number(transfers.rows.find((row) => Number(row.cycle_id) === secondCycleId)?.id);
+    await pool.query(
+      `INSERT INTO fund_sessions(token_hash,user_id,expires_at)
+       VALUES($1,$2,now()+interval '10 minutes'),($3,$4,now()+interval '10 minutes')`,
+      [hashToken(ownerToken), ownerId, hashToken(collectorToken), collectorId],
+    );
+
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server?.once("listening", resolve));
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const post = (path: string, token: string, body: unknown) => fetch(`${baseUrl}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `irf_session=${token}` },
+      body: JSON.stringify(body),
+    });
+    const grant = async (permission: string) => {
+      const response = await post("/api/permissions", ownerToken, {
+        userId: collectorId,
+        permission,
+        cycleId: firstCycleId,
+        note: `Synthetic cycle-only ${permission}`,
+      });
+      assert.equal(response.status, 201);
+      return Number((await response.json() as { id: number }).id);
+    };
+    const setExpired = (id: number) => pool.query(
+      "UPDATE fund_user_permissions SET expires_at=now()-interval '1 minute' WHERE id=$1",
+      [id],
+    );
+    const restoreExpiry = (id: number) => pool.query(
+      "UPDATE fund_user_permissions SET expires_at=NULL WHERE id=$1",
+      [id],
+    );
+    const revoke = async (id: number, reason: string) => {
+      const response = await post(`/api/permissions/${id}/revoke`, ownerToken, { reason });
+      assert.equal(response.status, 200);
+    };
+
+    const advanceGrantId = await grant("ADVANCE_ALLOCATION");
+    const dueDate = businessDateInDhaka();
+    const activeAdvance = await post("/api/due-entries", collectorToken, {
+      cycleId: firstCycleId,
+      memberId: sourceMemberId,
+      amount: 25,
+      dueDate,
+      reason: "Synthetic delegated advance allocation",
+    });
+    assert.equal(activeAdvance.status, 201);
+    const crossCycleAdvance = await post("/api/due-entries", collectorToken, {
+      cycleId: secondCycleId,
+      memberId: sourceMemberId,
+      amount: 25,
+      dueDate,
+      reason: "Cross-cycle advance must remain denied",
+    });
+    assert.equal(crossCycleAdvance.status, 403);
+    await setExpired(advanceGrantId);
+    const expiredAdvance = await post("/api/due-entries", collectorToken, {
+      cycleId: firstCycleId,
+      memberId: sourceMemberId,
+      amount: 25,
+      dueDate,
+      reason: "Expired advance grant must remain denied",
+    });
+    assert.equal(expiredAdvance.status, 403);
+    await restoreExpiry(advanceGrantId);
+    await revoke(advanceGrantId, "Synthetic advance grant revoked");
+    const revokedAdvance = await post("/api/due-entries", collectorToken, {
+      cycleId: firstCycleId,
+      memberId: sourceMemberId,
+      amount: 25,
+      dueDate,
+      reason: "Revoked advance grant must remain denied",
+    });
+    assert.equal(revokedAdvance.status, 403);
+
+    const correctionGrantId = await grant("FINANCIAL_CORRECTION");
+    const activeCorrection = await post(`/api/share-transfers/${firstTransferId}/settlement`, collectorToken, {
+      amount: 50,
+      notes: "Synthetic delegated financial correction",
+    });
+    assert.equal(activeCorrection.status, 201);
+    const crossCycleCorrection = await post(`/api/share-transfers/${secondTransferId}/settlement`, collectorToken, {
+      amount: 50,
+      notes: "Cross-cycle correction must remain denied",
+    });
+    assert.equal(crossCycleCorrection.status, 403);
+    await setExpired(correctionGrantId);
+    const expiredCorrection = await post(`/api/share-transfers/${firstTransferId}/settlement`, collectorToken, {
+      amount: 25,
+      notes: "Expired correction grant must remain denied",
+    });
+    assert.equal(expiredCorrection.status, 403);
+    await restoreExpiry(correctionGrantId);
+    await revoke(correctionGrantId, "Synthetic correction grant revoked");
+    const revokedCorrection = await post(`/api/share-transfers/${firstTransferId}/settlement`, collectorToken, {
+      amount: 25,
+      notes: "Revoked correction grant must remain denied",
+    });
+    assert.equal(revokedCorrection.status, 403);
+  } finally {
+    if (server) {
+      await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
+    }
+    if (ownerId || collectorId) {
+      await pool.query("DELETE FROM fund_user_permissions WHERE user_id=ANY($1::int[]) OR granted_by=ANY($1::int[])", [[ownerId, collectorId].filter(Boolean)]);
+    }
+    if (firstCycleId || secondCycleId) {
+      const cycleIds = [firstCycleId, secondCycleId].filter(Boolean);
+      await pool.query("DELETE FROM fund_transfer_settlements WHERE cycle_id=ANY($1::int[])", [cycleIds]);
+      await pool.query("DELETE FROM fund_share_transfers WHERE cycle_id=ANY($1::int[])", [cycleIds]);
+      await pool.query("DELETE FROM fund_due_entries WHERE cycle_id=ANY($1::int[])", [cycleIds]);
+      await pool.query("DELETE FROM fund_audit WHERE cycle_id=ANY($1::int[])", [cycleIds]);
+      await pool.query("DELETE FROM fund_cycle_members WHERE cycle_id=ANY($1::int[])", [cycleIds]);
+      await pool.query("DELETE FROM fund_cycles WHERE id=ANY($1::int[])", [cycleIds]);
+    }
+    if (ownerId || collectorId) {
+      await pool.query("DELETE FROM fund_audit WHERE actor_id=ANY($1::int[])", [[ownerId, collectorId].filter(Boolean)]);
+      await pool.query("DELETE FROM fund_sessions WHERE user_id=ANY($1::int[])", [[ownerId, collectorId].filter(Boolean)]);
+    }
+    if (sourceMemberId || receiverMemberId) {
+      await pool.query("DELETE FROM fund_members WHERE id=ANY($1::int[])", [[sourceMemberId, receiverMemberId].filter(Boolean)]);
+    }
+    if (ownerId || collectorId) {
+      await pool.query("DELETE FROM fund_users WHERE id=ANY($1::int[])", [[ownerId, collectorId].filter(Boolean)]);
+    }
+    if (previousActiveCycleId) {
+      await pool.query("UPDATE fund_cycles SET status='ACTIVE' WHERE id=$1", [previousActiveCycleId]);
+    }
+  }
 });
