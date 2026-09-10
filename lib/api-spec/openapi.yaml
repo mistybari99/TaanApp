@@ -405,6 +405,11 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/PermissionInput" } } }
       responses:
         "201": { description: Permission granted, content: { application/json: { schema: { $ref: "#/components/schemas/PermissionRecord" } } } }
+  /permissions/mine:
+    get:
+      operationId: listMyPermissions
+      responses:
+        "200": { description: Delegated permissions for the signed-in staff member, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/PermissionRecord" } } } } }
   /permissions/{id}/revoke:
     post:
       operationId: revokePermission
@@ -464,7 +469,7 @@ components:
         active: { type: boolean }
     PermissionRecord:
       type: object
-      required: [id, userId, userName, username, role, permission, createdAt]
+      required: [id, userId, userName, username, role, permission, status, createdAt]
       properties:
         id: { type: integer }
         userId: { type: integer }
@@ -472,6 +477,7 @@ components:
         username: { type: string }
         role: { type: string, enum: [COLLECTOR, CASH_RECEIVER] }
         permission: { type: string, enum: [FULL_ACCESS, PAYMENT_REVERSAL, PAYOUT_APPROVAL, PAYOUT_REVERSAL, ADVANCE_ALLOCATION, FINANCIAL_CORRECTION, DRAW_DATE_CORRECTION] }
+        status: { type: string, enum: [ACTIVE, EXPIRED, REVOKED] }
         cycleId: { type: integer, nullable: true }
         expiresAt: { type: string, nullable: true }
         revokedAt: { type: string, nullable: true }

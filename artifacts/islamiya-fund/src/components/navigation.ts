@@ -39,7 +39,7 @@ export const navItems: NavItem[] = [
   { href: "/collectors", icon: UserSquare, labelBn: "কর্মী", labelEn: "Staff", roles: ["OWNER"], group: "admin" },
   { href: "/payments", icon: Receipt, labelBn: "লেনদেন", labelEn: "Payments", roles: ["OWNER", "COLLECTOR", "CASH_RECEIVER"], group: "finance", mobilePriority: 4 },
   { href: "/cash-custody", icon: ArrowDownToLine, labelBn: "নগদ custody", labelEn: "Cash custody", roles: ["OWNER", "COLLECTOR", "CASH_RECEIVER"], group: "finance" },
-  { href: "/draws", icon: Trophy, labelBn: "শুক্রবার ড্র", labelEn: "Friday Draw", roles: ["OWNER"], group: "operate", mobilePriority: 5 },
+  { href: "/draws", icon: Trophy, labelBn: "শুক্রবার ড্র", labelEn: "Friday Draw", roles: ["OWNER", "COLLECTOR", "CASH_RECEIVER"], group: "operate", mobilePriority: 5 },
   { href: "/draw-history", icon: History, labelBn: "ড্র ইতিহাস", labelEn: "Draw History", roles: ["OWNER", "COLLECTOR", "CASH_RECEIVER"], group: "records" },
   { href: "/share-transfers", icon: Repeat2, labelBn: "শেয়ার transfer", labelEn: "Share Transfers", roles: ["OWNER"], group: "finance" },
   { href: "/member-history", icon: History, labelBn: "সদস্য ইতিহাস", labelEn: "Member History", roles: ["OWNER", "COLLECTOR", "CASH_RECEIVER"], group: "records" },

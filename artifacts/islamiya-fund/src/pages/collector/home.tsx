@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react"
-import { useListMembers, useGetDashboard, useCreatePayment, useListCycles, useListCycleMembers, getGetCurrentUserQueryKey, getGetDashboardQueryKey, getListPaymentsQueryKey, getListMembersQueryKey, getListCycleMembersQueryKey, getGetTanQueryKey, useGetTan, getListCollectorTargetsQueryKey, useListCollectorTargets } from "@workspace/api-client-react"
+import { useListMembers, useGetDashboard, useCreatePayment, useListCycles, useListCycleMembers, getGetCurrentUserQueryKey, getGetDashboardQueryKey, getListPaymentsQueryKey, getListMembersQueryKey, getListCycleMembersQueryKey, getGetTanQueryKey, useGetTan, getListCollectorTargetsQueryKey, useListCollectorTargets, useListMyPermissions, getListMyPermissionsQueryKey } from "@workspace/api-client-react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { toast } from "sonner"
 import { formatCurrency } from "@/lib/utils"
-import { Search, UserCheck, CheckCircle2, AlertCircle } from "lucide-react"
+import { Search, UserCheck, CheckCircle2, AlertCircle, ShieldCheck } from "lucide-react"
 import { useSync } from "@/contexts/sync-context"
 import { ReceiptDialog, ReceiptRef } from "@/components/receipt"
 
@@ -29,6 +29,7 @@ export default function CollectorHome() {
   const { data: cycleMembers, isLoading: isCycleMembersLoading } = useListCycleMembers((activeCycle?.id ?? 0) as number, { query: { enabled: Boolean(activeCycle?.id), queryKey: getListCycleMembersQueryKey((activeCycle?.id ?? 0) as number) } })
   const { data: dashboard, refetch: refetchDashboard } = useGetDashboard({ query: { queryKey: getGetDashboardQueryKey(), refetchInterval: 15000 } })
   const { data: collectorTargets } = useListCollectorTargets({ query: { queryKey: getListCollectorTargetsQueryKey(), refetchInterval: 15000 } })
+  const { data: delegatedPermissions } = useListMyPermissions({ query: { queryKey: getListMyPermissionsQueryKey(), refetchInterval: 15000 } })
   
   const { isOnline, addToQueue } = useSync()
   const createPayment = useCreatePayment()
@@ -178,6 +179,37 @@ export default function CollectorHome() {
           </CardContent>
         </Card>
       )}
+
+      <Card className="border-primary/20 bg-primary/5">
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-semibold">Delegated access</p>
+                <span className="text-xs text-muted-foreground">Owner-managed</span>
+              </div>
+              {delegatedPermissions?.filter((permission) => permission.status === "ACTIVE").length ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {delegatedPermissions.filter((permission) => permission.status === "ACTIVE").map((permission) => (
+                    <span key={permission.id} className="rounded-full border border-primary/20 bg-background px-2.5 py-1 text-xs font-medium">
+                      {permission.permission}{permission.cycleId ? ` · Cycle ${permission.cycleId}` : " · all cycles"}
+                      {permission.expiresAt ? ` · until ${new Date(permission.expiresAt).toLocaleDateString()}` : ""}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-1 text-sm text-muted-foreground">No active delegated permissions. Owner-only financial controls remain locked.</p>
+              )}
+              {!!delegatedPermissions?.some((permission) => permission.status !== "ACTIVE") && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {delegatedPermissions.filter((permission) => permission.status === "EXPIRED").length} expired · {delegatedPermissions.filter((permission) => permission.status === "REVOKED").length} revoked
+                </p>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
       {tanData?.tan && (
         <Card className={tanData.activePeriod ? "border-primary/30 bg-primary/5" : "border-amber-300 bg-amber-50"}>
           <CardContent className="p-3">

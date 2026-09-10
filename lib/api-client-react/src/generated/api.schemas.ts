@@ -54,6 +54,15 @@ export const PermissionRecordPermission = {
   DRAW_DATE_CORRECTION: 'DRAW_DATE_CORRECTION',
 } as const;
 
+export type PermissionRecordStatus = typeof PermissionRecordStatus[keyof typeof PermissionRecordStatus];
+
+
+export const PermissionRecordStatus = {
+  ACTIVE: 'ACTIVE',
+  EXPIRED: 'EXPIRED',
+  REVOKED: 'REVOKED',
+} as const;
+
 export interface PermissionRecord {
   id: number;
   userId: number;
@@ -61,6 +70,7 @@ export interface PermissionRecord {
   username: string;
   role: PermissionRecordRole;
   permission: PermissionRecordPermission;
+  status: PermissionRecordStatus;
   cycleId?: number | null;
   expiresAt?: string | null;
   revokedAt?: string | null;

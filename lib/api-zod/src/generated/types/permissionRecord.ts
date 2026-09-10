@@ -7,6 +7,7 @@
  */
 import type { PermissionRecordPermission } from './permissionRecordPermission';
 import type { PermissionRecordRole } from './permissionRecordRole';
+import type { PermissionRecordStatus } from './permissionRecordStatus';
 
 export interface PermissionRecord {
   id: number;
@@ -15,6 +16,7 @@ export interface PermissionRecord {
   username: string;
   role: PermissionRecordRole;
   permission: PermissionRecordPermission;
+  status: PermissionRecordStatus;
   cycleId?: number | null;
   expiresAt?: string | null;
   revokedAt?: string | null;

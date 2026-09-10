@@ -83,6 +83,7 @@ export * from './permissionInputPermission';
 export * from './permissionRecord';
 export * from './permissionRecordPermission';
 export * from './permissionRecordRole';
+export * from './permissionRecordStatus';
 export * from './permissionRevocationInput';
 export * from './previewShareTransferParams';
 export * from './reversalInput';

@@ -330,13 +330,13 @@ export default function CollectorsPage() {
           <h2 className="font-semibold">Current and past delegation</h2>
           <div className="mt-4 space-y-2">
             {(permissions ?? []).length === 0 ? <p className="text-sm text-muted-foreground">এখনো কোনো delegated permission নেই</p> : permissions?.map((permission) => (
-              <div key={permission.id} className={`rounded-lg border p-3 ${permission.revokedAt ? "opacity-60" : ""}`}>
+              <div key={permission.id} className={`rounded-lg border p-3 ${permission.status !== "ACTIVE" ? "opacity-60" : ""}`}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="font-medium">{permission.userName} · {permission.permission}</p>
-                    <p className="text-xs text-muted-foreground">{permission.role} · {permission.expiresAt ? `expires ${new Date(permission.expiresAt).toLocaleString()}` : "permanent"}{permission.note ? ` · ${permission.note}` : ""}</p>
+                    <p className="text-xs text-muted-foreground">{permission.role} · {permission.cycleId ? `Cycle ${permission.cycleId}` : "all cycles"} · {permission.expiresAt ? `expires ${new Date(permission.expiresAt).toLocaleString()}` : "permanent"}{permission.note ? ` · ${permission.note}` : ""}</p>
                   </div>
-                  {permission.revokedAt ? <span className="text-xs text-destructive">Revoked</span> : <Button size="sm" variant="outline" onClick={() => handleRevokePermission(permission.id)} disabled={revokePermission.isPending}>Revoke</Button>}
+                  {permission.status !== "ACTIVE" ? <span className={`text-xs font-semibold ${permission.status === "EXPIRED" ? "text-amber-700" : "text-destructive"}`}>{permission.status}</span> : <Button size="sm" variant="outline" onClick={() => handleRevokePermission(permission.id)} disabled={revokePermission.isPending}>Revoke</Button>}
                 </div>
               </div>
             ))}

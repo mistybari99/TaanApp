@@ -1718,6 +1718,7 @@ export const ListPermissionsResponseItem = zod.object({
   "username": zod.string(),
   "role": zod.enum(['COLLECTOR', 'CASH_RECEIVER']),
   "permission": zod.enum(['FULL_ACCESS', 'PAYMENT_REVERSAL', 'PAYOUT_APPROVAL', 'PAYOUT_REVERSAL', 'ADVANCE_ALLOCATION', 'FINANCIAL_CORRECTION', 'DRAW_DATE_CORRECTION']),
+  "status": zod.enum(['ACTIVE', 'EXPIRED', 'REVOKED']),
   "cycleId": zod.number().int().nullish(),
   "expiresAt": zod.string().nullish(),
   "revokedAt": zod.string().nullish(),
@@ -1747,6 +1748,7 @@ export const GrantPermissionResponse = zod.object({
   "username": zod.string(),
   "role": zod.enum(['COLLECTOR', 'CASH_RECEIVER']),
   "permission": zod.enum(['FULL_ACCESS', 'PAYMENT_REVERSAL', 'PAYOUT_APPROVAL', 'PAYOUT_REVERSAL', 'ADVANCE_ALLOCATION', 'FINANCIAL_CORRECTION', 'DRAW_DATE_CORRECTION']),
+  "status": zod.enum(['ACTIVE', 'EXPIRED', 'REVOKED']),
   "cycleId": zod.number().int().nullish(),
   "expiresAt": zod.string().nullish(),
   "revokedAt": zod.string().nullish(),
@@ -1754,6 +1756,24 @@ export const GrantPermissionResponse = zod.object({
   "createdAt": zod.string(),
   "grantedByName": zod.string().nullish()
 })
+
+
+export const ListMyPermissionsResponseItem = zod.object({
+  "id": zod.number().int(),
+  "userId": zod.number().int(),
+  "userName": zod.string(),
+  "username": zod.string(),
+  "role": zod.enum(['COLLECTOR', 'CASH_RECEIVER']),
+  "permission": zod.enum(['FULL_ACCESS', 'PAYMENT_REVERSAL', 'PAYOUT_APPROVAL', 'PAYOUT_REVERSAL', 'ADVANCE_ALLOCATION', 'FINANCIAL_CORRECTION', 'DRAW_DATE_CORRECTION']),
+  "status": zod.enum(['ACTIVE', 'EXPIRED', 'REVOKED']),
+  "cycleId": zod.number().int().nullish(),
+  "expiresAt": zod.string().nullish(),
+  "revokedAt": zod.string().nullish(),
+  "note": zod.string().optional(),
+  "createdAt": zod.string(),
+  "grantedByName": zod.string().nullish()
+})
+export const ListMyPermissionsResponse = zod.array(ListMyPermissionsResponseItem)
 
 
 export const RevokePermissionParams = zod.object({
@@ -1771,6 +1791,7 @@ export const RevokePermissionResponse = zod.object({
   "username": zod.string(),
   "role": zod.enum(['COLLECTOR', 'CASH_RECEIVER']),
   "permission": zod.enum(['FULL_ACCESS', 'PAYMENT_REVERSAL', 'PAYOUT_APPROVAL', 'PAYOUT_REVERSAL', 'ADVANCE_ALLOCATION', 'FINANCIAL_CORRECTION', 'DRAW_DATE_CORRECTION']),
+  "status": zod.enum(['ACTIVE', 'EXPIRED', 'REVOKED']),
   "cycleId": zod.number().int().nullish(),
   "expiresAt": zod.string().nullish(),
   "revokedAt": zod.string().nullish(),

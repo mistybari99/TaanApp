@@ -3368,11 +3368,32 @@ router.get("/permissions", requireAuth, ownerOnly, async (_req, res) => {
     `SELECT p.id,p.user_id AS "userId",u.name AS "userName",u.username,u.role,
             p.permission,p.cycle_id AS "cycleId",p.expires_at AS "expiresAt",
             p.revoked_at AS "revokedAt",p.note,p.created_at AS "createdAt",
-            g.name AS "grantedByName"
+            g.name AS "grantedByName",
+            CASE WHEN p.revoked_at IS NOT NULL THEN 'REVOKED'
+                 WHEN p.expires_at IS NOT NULL AND p.expires_at <= now() THEN 'EXPIRED'
+                 ELSE 'ACTIVE' END AS status
        FROM fund_user_permissions p
        JOIN fund_users u ON u.id=p.user_id
        LEFT JOIN fund_users g ON g.id=p.granted_by
       ORDER BY p.revoked_at NULLS FIRST,p.expires_at NULLS LAST,u.name,p.permission`,
+  );
+  res.json(result.rows);
+});
+router.get("/permissions/mine", requireAuth, async (req: AuthedRequest, res) => {
+  const result = await pool.query(
+    `SELECT p.id,p.user_id AS "userId",u.name AS "userName",u.username,u.role,
+            p.permission,p.cycle_id AS "cycleId",p.expires_at AS "expiresAt",
+            p.revoked_at AS "revokedAt",p.note,p.created_at AS "createdAt",
+            g.name AS "grantedByName",
+            CASE WHEN p.revoked_at IS NOT NULL THEN 'REVOKED'
+                 WHEN p.expires_at IS NOT NULL AND p.expires_at <= now() THEN 'EXPIRED'
+                 ELSE 'ACTIVE' END AS status
+       FROM fund_user_permissions p
+       JOIN fund_users u ON u.id=p.user_id
+       LEFT JOIN fund_users g ON g.id=p.granted_by
+      WHERE p.user_id=$1
+      ORDER BY p.revoked_at NULLS FIRST,p.expires_at NULLS LAST,p.permission`,
+    [req.user!.id],
   );
   res.json(result.rows);
 });
@@ -3412,7 +3433,8 @@ router.post("/permissions", requireAuth, ownerOnly, async (req: AuthedRequest, r
     const inserted = await client.query(
       `INSERT INTO fund_user_permissions(user_id,permission,cycle_id,expires_at,granted_by,note)
        VALUES($1,$2,$3,$4,$5,$6)
-       RETURNING id,user_id AS "userId",permission,cycle_id AS "cycleId",expires_at AS "expiresAt",revoked_at AS "revokedAt",note,created_at AS "createdAt"`,
+       RETURNING id,user_id AS "userId",permission,cycle_id AS "cycleId",expires_at AS "expiresAt",revoked_at AS "revokedAt",note,created_at AS "createdAt",
+         'ACTIVE' AS status`,
       [userId, permission, cycleId, expiresAt?.toISOString() ?? null, req.user!.id, note],
     );
     await auditOn(client, req.user!.id, "PERMISSION_GRANTED", `Granted ${permission} to ${target.rows[0].name}`, "user_permission", String(inserted.rows[0].id), {
@@ -3437,10 +3459,17 @@ router.post("/permissions/:id/revoke", requireAuth, ownerOnly, async (req: Authe
   try {
     await client.query("BEGIN");
     const current = await client.query(
-      `SELECT p.id,p.user_id AS "userId",u.name AS "userName",p.permission,p.cycle_id AS "cycleId",
-              p.revoked_at AS "revokedAt"
-         FROM fund_user_permissions p JOIN fund_users u ON u.id=p.user_id
-        WHERE p.id=$1 FOR UPDATE`,
+      `SELECT p.id,p.user_id AS "userId",u.name AS "userName",u.username,u.role,
+              p.permission,p.expires_at AS "expiresAt",p.note,p.created_at AS "createdAt",
+              g.name AS "grantedByName",p.cycle_id AS "cycleId",
+              p.revoked_at AS "revokedAt",
+              CASE WHEN p.revoked_at IS NOT NULL THEN 'REVOKED'
+                   WHEN p.expires_at IS NOT NULL AND p.expires_at <= now() THEN 'EXPIRED'
+                   ELSE 'ACTIVE' END AS status
+         FROM fund_user_permissions p
+         JOIN fund_users u ON u.id=p.user_id
+         LEFT JOIN fund_users g ON g.id=p.granted_by
+        WHERE p.id=$1 FOR UPDATE OF p`,
       [permissionId],
     );
     if (!current.rows[0]) {
@@ -3461,7 +3490,7 @@ router.post("/permissions/:id/revoke", requireAuth, ownerOnly, async (req: Authe
       afterValue: { ...current.rows[0], revokedBy: req.user!.id, revoked: true },
     });
     await client.query("COMMIT");
-    return res.json({ ...current.rows[0], revokedAt: new Date().toISOString() });
+    return res.json({ ...current.rows[0], revokedAt: new Date().toISOString(), status: "REVOKED" });
   } catch (error) {
     await client.query("ROLLBACK");
     req.log.error({ error }, "Permission revoke failed");

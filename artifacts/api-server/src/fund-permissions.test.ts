@@ -64,8 +64,22 @@ test("Owner may reach Due Entry validation while Collector cannot create entries
       }),
     });
     assert.equal(grantResponse.status, 201);
-    const granted = await grantResponse.json() as { id: number };
+    const granted = await grantResponse.json() as { id: number; status: string };
     assert.ok(granted.id > 0);
+    assert.equal(granted.status, "ACTIVE");
+
+    await pool.query(
+      `INSERT INTO fund_user_permissions(user_id,permission,expires_at,granted_by,note)
+       VALUES($1,'PAYOUT_APPROVAL',now()-interval '1 minute',$2,'Expired synthetic grant')`,
+      [collectorId, (await pool.query("SELECT id FROM fund_users WHERE username=$1", [`${prefix}-owner`])).rows[0].id],
+    );
+    const mineResponse = await fetch(`${baseUrl}/api/permissions/mine`, {
+      headers: { cookie: `irf_session=${collectorToken}` },
+    });
+    assert.equal(mineResponse.status, 200);
+    const mine = await mineResponse.json() as Array<{ permission: string; status: string }>;
+    assert.equal(mine.find((permission) => permission.permission === "ADVANCE_ALLOCATION")?.status, "ACTIVE");
+    assert.equal(mine.find((permission) => permission.permission === "PAYOUT_APPROVAL")?.status, "EXPIRED");
 
     const delegatedResponse = await fetch(`${baseUrl}/api/due-entries`, {
       method: "POST",
@@ -80,6 +94,7 @@ test("Owner may reach Due Entry validation while Collector cannot create entries
       body: JSON.stringify({ reason: "Coverage ended" }),
     });
     assert.equal(revokeResponse.status, 200);
+    assert.equal((await revokeResponse.json() as { status: string }).status, "REVOKED");
 
     const collectorViewResponse = await fetch(`${baseUrl}/api/members`, {
       headers: { cookie: `irf_session=${collectorToken}` },

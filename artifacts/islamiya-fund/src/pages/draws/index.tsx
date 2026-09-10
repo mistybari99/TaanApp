@@ -15,6 +15,8 @@ import {
   useListCycles,
   useListDraws,
   useReverseDrawDisbursement,
+  useListMyPermissions,
+  getListMyPermissionsQueryKey,
 } from "@workspace/api-client-react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -42,6 +44,13 @@ export function DrawHistoryPage() {
 function DrawSurface({ readOnly }: { readOnly: boolean }) {
   const queryClient = useQueryClient()
   const { data: user } = useGetCurrentUser()
+  const { data: delegatedPermissions } = useListMyPermissions({ query: { queryKey: getListMyPermissionsQueryKey(), refetchInterval: 15000 } })
+  const hasDelegatedPermission = (permission: string) => delegatedPermissions?.some((grant) =>
+    grant.status === "ACTIVE" && (grant.permission === permission || grant.permission === "FULL_ACCESS")
+  ) ?? false
+  const canMoveDrawDate = user?.role === "OWNER" || hasDelegatedPermission("DRAW_DATE_CORRECTION")
+  const canApprovePayout = user?.role === "OWNER" || hasDelegatedPermission("PAYOUT_APPROVAL")
+  const canReversePayout = user?.role === "OWNER" || hasDelegatedPermission("PAYOUT_REVERSAL")
   const { data: cycles, isLoading } = useListCycles({ query: { queryKey: getListCyclesQueryKey() } })
   const [cycleId, setCycleId] = useState<number | null>(null)
   const [form, setForm] = useState({ drawDate: today(), winnerMemberId: "", winningAmount: "", notes: "" })
@@ -238,7 +247,7 @@ function DrawSurface({ readOnly }: { readOnly: boolean }) {
                               {payoutAttempts.length}টি payout attempt
                             </Button>}
                           </td>
-                          <td className="p-3">{!readOnly && user?.role === "OWNER" && <div className="flex flex-wrap gap-2 justify-end"><Button size="sm" variant="ghost" onClick={() => handleMoveDrawDate(draw)} disabled={moveDrawDate.isPending}>তারিখ বদল</Button>{draw.status === "RECORDED" && draw.payoutStatus !== "PAID" ? <Button size="sm" variant="outline" className="gap-1" onClick={() => openPayout(draw)}><ArrowDownToLine className="h-3.5 w-3.5" /> টাকা প্রদান</Button> : draw.payoutStatus === "PAID" ? <Button size="sm" variant="ghost" className="gap-1 text-destructive" onClick={() => handleReversePayout(draw)} disabled={reverseDisbursement.isPending}><RotateCcw className="h-3.5 w-3.5" /> Reverse</Button> : null}</div>}</td>
+                          <td className="p-3">{!readOnly && <div className="flex flex-wrap gap-2 justify-end">{canMoveDrawDate && <Button size="sm" variant="ghost" onClick={() => handleMoveDrawDate(draw)} disabled={moveDrawDate.isPending}>তারিখ বদল</Button>}{draw.status === "RECORDED" && draw.payoutStatus !== "PAID" && canApprovePayout ? <Button size="sm" variant="outline" className="gap-1" onClick={() => openPayout(draw)}><ArrowDownToLine className="h-3.5 w-3.5" /> টাকা প্রদান</Button> : draw.payoutStatus === "PAID" && canReversePayout ? <Button size="sm" variant="ghost" className="gap-1 text-destructive" onClick={() => handleReversePayout(draw)} disabled={reverseDisbursement.isPending}><RotateCcw className="h-3.5 w-3.5" /> Reverse</Button> : null}</div>}</td>
                         </tr>
                         {isExpanded && <tr className="border-t bg-muted/20">
                           <td colSpan={8} className="p-4">
