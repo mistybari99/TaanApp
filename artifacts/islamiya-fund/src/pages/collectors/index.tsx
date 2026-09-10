@@ -345,15 +345,15 @@ export default function CollectorsPage() {
             <p className="text-sm text-muted-foreground">{renewalTargetId ? "Extend the expiry or change the cycle scope in one audited action." : "Owner-only controls আলাদা রেখে নির্দিষ্ট operational access দিন।"}</p>
           </div>
           <div className="space-y-2">
-            <Label>কর্মী</Label>
-            <select disabled={renewalTargetId !== null} className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={permissionForm.userId} onChange={(event) => setPermissionForm({ ...permissionForm, userId: event.target.value })}>
+            <Label htmlFor="permission-user">কর্মী</Label>
+            <select id="permission-user" disabled={renewalTargetId !== null} className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={permissionForm.userId} onChange={(event) => setPermissionForm({ ...permissionForm, userId: event.target.value })}>
               <option value="">কর্মী নির্বাচন করুন</option>
               {staff.filter((user) => user.active).map((user) => <option key={user.id} value={user.id}>{user.name} · {user.role}</option>)}
             </select>
           </div>
           <div className="space-y-2">
-            <Label>Permission</Label>
-            <select disabled={renewalTargetId !== null} className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={permissionForm.permission} onChange={(event) => setPermissionForm({ ...permissionForm, permission: event.target.value })}>
+            <Label htmlFor="permission-kind">Permission</Label>
+            <select id="permission-kind" disabled={renewalTargetId !== null} className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={permissionForm.permission} onChange={(event) => setPermissionForm({ ...permissionForm, permission: event.target.value })}>
               <option value="PAYOUT_APPROVAL">Payout approval</option>
               <option value="PAYOUT_REVERSAL">Payout reversal</option>
               <option value="PAYMENT_REVERSAL">Payment reversal</option>
@@ -364,19 +364,19 @@ export default function CollectorsPage() {
             </select>
           </div>
           <div className="space-y-2">
-            <Label>Cycle scope</Label>
-            <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={permissionForm.cycleId} onChange={(event) => setPermissionForm({ ...permissionForm, cycleId: event.target.value })}>
+            <Label htmlFor="permission-cycle">Cycle scope</Label>
+            <select id="permission-cycle" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={permissionForm.cycleId} onChange={(event) => setPermissionForm({ ...permissionForm, cycleId: event.target.value })}>
               <option value="">All cycles</option>
               {(cycles ?? []).map((cycle) => <option key={cycle.id} value={cycle.id}>{cycle.name} · Cycle {cycle.cycleNumber}</option>)}
             </select>
           </div>
           <div className="space-y-2">
-            <Label>Expiry (optional; blank means permanent)</Label>
-            <Input type="datetime-local" value={permissionForm.expiresAt} onChange={(event) => setPermissionForm({ ...permissionForm, expiresAt: event.target.value })} />
+            <Label htmlFor="permission-expiry">Expiry (optional; blank means permanent)</Label>
+            <Input id="permission-expiry" type="datetime-local" value={permissionForm.expiresAt} onChange={(event) => setPermissionForm({ ...permissionForm, expiresAt: event.target.value })} />
           </div>
           <div className="space-y-2">
-            <Label>কারণ / নোট</Label>
-            <Input value={permissionForm.note} onChange={(event) => setPermissionForm({ ...permissionForm, note: event.target.value })} placeholder="Why this access is needed" />
+            <Label htmlFor="permission-note">কারণ / নোট</Label>
+            <Input id="permission-note" value={permissionForm.note} onChange={(event) => setPermissionForm({ ...permissionForm, note: event.target.value })} placeholder="Why this access is needed" />
           </div>
           <div className="flex flex-wrap gap-2">
             {renewalTargetId ? (
