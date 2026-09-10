@@ -3856,6 +3856,8 @@ router.get("/reports/export", requireAuth, ownerOnly, async (req, res) => {
        JOIN fund_cycles c ON c.id=d.cycle_id
        JOIN fund_members m ON m.id=d.winner_member_id
        LEFT JOIN fund_draw_disbursements pd ON pd.draw_id=d.id
+         AND ($2::date IS NULL OR pd.payout_date >= $2::date)
+         AND ($3::date IS NULL OR pd.payout_date <= $3::date)
        LEFT JOIN fund_users pu ON pu.id=pd.payer_user_id
         WHERE ($1::int IS NULL OR d.cycle_id=$1::int)
           AND (
