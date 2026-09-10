@@ -2,28 +2,18 @@ import * as React from "react"
 import { useLocation, Link } from "wouter"
 import { getGetCurrentUserQueryKey, useGetCurrentUser, useLogout } from "@workspace/api-client-react"
 import {
-  Activity,
-  ArrowDownToLine,
   ChevronRight,
-  FileText,
-  History,
-  LayoutDashboard,
   LogOut,
   Menu,
-  Receipt,
   RefreshCw,
-  Repeat2,
-  Settings,
   ShieldCheck,
-  Trophy,
   UserRound,
-  UserSquare,
-  Users,
-  Wallet,
   WifiOff,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useSync } from "@/contexts/sync-context"
+import { getAllowedItems, getMoreItems, getNavItemAccessibleName, getNavItemHelperId } from "@/components/navigation"
+import type { NavItem } from "@/components/navigation"
 import {
   Dialog,
   DialogContent,
@@ -39,37 +29,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-
-interface NavItem {
-  href: string
-  icon: React.ElementType
-  labelBn: string
-  labelEn: string
-  roles: string[]
-  group: "operate" | "finance" | "records" | "admin"
-  mobilePriority?: number
-}
-
-/*
- * This is the single source of truth for shell visibility. Mobile only changes
- * how these same routes are surfaced.
- */
-const navItems: NavItem[] = [
-  { href: "/owner", icon: LayoutDashboard, labelBn: "ড্যাশবোর্ড", labelEn: "Dashboard", roles: ["OWNER"], group: "operate", mobilePriority: 1 },
-  { href: "/collector", icon: Wallet, labelBn: "সংগ্রহ", labelEn: "Collection", roles: ["COLLECTOR"], group: "operate", mobilePriority: 1 },
-  { href: "/members", icon: Users, labelBn: "সদস্য", labelEn: "Members", roles: ["OWNER", "COLLECTOR", "CASH_RECEIVER"], group: "operate", mobilePriority: 2 },
-  { href: "/cycles", icon: Repeat2, labelBn: "চক্র", labelEn: "Current Cycle", roles: ["OWNER", "COLLECTOR", "CASH_RECEIVER"], group: "operate", mobilePriority: 3 },
-  { href: "/collectors", icon: UserSquare, labelBn: "কর্মী", labelEn: "Staff", roles: ["OWNER"], group: "admin" },
-  { href: "/payments", icon: Receipt, labelBn: "লেনদেন", labelEn: "Payments", roles: ["OWNER", "COLLECTOR", "CASH_RECEIVER"], group: "finance", mobilePriority: 4 },
-  { href: "/cash-custody", icon: ArrowDownToLine, labelBn: "নগদ custody", labelEn: "Cash custody", roles: ["OWNER", "COLLECTOR", "CASH_RECEIVER"], group: "finance" },
-  { href: "/draws", icon: Trophy, labelBn: "শুক্রবার ড্র", labelEn: "Friday Draw", roles: ["OWNER"], group: "operate", mobilePriority: 5 },
-  { href: "/draw-history", icon: History, labelBn: "ড্র ইতিহাস", labelEn: "Draw History", roles: ["OWNER", "COLLECTOR", "CASH_RECEIVER"], group: "records" },
-  { href: "/share-transfers", icon: Repeat2, labelBn: "শেয়ার transfer", labelEn: "Share Transfers", roles: ["OWNER"], group: "finance" },
-  { href: "/member-history", icon: History, labelBn: "সদস্য ইতিহাস", labelEn: "Member History", roles: ["OWNER", "COLLECTOR", "CASH_RECEIVER"], group: "records" },
-  { href: "/reports", icon: FileText, labelBn: "রিপোর্ট", labelEn: "Reports", roles: ["OWNER"], group: "records" },
-  { href: "/settings", icon: Settings, labelBn: "সেটিংস", labelEn: "Settings", roles: ["OWNER"], group: "admin" },
-  { href: "/status", icon: Activity, labelBn: "স্ট্যাটাস", labelEn: "Status", roles: ["OWNER"], group: "admin" },
-]
 
 const groupLabels: Record<NavItem["group"], { bn: string; en: string }> = {
   operate: { bn: "আজকের কাজ", en: "Daily work" },
@@ -102,11 +61,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (!user) return <>{children}</>
 
   const homeHref = user.role === "OWNER" ? "/owner" : user.role === "COLLECTOR" ? "/collector" : "/cash-custody"
-  const allowedItems = navItems.filter((item) => item.roles.includes(user.role))
+  const allowedItems = getAllowedItems(user.role)
   const mobileItems = allowedItems
     .filter((item) => item.mobilePriority !== undefined)
     .sort((a, b) => (a.mobilePriority ?? 99) - (b.mobilePriority ?? 99))
-  const moreItems = allowedItems.filter((item) => item.mobilePriority === undefined)
+  const moreItems = getMoreItems(user.role)
 
   const confirmLogout = () => {
     logout.mutate(undefined, {
@@ -135,13 +94,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const renderNavItem = (item: NavItem, compact = false, withChevron = false) => {
     const active = isItemActive(location, item.href)
+    const helperId = getNavItemHelperId(item.href)
     return (
       <Link
         key={item.href}
         href={item.href}
         onClick={() => setMoreOpen(false)}
         aria-current={active ? "page" : undefined}
-        aria-label={compact ? undefined : `${item.labelBn} (${item.labelEn})`}
+        aria-label={compact ? undefined : getNavItemAccessibleName(item)}
+        aria-describedby={withChevron ? helperId : undefined}
+        data-more-nav-item={withChevron ? item.href : undefined}
         className={cn(
           "group relative flex items-center transition-colors duration-150 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
           compact
@@ -154,16 +116,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
         )}
       >
-        <item.icon className={cn(compact ? "h-5 w-5" : "h-[1.15rem] w-[1.15rem]", "shrink-0")} />
+        <item.icon className={cn(compact ? "h-5 w-5" : "h-[1.15rem] w-[1.15rem]", "shrink-0")} aria-hidden="true" />
         {compact ? (
           <span className="w-full truncate text-[10px] font-semibold leading-tight">{item.labelBn}</span>
         ) : (
-          <span className="flex min-w-0 flex-col text-left leading-tight">
-            <span className="truncate text-sm font-semibold">{item.labelBn}</span>
-            <span className="truncate text-[10px] opacity-70">{item.labelEn}</span>
+          <span className="flex min-w-0 flex-1 flex-col text-left leading-tight">
+            <span className="break-words text-sm font-semibold">{item.labelBn}</span>
+            <span id={withChevron ? helperId : undefined} className="break-words text-[10px] opacity-70">{item.labelEn}</span>
           </span>
         )}
-        {withChevron && <ChevronRight className={cn("ml-auto h-4 w-4 shrink-0", active ? "text-primary-foreground/70" : "text-muted-foreground/60")} aria-hidden="true" />}
+        {withChevron && <ChevronRight data-more-nav-chevron={withChevron ? item.href : undefined} className={cn("ml-auto h-4 w-4 shrink-0", active ? "text-primary-foreground/70" : "text-muted-foreground/60")} aria-hidden="true" />}
       </Link>
     )
   }
@@ -254,7 +216,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <button
           onClick={() => setMoreOpen(true)}
           className={cn(
-            "flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-center text-muted-foreground transition-colors",
+            "flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-center text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
             moreOpen || moreItems.some((item) => isItemActive(location, item.href))
               ? "bg-accent text-accent-foreground"
               : "hover:bg-muted/70 hover:text-foreground",
