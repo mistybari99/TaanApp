@@ -3801,20 +3801,85 @@ const sendCsv = (res: Response, filename: string, headers: string[], rows: unkno
   res.send("\uFEFF" + csv);
 };
 
+type DrawExportFilters = {
+  cycleId: number | null;
+  startDate: string | null;
+  endDate: string | null;
+  error?: string;
+};
+
+const readDrawExportFilters = (req: Request): DrawExportFilters => {
+  const cycleId = req.query.cycleId == null || req.query.cycleId === "" ? null : Number(req.query.cycleId);
+  if (cycleId !== null && (!Number.isInteger(cycleId) || cycleId <= 0)) {
+    return { cycleId, startDate: null, endDate: null, error: "Cycle filter must be a valid cycle" };
+  }
+  const startDate = req.query.startDate == null || req.query.startDate === "" ? null : String(req.query.startDate);
+  const endDate = req.query.endDate == null || req.query.endDate === "" ? null : String(req.query.endDate);
+  if ((startDate !== null && !isIsoDate(startDate)) || (endDate !== null && !isIsoDate(endDate))) {
+    return { cycleId, startDate, endDate, error: "Date filters must use YYYY-MM-DD" };
+  }
+  if (startDate && endDate && startDate > endDate) {
+    return { cycleId, startDate, endDate, error: "Start date cannot be after end date" };
+  }
+  return { cycleId, startDate, endDate };
+};
+
+const drawExportCycleFilter = "($1::int IS NULL OR d.cycle_id=$1::int)";
+const drawExportPayoutJoinFilter = `($2::date IS NULL OR pd.payout_date >= $2::date)
+         AND ($3::date IS NULL OR pd.payout_date <= $3::date)`;
+const drawExportSelectionFilter = `(
+            ($2::date IS NULL AND $3::date IS NULL)
+            OR EXISTS (
+              SELECT 1
+              FROM fund_draw_disbursements pfilter
+              WHERE pfilter.draw_id=d.id
+                AND ($2::date IS NULL OR pfilter.payout_date >= $2::date)
+                AND ($3::date IS NULL OR pfilter.payout_date <= $3::date)
+            )
+          )`;
+
+router.get("/reports/export/preview", requireAuth, ownerOnly, async (req, res) => {
+  const type = String(req.query.type ?? "draws").toLowerCase().replace(/[^a-z-]/g, "");
+  if (type !== "draws") {
+    res.status(400).json({ error: "Preview is only available for draw exports" });
+    return;
+  }
+  const filters = readDrawExportFilters(req);
+  if (filters.error) {
+    res.status(400).json({ error: filters.error });
+    return;
+  }
+  const preview = await pool.query(
+    `SELECT COUNT(DISTINCT d.id)::int AS "drawCount", COUNT(pd.id)::int AS "payoutRowCount"
+       FROM fund_draws d
+       LEFT JOIN fund_draw_disbursements pd ON pd.draw_id=d.id
+         AND ${drawExportPayoutJoinFilter}
+      WHERE ${drawExportCycleFilter}
+        AND ${drawExportSelectionFilter}`,
+    [filters.cycleId, filters.startDate, filters.endDate],
+  );
+  const drawCount = Number(preview.rows[0]?.drawCount ?? 0);
+  const payoutRowCount = Number(preview.rows[0]?.payoutRowCount ?? 0);
+  res.json({
+    cycleId: filters.cycleId,
+    startDate: filters.startDate,
+    endDate: filters.endDate,
+    drawCount,
+    payoutRowCount,
+    empty: drawCount === 0 && payoutRowCount === 0,
+  });
+});
+
 router.get("/reports/export", requireAuth, ownerOnly, async (req, res) => {
   const type = String(req.query.type ?? "payments").toLowerCase().replace(/[^a-z-]/g, "");
-  const requestedCycleId = req.query.cycleId == null || req.query.cycleId === "" ? null : Number(req.query.cycleId);
-  if (requestedCycleId !== null && (!Number.isInteger(requestedCycleId) || requestedCycleId <= 0)) {
-    return res.status(400).json({ error: "Cycle filter must be a valid cycle" });
+  const filters = readDrawExportFilters(req);
+  if (filters.error) {
+    res.status(400).json({ error: filters.error });
+    return;
   }
-  const requestedStartDate = req.query.startDate == null || req.query.startDate === "" ? null : String(req.query.startDate);
-  const requestedEndDate = req.query.endDate == null || req.query.endDate === "" ? null : String(req.query.endDate);
-  if ((requestedStartDate !== null && !isIsoDate(requestedStartDate)) || (requestedEndDate !== null && !isIsoDate(requestedEndDate))) {
-    return res.status(400).json({ error: "Date filters must use YYYY-MM-DD" });
-  }
-  if (requestedStartDate && requestedEndDate && requestedStartDate > requestedEndDate) {
-    return res.status(400).json({ error: "Start date cannot be after end date" });
-  }
+  const requestedCycleId = filters.cycleId;
+  const requestedStartDate = filters.startDate;
+  const requestedEndDate = filters.endDate;
   const activeCycle = await pool.query("SELECT id FROM fund_cycles WHERE status='ACTIVE' LIMIT 1");
   const activeCycleId = Number(activeCycle.rows[0]?.id ?? 0);
 
@@ -3856,20 +3921,10 @@ router.get("/reports/export", requireAuth, ownerOnly, async (req, res) => {
        JOIN fund_cycles c ON c.id=d.cycle_id
        JOIN fund_members m ON m.id=d.winner_member_id
        LEFT JOIN fund_draw_disbursements pd ON pd.draw_id=d.id
-         AND ($2::date IS NULL OR pd.payout_date >= $2::date)
-         AND ($3::date IS NULL OR pd.payout_date <= $3::date)
+         AND ${drawExportPayoutJoinFilter}
        LEFT JOIN fund_users pu ON pu.id=pd.payer_user_id
-        WHERE ($1::int IS NULL OR d.cycle_id=$1::int)
-          AND (
-            ($2::date IS NULL AND $3::date IS NULL)
-            OR EXISTS (
-              SELECT 1
-              FROM fund_draw_disbursements pfilter
-              WHERE pfilter.draw_id=d.id
-                AND ($2::date IS NULL OR pfilter.payout_date >= $2::date)
-                AND ($3::date IS NULL OR pfilter.payout_date <= $3::date)
-            )
-          )
+        WHERE ${drawExportCycleFilter}
+          AND ${drawExportSelectionFilter}
        ORDER BY d.draw_date DESC,d.draw_number DESC,pd.created_at ASC,pd.id ASC`,
       [requestedCycleId, requestedStartDate, requestedEndDate],
     );

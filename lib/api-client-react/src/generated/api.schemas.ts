@@ -11,6 +11,20 @@ export interface HealthStatus {
   serverTime: string;
 }
 
+export interface DrawExportPreview {
+  /** @nullable */
+  cycleId: number | null;
+  /** @nullable */
+  startDate: string | null;
+  /** @nullable */
+  endDate: string | null;
+  /** @minimum 0 */
+  drawCount: number;
+  /** @minimum 0 */
+  payoutRowCount: number;
+  empty: boolean;
+}
+
 export interface LoginInput {
   username: string;
   password: string;
@@ -1151,5 +1165,29 @@ export const ExportReportType = {
   monthly: 'monthly',
   due: 'due',
   collector: 'collector',
+} as const;
+
+export type PreviewExportParams = {
+type: PreviewExportType;
+/**
+ * Optional cycle filter; draw previews include all active and completed cycles when omitted
+ * @minimum 1
+ */
+cycleId?: number;
+/**
+ * Optional inclusive payout date lower bound for draw previews
+ */
+startDate?: string;
+/**
+ * Optional inclusive payout date upper bound for draw previews
+ */
+endDate?: string;
+};
+
+export type PreviewExportType = typeof PreviewExportType[keyof typeof PreviewExportType];
+
+
+export const PreviewExportType = {
+  draws: 'draws',
 } as const;
 

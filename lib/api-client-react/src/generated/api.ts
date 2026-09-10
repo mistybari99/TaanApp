@@ -40,6 +40,7 @@ import type {
   DrawDateMoveInput,
   DrawDateMoveResult,
   DrawDisbursementInput,
+  DrawExportPreview,
   DrawInput,
   DueEntryInput,
   ExportReportParams,
@@ -66,6 +67,7 @@ import type {
   PermissionRecord,
   PermissionRenewalInput,
   PermissionRevocationInput,
+  PreviewExportParams,
   PreviewShareTransferParams,
   ReversalInput,
   Settings,
@@ -4201,6 +4203,84 @@ export function useExportReport<TData = Awaited<ReturnType<typeof exportReport>>
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getExportReportQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getPreviewExportUrl = (params: PreviewExportParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/reports/export/preview?${stringifiedParams}` : `/api/reports/export/preview`
+}
+
+export const previewExport = async (params: PreviewExportParams, options?: Parameters<typeof customFetch>[1]): Promise<DrawExportPreview> => {
+
+  return customFetch<DrawExportPreview>(getPreviewExportUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getPreviewExportQueryKey = (params?: PreviewExportParams,) => {
+    return [
+    `/api/reports/export/preview`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getPreviewExportQueryOptions = <TData = Awaited<ReturnType<typeof previewExport>>, TError = ErrorType<unknown>>(params: PreviewExportParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof previewExport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getPreviewExportQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof previewExport>>> = ({ signal }) => previewExport(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof previewExport>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type PreviewExportQueryResult = NonNullable<Awaited<ReturnType<typeof previewExport>>>
+export type PreviewExportQueryError = ErrorType<unknown>
+
+
+
+export function usePreviewExport<TData = Awaited<ReturnType<typeof previewExport>>, TError = ErrorType<unknown>>(
+ params: PreviewExportParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof previewExport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getPreviewExportQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

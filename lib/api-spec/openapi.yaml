@@ -457,6 +457,17 @@ paths:
         - { name: endDate, in: query, required: false, schema: { type: string, format: date }, description: Optional inclusive payout date upper bound for draw exports }
       responses:
         "200": { description: CSV, content: { text/csv: { schema: { type: string } } } }
+  /reports/export/preview:
+    get:
+      operationId: previewExport
+      parameters:
+        - { name: type, in: query, required: true, schema: { type: string, enum: [draws] } }
+        - { name: cycleId, in: query, required: false, schema: { type: integer, minimum: 1 }, description: Optional cycle filter; draw previews include all active and completed cycles when omitted }
+        - { name: startDate, in: query, required: false, schema: { type: string, format: date }, description: Optional inclusive payout date lower bound for draw previews }
+        - { name: endDate, in: query, required: false, schema: { type: string, format: date }, description: Optional inclusive payout date upper bound for draw previews }
+      responses:
+        "200": { description: Draw export scope preview, content: { application/json: { schema: { $ref: "#/components/schemas/DrawExportPreview" } } }
+    }
 components:
   schemas:
     HealthStatus:
@@ -466,6 +477,16 @@ components:
         status: { type: string }
         database: { type: string }
         serverTime: { type: string }
+    DrawExportPreview:
+      type: object
+      required: [cycleId, startDate, endDate, drawCount, payoutRowCount, empty]
+      properties:
+        cycleId: { type: ["integer", "null"] }
+        startDate: { type: ["string", "null"], format: date }
+        endDate: { type: ["string", "null"], format: date }
+        drawCount: { type: integer, minimum: 0 }
+        payoutRowCount: { type: integer, minimum: 0 }
+        empty: { type: boolean }
     LoginInput:
       type: object
       required: [username, password]

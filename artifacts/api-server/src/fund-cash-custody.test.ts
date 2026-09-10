@@ -369,6 +369,51 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
     const noMatchingRows = await exportRows(`&startDate=${fixture.payoutDates.noMatch}&endDate=${fixture.payoutDates.noMatch}`);
     assert.deepEqual(noMatchingRows, []);
 
+    const completedPreviewResponse = await request(
+      baseUrl,
+      `/api/reports/export/preview?type=draws&cycleId=${fixture.completedCycleId}`,
+      fixture.ownerToken,
+    );
+    assert.equal(completedPreviewResponse.status, 200);
+    assert.deepEqual(await completedPreviewResponse.json(), {
+      cycleId: fixture.completedCycleId,
+      startDate: null,
+      endDate: null,
+      drawCount: 1,
+      payoutRowCount: 3,
+      empty: false,
+    });
+
+    const boundaryPreviewResponse = await request(
+      baseUrl,
+      `/api/reports/export/preview?type=draws&startDate=${fixture.payoutDates.boundary}&endDate=${fixture.payoutDates.boundary}`,
+      fixture.ownerToken,
+    );
+    assert.equal(boundaryPreviewResponse.status, 200);
+    assert.deepEqual(await boundaryPreviewResponse.json(), {
+      cycleId: null,
+      startDate: fixture.payoutDates.boundary,
+      endDate: fixture.payoutDates.boundary,
+      drawCount: 2,
+      payoutRowCount: 2,
+      empty: false,
+    });
+
+    const emptyPreviewResponse = await request(
+      baseUrl,
+      `/api/reports/export/preview?type=draws&startDate=${fixture.payoutDates.noMatch}&endDate=${fixture.payoutDates.noMatch}`,
+      fixture.ownerToken,
+    );
+    assert.equal(emptyPreviewResponse.status, 200);
+    assert.deepEqual(await emptyPreviewResponse.json(), {
+      cycleId: null,
+      startDate: fixture.payoutDates.noMatch,
+      endDate: fixture.payoutDates.noMatch,
+      drawCount: 0,
+      payoutRowCount: 0,
+      empty: true,
+    });
+
     const reversedDates = await request(
       baseUrl,
       `/api/reports/export?type=draws&startDate=${fixture.payoutDates.after}&endDate=${fixture.payoutDates.before}`,

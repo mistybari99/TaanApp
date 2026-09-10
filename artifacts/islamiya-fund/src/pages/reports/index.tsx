@@ -5,10 +5,25 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Download, FileSpreadsheet, Activity } from "lucide-react"
+import { Download, FileSpreadsheet, Activity, CheckCircle2, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { formatDate } from "@/lib/utils"
 import { useState } from "react"
+
+type DrawExportScope = {
+  cycleId: string
+  startDate: string
+  endDate: string
+}
+
+type DrawExportPreview = {
+  scope: DrawExportScope
+  drawCount: number
+  payoutRowCount: number
+  empty: boolean
+}
+
+const scopeKey = (scope: DrawExportScope) => `${scope.cycleId}|${scope.startDate}|${scope.endDate}`
 
 export default function ReportsPage() {
   const { data: dashboard } = useGetDashboard()
@@ -16,8 +31,12 @@ export default function ReportsPage() {
   const [cycleId, setCycleId] = useState("")
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
+  const [drawPreview, setDrawPreview] = useState<DrawExportPreview | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
 
   const selectedCycle = cycles?.find((cycle) => String(cycle.id) === cycleId)
+  const currentDrawExportScope: DrawExportScope = { cycleId, startDate, endDate }
+  const previewMatchesSelection = drawPreview !== null && scopeKey(drawPreview.scope) === scopeKey(currentDrawExportScope)
   const scopeLabel = selectedCycle
     ? `Cycle #${selectedCycle.cycleNumber} — ${selectedCycle.name}`
     : "All cycles (default)"
@@ -25,17 +44,61 @@ export default function ReportsPage() {
     ? `${startDate || "any date"} to ${endDate || "any date"}`
     : "all payout dates"
   
-  // Custom fetch for blob since Orval doesn't type Blob downloads well by default
-  const handleExport = async (type: string) => {
-    if (type === "draws" && startDate && endDate && startDate > endDate) {
+  const buildDrawExportParams = (scope: DrawExportScope) => {
+    const params = new URLSearchParams({ type: "draws" })
+    if (scope.cycleId) params.set("cycleId", scope.cycleId)
+    if (scope.startDate) params.set("startDate", scope.startDate)
+    if (scope.endDate) params.set("endDate", scope.endDate)
+    return params
+  }
+
+  const handlePreview = async () => {
+    if (startDate && endDate && startDate > endDate) {
       toast.error("শুরুর তারিখ শেষ তারিখের পরে হতে পারবে না")
       return
     }
-    const params = new URLSearchParams({ type })
+    setPreviewLoading(true)
+    setDrawPreview(null)
+    try {
+      const response = await fetch(`/api/reports/export/preview?${buildDrawExportParams(currentDrawExportScope).toString()}`)
+      if (!response.ok) throw new Error("Preview failed")
+      const body = await response.json() as {
+        cycleId: number | null
+        startDate: string | null
+        endDate: string | null
+        drawCount: number
+        payoutRowCount: number
+        empty: boolean
+      }
+      setDrawPreview({
+        scope: {
+          cycleId: body.cycleId == null ? "" : String(body.cycleId),
+          startDate: body.startDate ?? "",
+          endDate: body.endDate ?? "",
+        },
+        drawCount: body.drawCount,
+        payoutRowCount: body.payoutRowCount,
+        empty: body.empty,
+      })
+      toast.success("ডাউনলোডের scope preview করা হয়েছে")
+    } catch (e) {
+      toast.error("Preview ব্যর্থ হয়েছে")
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  // Custom fetch for blob since Orval doesn't type Blob downloads well by default.
+  // Draw downloads always use the last previewed scope, and require it to match
+  // the current filters so a changed selection cannot download a stale scope.
+  const handleExport = async (type: string) => {
+    let params = new URLSearchParams({ type })
     if (type === "draws") {
-      if (cycleId) params.set("cycleId", cycleId)
-      if (startDate) params.set("startDate", startDate)
-      if (endDate) params.set("endDate", endDate)
+      if (!drawPreview || !previewMatchesSelection) {
+        toast.error("ডাউনলোডের আগে বর্তমান scope preview করুন")
+        return
+      }
+      params = buildDrawExportParams(drawPreview.scope)
     }
     const scope = type === "draws" ? `${scopeLabel}, ${dateLabel}` : "current report filters"
     toast.info(`${scope} অনুযায়ী ${type} রিপোর্ট ডাউনলোড হচ্ছে...`)
@@ -122,7 +185,10 @@ export default function ReportsPage() {
             <div className="grid gap-3 md:grid-cols-3">
               <div className="space-y-1.5">
                 <Label htmlFor="draw-export-cycle">Cycle</Label>
-                <Select value={cycleId || "all"} onValueChange={(value) => setCycleId(value === "all" ? "" : value)}>
+                <Select value={cycleId || "all"} onValueChange={(value) => {
+                  setCycleId(value === "all" ? "" : value)
+                  setDrawPreview(null)
+                }}>
                   <SelectTrigger id="draw-export-cycle">
                     <SelectValue placeholder="All cycles (default)" />
                   </SelectTrigger>
@@ -138,14 +204,51 @@ export default function ReportsPage() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="draw-export-start">Payout date from</Label>
-                <Input id="draw-export-start" type="date" value={startDate} max={endDate || undefined} onChange={(event) => setStartDate(event.target.value)} />
+                <Input id="draw-export-start" type="date" value={startDate} max={endDate || undefined} onChange={(event) => {
+                  setStartDate(event.target.value)
+                  setDrawPreview(null)
+                }} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="draw-export-end">Payout date to</Label>
-                <Input id="draw-export-end" type="date" value={endDate} min={startDate || undefined} onChange={(event) => setEndDate(event.target.value)} />
+                <Input id="draw-export-end" type="date" value={endDate} min={startDate || undefined} onChange={(event) => {
+                  setEndDate(event.target.value)
+                  setDrawPreview(null)
+                }} />
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">Selected scope: {scopeLabel} · {dateLabel}</p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-muted-foreground">Selected scope: {scopeLabel} · {dateLabel}</p>
+              <Button type="button" variant="secondary" onClick={handlePreview} disabled={previewLoading}>
+                {previewLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
+                {previewLoading ? "Preview হচ্ছে..." : "Preview scope"}
+              </Button>
+            </div>
+            {drawPreview && previewMatchesSelection && (
+              <div className="rounded-md border bg-background p-3 space-y-2">
+                <p className="text-sm font-medium">Previewed download scope</p>
+                <div className="grid grid-cols-2 gap-3 text-sm md:max-w-md">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Selected draws</p>
+                    <p className="font-semibold">{drawPreview.drawCount}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Payout rows</p>
+                    <p className="font-semibold">{drawPreview.payoutRowCount}</p>
+                  </div>
+                </div>
+                {drawPreview.empty ? (
+                  <p className="text-sm text-amber-700">No matching draws or payout ledger rows were found for this scope.</p>
+                ) : drawPreview.payoutRowCount === 0 ? (
+                  <p className="text-xs text-muted-foreground">No payout ledger rows are in this scope; selected unpaid draws remain included.</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">The CSV download will use exactly this previewed scope.</p>
+                )}
+              </div>
+            )}
+            {!previewMatchesSelection && (drawPreview || cycleId || startDate || endDate) && (
+              <p className="text-xs text-amber-700">Filters changed. Preview the current scope again before downloading.</p>
+            )}
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {[
@@ -157,7 +260,7 @@ export default function ReportsPage() {
             ["audit", "অডিট লগ (Audit Log)"],
             ["monthly", "মাসিক রিপোর্ট (Monthly Report)"],
           ].map(([type, label]) => (
-            <Button key={type} variant="outline" onClick={() => handleExport(type)} className="justify-start">
+            <Button key={type} variant="outline" onClick={() => handleExport(type)} className="justify-start" disabled={type === "draws" && !previewMatchesSelection}>
               <Download className="w-4 h-4 mr-2" /> {label}
             </Button>
           ))}

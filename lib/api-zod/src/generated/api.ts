@@ -1921,3 +1921,29 @@ export const ExportReportQueryParams = zod.object({
 export const ExportReportResponse = zod.unknown()
 
 
+
+
+
+export const PreviewExportQueryParams = zod.object({
+  "type": zod.enum(['draws']),
+  "cycleId": zod.coerce.number().int().min(1).optional().describe('Optional cycle filter; draw previews include all active and completed cycles when omitted'),
+  "startDate": zod.date().optional().describe('Optional inclusive payout date lower bound for draw previews'),
+  "endDate": zod.date().optional().describe('Optional inclusive payout date upper bound for draw previews')
+})
+
+export const previewExportResponseDrawCountMin = 0;
+
+export const previewExportResponsePayoutRowCountMin = 0;
+
+
+
+export const PreviewExportResponse = zod.object({
+  "cycleId": zod.number().int().nullable(),
+  "startDate": zod.coerce.date().nullable(),
+  "endDate": zod.coerce.date().nullable(),
+  "drawCount": zod.number().int().min(previewExportResponseDrawCountMin),
+  "payoutRowCount": zod.number().int().min(previewExportResponsePayoutRowCountMin),
+  "empty": zod.boolean()
+})
+
+
