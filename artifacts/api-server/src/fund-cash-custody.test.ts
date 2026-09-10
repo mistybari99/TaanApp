@@ -480,6 +480,14 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
       [drawBody.id, failedReference],
     );
     assert.equal(failedPayoutRows.rows.length, 0);
+    const failedPayoutRecordedAudits = await pool.query(
+      `SELECT id
+         FROM fund_audit
+        WHERE actor_id=$1 AND cycle_id=$2 AND action='DRAW_PAYOUT_RECORDED'
+          AND after_value->>'reference'=$3`,
+      [fixture.ownerId, fixture.cycleId, failedReference],
+    );
+    assert.equal(failedPayoutRecordedAudits.rows.length, 0);
     const failedPayoutAudits = await pool.query(
       `SELECT action,entity_type,entity_id,cycle_id,related_transaction_id,after_value
          FROM fund_audit
@@ -503,9 +511,29 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
       amount: 50,
       payoutDate: drawDateIso,
       reference: `${prefix}-payout-replacement`,
-      idempotencyKey: `${prefix}-payout-replacement`,
+      idempotencyKey: failedIdempotencyKey,
     });
     assert.equal(replacementPayout.status, 201);
+    const replacementPayoutBody = await replacementPayout.json() as { payoutId: number };
+    const replacementPayoutRows = await pool.query(
+      "SELECT id,status FROM fund_draw_disbursements WHERE draw_id=$1 AND reference=$2 AND idempotency_key=$3",
+      [drawBody.id, `${prefix}-payout-replacement`, failedIdempotencyKey],
+    );
+    assert.deepEqual(replacementPayoutRows.rows, [{
+      id: replacementPayoutBody.payoutId,
+      status: "PAID",
+    }]);
+    const replacementPayoutAudits = await pool.query(
+      `SELECT id,entity_type,entity_id,related_transaction_id
+         FROM fund_audit
+        WHERE actor_id=$1 AND cycle_id=$2 AND action='DRAW_PAYOUT_RECORDED'
+          AND entity_type='draw_disbursement' AND entity_id=$3`,
+      [fixture.ownerId, fixture.cycleId, String(replacementPayoutBody.payoutId)],
+    );
+    assert.equal(replacementPayoutAudits.rows.length, 1);
+    assert.equal(replacementPayoutAudits.rows[0].entity_type, "draw_disbursement");
+    assert.equal(replacementPayoutAudits.rows[0].entity_id, String(replacementPayoutBody.payoutId));
+    assert.equal(replacementPayoutAudits.rows[0].related_transaction_id, String(replacementPayoutBody.payoutId));
     const memberHistoryResponse = await request(baseUrl, `/api/members/${fixture.memberId}/history`, fixture.ownerToken);
     assert.equal(memberHistoryResponse.status, 200);
     const memberHistory = await memberHistoryResponse.json() as {
