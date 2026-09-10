@@ -277,11 +277,6 @@ test("cycle-scoped delegated access cannot be used on another cycle", async () =
   }
 });
 
-
-test.after(async () => {
-  await pool.end();
-});
-
 test("advance allocation and financial correction remain cycle-scoped after expiry or revocation", async () => {
   const ownerToken = `${prefix}-actions-owner-token`;
   const collectorToken = `${prefix}-actions-collector-token`;
@@ -486,4 +481,189 @@ test("advance allocation and financial correction remain cycle-scoped after expi
       await pool.query("UPDATE fund_cycles SET status='ACTIVE' WHERE id=$1", [previousActiveCycleId]);
     }
   }
+});
+
+test("deactivated collectors cannot use otherwise-active delegated financial grants", async () => {
+  const ownerToken = `${prefix}-inactive-owner-token`;
+  const collectorToken = `${prefix}-inactive-collector-token`;
+  let server: ReturnType<typeof app.listen> | undefined;
+  let ownerId = 0;
+  let collectorId = 0;
+  let sourceMemberId = 0;
+  let receiverMemberId = 0;
+  let cycleId = 0;
+  let paymentId = 0;
+  let drawId = 0;
+  let transferId = 0;
+  let previousActiveCycleIds: number[] = [];
+
+  try {
+    const previousActive = await pool.query("UPDATE fund_cycles SET status='COMPLETED' WHERE status='ACTIVE' RETURNING id");
+    previousActiveCycleIds = previousActive.rows.map((row) => Number(row.id));
+
+    const owner = await pool.query(
+      `INSERT INTO fund_users(name,username,password_hash,role)
+       VALUES($1,$2,'synthetic','OWNER') RETURNING id`,
+      [`${prefix} inactive owner`, `${prefix}-inactive-owner`],
+    );
+    ownerId = Number(owner.rows[0].id);
+    const collector = await pool.query(
+      `INSERT INTO fund_users(name,username,password_hash,role)
+       VALUES($1,$2,'synthetic','COLLECTOR') RETURNING id`,
+      [`${prefix} inactive collector`, `${prefix}-inactive-collector`],
+    );
+    collectorId = Number(collector.rows[0].id);
+    const members = await pool.query(
+      `INSERT INTO fund_members(member_id,name,mobile,address,shares,daily_amount,joining_date,status)
+       VALUES
+         ($1,$2,$3,'synthetic',1,100,CURRENT_DATE,'active'),
+         ($4,$5,$6,'synthetic',1,100,CURRENT_DATE,'active')
+       RETURNING id,member_id`,
+      [
+        `${prefix}-inactive-source`, `${prefix} inactive source`, `015${String(process.pid).padStart(8, "0")}`,
+        `${prefix}-inactive-receiver`, `${prefix} inactive receiver`, `014${String(process.pid).padStart(8, "0")}`,
+      ],
+    );
+    sourceMemberId = Number(members.rows.find((row) => row.member_id === `${prefix}-inactive-source`)?.id);
+    receiverMemberId = Number(members.rows.find((row) => row.member_id === `${prefix}-inactive-receiver`)?.id);
+
+    const cycle = await pool.query(
+      `INSERT INTO fund_cycles(cycle_number,name,start_date,tracking_start_date,daily_per_share,status,notes)
+       VALUES((SELECT COALESCE(MAX(cycle_number),0)+1 FROM fund_cycles),$1,CURRENT_DATE,CURRENT_DATE,100,'ACTIVE',$2)
+       RETURNING id`,
+      [`${prefix} inactive cycle`, prefix],
+    );
+    cycleId = Number(cycle.rows[0].id);
+    await pool.query(
+      `INSERT INTO fund_cycle_members(cycle_id,member_id,shares,daily_contribution)
+       VALUES($1,$2,1,100),($1,$3,1,100)`,
+      [cycleId, sourceMemberId, receiverMemberId],
+    );
+    const payment = await pool.query(
+      `INSERT INTO fund_payments(receipt_id,member_id,cycle_id,collection_date,shares,amount,collector_id,verification_status,status)
+       VALUES($1,$2,$3,CURRENT_DATE,1,100,$4,'SYNTHETIC','POSTED')
+       RETURNING id`,
+      [`${prefix}-inactive-payment`, sourceMemberId, cycleId, collectorId],
+    );
+    paymentId = Number(payment.rows[0].id);
+    const draw = await pool.query(
+      `INSERT INTO fund_draws(cycle_id,draw_number,draw_date,winner_member_id,winning_amount,status,notes)
+       VALUES($1,1,CURRENT_DATE,$2,100,'RECORDED',$3)
+       RETURNING id`,
+      [cycleId, sourceMemberId, prefix],
+    );
+    drawId = Number(draw.rows[0].id);
+    const transfer = await pool.query(
+      `INSERT INTO fund_share_transfers
+         (transfer_id,cycle_id,from_member_id,to_member_id,share_quantity,accumulated_value,transfer_date,notes,created_by)
+       VALUES($1,$2,$3,$4,1,100,CURRENT_DATE,'Synthetic inactive collector transfer',$5)
+       RETURNING id`,
+      [`${prefix}-inactive-transfer`, cycleId, sourceMemberId, receiverMemberId, ownerId],
+    );
+    transferId = Number(transfer.rows[0].id);
+    await pool.query(
+      `INSERT INTO fund_sessions(token_hash,user_id,expires_at)
+       VALUES($1,$2,now()+interval '10 minutes'),($3,$4,now()+interval '10 minutes')`,
+      [hashToken(ownerToken), ownerId, hashToken(collectorToken), collectorId],
+    );
+    await pool.query(
+      `INSERT INTO fund_user_permissions(user_id,permission,cycle_id,granted_by,note)
+       VALUES
+         ($1,'PAYMENT_REVERSAL',$2,$3,'Active grant for deactivation regression'),
+         ($1,'PAYOUT_APPROVAL',$2,$3,'Active grant for deactivation regression'),
+         ($1,'ADVANCE_ALLOCATION',$2,$3,'Active grant for deactivation regression'),
+         ($1,'FINANCIAL_CORRECTION',$2,$3,'Active grant for deactivation regression')`,
+      [collectorId, cycleId, ownerId],
+    );
+
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server?.once("listening", resolve));
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const post = (path: string, body: unknown) => fetch(`${baseUrl}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `irf_session=${collectorToken}` },
+      body: JSON.stringify(body),
+    });
+
+    await pool.query("UPDATE fund_users SET active=false WHERE id=$1", [collectorId]);
+    const payoutDate = businessDateInDhaka();
+    const deniedResponses = await Promise.all([
+      post(`/api/payments/${paymentId}/reverse`, { reason: "Inactive collector must remain denied" }),
+      post(`/api/draws/${drawId}/disbursement`, {
+        payerUserId: collectorId,
+        amount: 100,
+        payoutDate,
+        reference: `${prefix}-inactive-payout`,
+      }),
+      post("/api/due-entries", {
+        cycleId,
+        memberId: sourceMemberId,
+        amount: 25,
+        dueDate: payoutDate,
+        reason: "Inactive collector must remain denied",
+      }),
+      post(`/api/share-transfers/${transferId}/settlement`, {
+        amount: 50,
+        notes: "Inactive collector must remain denied",
+      }),
+    ]);
+    for (const response of deniedResponses) {
+      assert.ok(response.status === 401 || response.status === 403);
+    }
+
+    const unchanged = await Promise.all([
+      pool.query("SELECT status FROM fund_payments WHERE id=$1", [paymentId]),
+      pool.query("SELECT COUNT(*)::int AS count FROM fund_payments WHERE reversed_payment_id=$1", [paymentId]),
+      pool.query("SELECT COUNT(*)::int AS count FROM fund_draw_disbursements WHERE draw_id=$1", [drawId]),
+      pool.query("SELECT COUNT(*)::int AS count FROM fund_due_entries WHERE cycle_id=$1 AND member_id=$2", [cycleId, sourceMemberId]),
+      pool.query("SELECT COUNT(*)::int AS count FROM fund_transfer_settlements WHERE transfer_id=$1", [transferId]),
+    ]);
+    assert.equal(unchanged[0].rows[0].status, "POSTED");
+    assert.deepEqual(unchanged.slice(1).map((result) => Number(result.rows[0].count)), [0, 0, 0, 0]);
+
+    await pool.query("UPDATE fund_users SET active=true WHERE id=$1", [collectorId]);
+    const restoredSession = await fetch(`${baseUrl}/api/auth/me`, {
+      headers: { cookie: `irf_session=${collectorToken}` },
+    });
+    assert.equal(restoredSession.status, 200);
+  } finally {
+    if (server) {
+      await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
+    }
+    if (collectorId) await pool.query("UPDATE fund_users SET active=true WHERE id=$1", [collectorId]);
+    if (ownerId || collectorId) {
+      await pool.query("DELETE FROM fund_user_permissions WHERE user_id=ANY($1::int[]) OR granted_by=ANY($1::int[])", [[ownerId, collectorId].filter(Boolean)]);
+      await pool.query("DELETE FROM fund_sessions WHERE user_id=ANY($1::int[])", [[ownerId, collectorId].filter(Boolean)]);
+    }
+    if (cycleId) {
+      await pool.query("DELETE FROM fund_transfer_settlements WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_share_transfers WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_due_entries WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_draw_disbursements WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_draws WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_payments WHERE reversed_payment_id IN (SELECT id FROM fund_payments WHERE cycle_id=$1)", [cycleId]);
+      await pool.query("DELETE FROM fund_payments WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_audit WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_cycle_members WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_cycles WHERE id=$1", [cycleId]);
+    }
+    if (ownerId || collectorId) {
+      await pool.query("DELETE FROM fund_audit WHERE actor_id=ANY($1::int[])", [[ownerId, collectorId].filter(Boolean)]);
+    }
+    if (sourceMemberId || receiverMemberId) {
+      await pool.query("DELETE FROM fund_members WHERE id=ANY($1::int[])", [[sourceMemberId, receiverMemberId].filter(Boolean)]);
+    }
+    if (ownerId || collectorId) {
+      await pool.query("DELETE FROM fund_users WHERE id=ANY($1::int[])", [[ownerId, collectorId].filter(Boolean)]);
+    }
+    if (previousActiveCycleIds.length > 0) {
+      await pool.query("UPDATE fund_cycles SET status='ACTIVE' WHERE id=ANY($1::int[])", [previousActiveCycleIds]);
+    }
+  }
+});
+
+test.after(async () => {
+  await pool.end();
 });
