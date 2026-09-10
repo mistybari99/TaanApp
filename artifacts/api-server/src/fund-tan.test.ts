@@ -225,10 +225,18 @@ test("TAN pause and resume preserve payment period links and shift future period
       },
     ]);
     const tanAfterResume = await client.query(
-      "SELECT id,status,pause_period_id FROM fund_tan_configs WHERE id=$1",
+      `SELECT id,status,pause_started_on::text AS pause_started_on,pause_period_id,pause_reason,
+              resumed_by,resumed_at
+         FROM fund_tan_configs WHERE id=$1`,
       [tanConfigId],
     );
-    assert.deepEqual(tanAfterResume.rows[0], { id: tanConfigId, status: "LOCKED", pause_period_id: null });
+    assert.equal(tanAfterResume.rows[0].id, tanConfigId);
+    assert.equal(tanAfterResume.rows[0].status, "LOCKED");
+    assert.equal(tanAfterResume.rows[0].pause_started_on, null);
+    assert.equal(tanAfterResume.rows[0].pause_period_id, null);
+    assert.equal(tanAfterResume.rows[0].pause_reason, null);
+    assert.equal(tanAfterResume.rows[0].resumed_by, ownerId);
+    assert.ok(tanAfterResume.rows[0].resumed_at);
     const existingPayment = await client.query(
       "SELECT tan_period_id,status FROM fund_payments WHERE id=$1",
       [paymentId],
@@ -255,6 +263,19 @@ test("TAN pause and resume preserve payment period links and shift future period
     assert.equal(secondPause.status, 200);
     const secondPauseBody = await secondPause.json() as { pausePeriodId: number };
     assert.equal(secondPauseBody.pausePeriodId, periodIds[0]);
+    const tanAfterSecondPause = await client.query(
+      `SELECT status,pause_started_on::text AS pause_started_on,pause_period_id,pause_reason,resumed_by,resumed_at
+         FROM fund_tan_configs WHERE id=$1`,
+      [tanConfigId],
+    );
+    assert.deepEqual(tanAfterSecondPause.rows[0], {
+      status: "PAUSED",
+      pause_started_on: today,
+      pause_period_id: periodIds[0],
+      pause_reason: "Second pause continuity regression",
+      resumed_by: null,
+      resumed_at: null,
+    });
     const secondPausedPayment = await request("/api/payments", {
       memberId,
       cycleId,
@@ -279,6 +300,17 @@ test("TAN pause and resume preserve payment period links and shift future period
     assert.equal(secondResumeBody.resumedPeriodId, periodIds[0]);
     assert.equal(secondResumeBody.resumedPeriodSequence, 1);
     assert.equal(secondResumeBody.daysShifted, 3);
+    const tanAfterSecondResume = await client.query(
+      `SELECT status,pause_started_on::text AS pause_started_on,pause_period_id,pause_reason,resumed_by,resumed_at
+         FROM fund_tan_configs WHERE id=$1`,
+      [tanConfigId],
+    );
+    assert.equal(tanAfterSecondResume.rows[0].status, "LOCKED");
+    assert.equal(tanAfterSecondResume.rows[0].pause_started_on, null);
+    assert.equal(tanAfterSecondResume.rows[0].pause_period_id, null);
+    assert.equal(tanAfterSecondResume.rows[0].pause_reason, null);
+    assert.equal(tanAfterSecondResume.rows[0].resumed_by, ownerId);
+    assert.ok(tanAfterSecondResume.rows[0].resumed_at);
 
     const periodsAfterSecondResume = await client.query(
       `SELECT id,sequence_no,period_start::text AS period_start,period_end::text AS period_end,draw_date::text AS draw_date
@@ -341,9 +373,27 @@ test("TAN pause and resume preserve payment period links and shift future period
       { tan_period_id: periodIds[0], event_type: "PAUSED", effective_date: today, days_shifted: 0 },
       { tan_period_id: periodIds[0], event_type: "RESUMED", effective_date: today, days_shifted: 3 },
     ]);
-    assert.equal(scheduleEvents.rows[0].before_value.periodId, periodIds[0]);
+    assert.deepEqual(scheduleEvents.rows.map((event) => event.tan_period_id), [
+      periodIds[0],
+      periodIds[0],
+      periodIds[0],
+      periodIds[0],
+    ]);
+    assert.deepEqual(
+      scheduleEvents.rows
+        .filter((event) => event.event_type === "PAUSED")
+        .map((event) => ({
+          periodId: event.before_value.periodId,
+          sequenceNo: event.before_value.sequenceNo,
+        })),
+      [
+        { periodId: periodIds[0], sequenceNo: 1 },
+        { periodId: periodIds[0], sequenceNo: 1 },
+      ],
+    );
     assert.equal(scheduleEvents.rows[1].after_value.status, "LOCKED");
     assert.equal(scheduleEvents.rows[1].after_value.periodEnd, addDays(tanStart, 13));
+    assert.equal(scheduleEvents.rows[3].after_value.status, "LOCKED");
     assert.equal(scheduleEvents.rows[3].after_value.periodEnd, addDays(tanStart, 16));
 
     const auditEvents = await client.query(
