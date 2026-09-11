@@ -98,7 +98,7 @@ export default function MemberHistoryPage() {
                   </div>
                 </CardHeader>
                 <CardContent>{history.draws.length === 0 ? <p className="text-sm text-muted-foreground">এই সদস্য এখনো কোনো ড্র জেতেনি</p> : <div className="space-y-3">{history.draws.map((draw) => {
-                  const allPayoutAttempts = draw.payoutAttempts?.length ? draw.payoutAttempts : (draw.payoutHistory ?? [])
+                  const allPayoutAttempts = draw.payoutAttempts ?? draw.payoutHistory ?? []
                   const payoutAttempts = payoutStatus === "ALL" ? allPayoutAttempts : allPayoutAttempts.filter((payout) => payout.status === payoutStatus)
                   return <div key={draw.id} className="rounded-lg border p-3">
                     <div className="flex items-center justify-between gap-4">
