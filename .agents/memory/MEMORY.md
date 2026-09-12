@@ -13,3 +13,4 @@
 - [Delegated permissions](delegated-permissions.md) — Owner grants auditable, expiring or cycle-scoped operational access; sensitive controls retain Owner fallback.
 - [Payment allocation](payment-allocation.md) — previous due clears first, current due is capped, and overpayment remains visible as separate advance credit.
 - [Payout export scope](payout-export-scope.md) — draw exports default to the active cycle; completed-cycle reconciliation must pass an explicit cycle and optional payout-date bounds.
+- [Frontend jsdom Radix tests](frontend-jsdom-tests.md) — Radix Select tests need pointer-capture and scroll stubs in the jsdom environment.
