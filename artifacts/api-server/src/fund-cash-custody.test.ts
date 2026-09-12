@@ -467,6 +467,7 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
       endDate: null,
       drawCount: 1,
       payoutRowCount: 3,
+      payoutTotal: 300,
       empty: false,
     });
 
@@ -482,6 +483,7 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
       endDate: fixture.payoutDates.boundary,
       drawCount: 2,
       payoutRowCount: 2,
+      payoutTotal: 300,
       empty: false,
     });
 
@@ -497,6 +499,7 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
       endDate: fixture.payoutDates.noMatch,
       drawCount: 0,
       payoutRowCount: 0,
+      payoutTotal: 0,
       empty: true,
     });
 

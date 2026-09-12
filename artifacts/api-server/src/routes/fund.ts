@@ -3901,7 +3901,8 @@ router.get("/reports/export/preview", requireAuth, ownerOnly, async (req, res) =
     return;
   }
   const preview = await pool.query(
-    `SELECT COUNT(DISTINCT d.id)::int AS "drawCount", COUNT(pd.id)::int AS "payoutRowCount"
+    `SELECT COUNT(DISTINCT d.id)::int AS "drawCount", COUNT(pd.id)::int AS "payoutRowCount",
+            COALESCE(SUM(pd.amount), 0)::float AS "payoutTotal"
        FROM fund_draws d
        LEFT JOIN fund_draw_disbursements pd ON pd.draw_id=d.id
          AND ${drawExportPayoutJoinFilter}
@@ -3911,12 +3912,14 @@ router.get("/reports/export/preview", requireAuth, ownerOnly, async (req, res) =
   );
   const drawCount = Number(preview.rows[0]?.drawCount ?? 0);
   const payoutRowCount = Number(preview.rows[0]?.payoutRowCount ?? 0);
+  const payoutTotal = Number(preview.rows[0]?.payoutTotal ?? 0);
   res.json({
     cycleId: filters.cycleId,
     startDate: filters.startDate,
     endDate: filters.endDate,
     drawCount,
     payoutRowCount,
+    payoutTotal,
     empty: drawCount === 0 && payoutRowCount === 0,
   });
 });

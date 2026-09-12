@@ -486,13 +486,14 @@ components:
         serverTime: { type: string }
     DrawExportPreview:
       type: object
-      required: [cycleId, startDate, endDate, drawCount, payoutRowCount, empty]
+      required: [cycleId, startDate, endDate, drawCount, payoutRowCount, payoutTotal, empty]
       properties:
         cycleId: { type: ["integer", "null"] }
         startDate: { type: ["string", "null"], format: date }
         endDate: { type: ["string", "null"], format: date }
         drawCount: { type: integer, minimum: 0 }
         payoutRowCount: { type: integer, minimum: 0 }
+        payoutTotal: { type: number, minimum: 0, description: Total amount of all scoped payout ledger rows, including reversed rows }
         empty: { type: boolean }
     LoginInput:
       type: object

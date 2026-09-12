@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Download, FileSpreadsheet, Activity, CheckCircle2, Loader2 } from "lucide-react"
 import { toast } from "sonner"
-import { formatDate } from "@/lib/utils"
+import { formatCurrency, formatDate } from "@/lib/utils"
 import { useState } from "react"
 
 type DrawExportScope = {
@@ -20,6 +20,7 @@ type DrawExportPreview = {
   scope: DrawExportScope
   drawCount: number
   payoutRowCount: number
+  payoutTotal: number
   empty: boolean
 }
 
@@ -68,6 +69,7 @@ export default function ReportsPage() {
         endDate: string | null
         drawCount: number
         payoutRowCount: number
+        payoutTotal: number
         empty: boolean
       }
       setDrawPreview({
@@ -78,6 +80,7 @@ export default function ReportsPage() {
         },
         drawCount: body.drawCount,
         payoutRowCount: body.payoutRowCount,
+        payoutTotal: body.payoutTotal,
         empty: body.empty,
       })
       toast.success("ডাউনলোডের scope preview করা হয়েছে")
@@ -227,7 +230,7 @@ export default function ReportsPage() {
             {drawPreview && previewMatchesSelection && (
               <div className="rounded-md border bg-background p-3 space-y-2">
                 <p className="text-sm font-medium">Previewed download scope</p>
-                <div className="grid grid-cols-2 gap-3 text-sm md:max-w-md">
+                <div className="grid grid-cols-2 gap-3 text-sm md:max-w-lg">
                   <div>
                     <p className="text-xs text-muted-foreground">Selected draws</p>
                     <p className="font-semibold">{drawPreview.drawCount}</p>
@@ -235,6 +238,10 @@ export default function ReportsPage() {
                   <div>
                     <p className="text-xs text-muted-foreground">Payout rows</p>
                     <p className="font-semibold">{drawPreview.payoutRowCount}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Total payout amount</p>
+                    <p className="font-semibold">{formatCurrency(drawPreview.payoutTotal)}</p>
                   </div>
                 </div>
                 {drawPreview.empty ? (

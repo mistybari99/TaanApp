@@ -17,5 +17,10 @@ export interface DrawExportPreview {
   drawCount: number;
   /** @minimum 0 */
   payoutRowCount: number;
+  /**
+     * Total amount of all scoped payout ledger rows
+     * @minimum 0
+     */
+  payoutTotal: number;
   empty: boolean;
 }

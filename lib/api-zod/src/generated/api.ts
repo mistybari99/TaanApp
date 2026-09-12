@@ -1961,6 +1961,8 @@ export const previewExportResponseDrawCountMin = 0;
 
 export const previewExportResponsePayoutRowCountMin = 0;
 
+export const previewExportResponsePayoutTotalMin = 0;
+
 
 
 export const PreviewExportResponse = zod.object({
@@ -1969,6 +1971,7 @@ export const PreviewExportResponse = zod.object({
   "endDate": zod.coerce.date().nullable(),
   "drawCount": zod.number().int().min(previewExportResponseDrawCountMin),
   "payoutRowCount": zod.number().int().min(previewExportResponsePayoutRowCountMin),
+  "payoutTotal": zod.number().min(previewExportResponsePayoutTotalMin).describe('Total amount of all scoped payout ledger rows'),
   "empty": zod.boolean()
 })
 
