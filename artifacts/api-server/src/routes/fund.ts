@@ -23,6 +23,13 @@ const passwordMatches = (password: string, stored: string) => {
 const cookies = (req: Request) => Object.fromEntries((req.headers.cookie ?? "").split(";").filter(Boolean).map((v) => v.trim().split("=")));
 const money = (value: unknown) => Number(value ?? 0);
 const isIsoDate = (value: unknown): value is string => /^\d{4}-\d{2}-\d{2}$/.test(String(value ?? ""));
+const isCalendarDate = (value: unknown): value is string => {
+  if (!isIsoDate(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth[month - 1];
+};
 export const businessDateInDhaka = (date = new Date()) => {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Dhaka",
@@ -3859,7 +3866,7 @@ const readDrawExportFilters = (req: Request): DrawExportFilters => {
   }
   const startDate = req.query.startDate == null || req.query.startDate === "" ? null : String(req.query.startDate);
   const endDate = req.query.endDate == null || req.query.endDate === "" ? null : String(req.query.endDate);
-  if ((startDate !== null && !isIsoDate(startDate)) || (endDate !== null && !isIsoDate(endDate))) {
+  if ((startDate !== null && !isCalendarDate(startDate)) || (endDate !== null && !isCalendarDate(endDate))) {
     return { cycleId, startDate, endDate, error: "Date filters must use YYYY-MM-DD" };
   }
   if (startDate && endDate && startDate > endDate) {

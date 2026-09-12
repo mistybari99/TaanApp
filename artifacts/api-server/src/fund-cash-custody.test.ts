@@ -421,7 +421,12 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
     );
     assert.equal(reversedDates.status, 400);
     assert.deepEqual(await reversedDates.json(), { error: "Start date cannot be after end date" });
-    for (const invalidQuery of ["&startDate=not-a-date", "&endDate=not-a-date"]) {
+    for (const invalidQuery of [
+      "&startDate=not-a-date",
+      "&endDate=not-a-date",
+      "&startDate=2026-02-30",
+      "&endDate=2026-02-30",
+    ]) {
       const invalidDate = await request(baseUrl, `/api/reports/export?type=draws${invalidQuery}`, fixture.ownerToken);
       assert.equal(invalidDate.status, 400);
       assert.deepEqual(await invalidDate.json(), { error: "Date filters must use YYYY-MM-DD" });
