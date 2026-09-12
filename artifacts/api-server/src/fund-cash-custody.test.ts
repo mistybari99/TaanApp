@@ -271,6 +271,92 @@ const parseDrawExport = (csv: string): DrawExportRow[] => {
   });
 };
 
+type DrawExportAuthorizationFixture = {
+  ownerId: number;
+  collectorId: number;
+  receiverId: number;
+  ownerToken: string;
+  collectorToken: string;
+  receiverToken: string;
+};
+
+async function createDrawExportAuthorizationFixture(): Promise<DrawExportAuthorizationFixture> {
+  const authorizationPrefix = `${prefix}-EXPORT-AUTH`;
+  const users = await Promise.all([
+    pool.query(
+      `INSERT INTO fund_users(name,username,password_hash,role)
+       VALUES($1,$2,'synthetic','OWNER') RETURNING id`,
+      [`${authorizationPrefix} owner`, `${authorizationPrefix}-owner`],
+    ),
+    pool.query(
+      `INSERT INTO fund_users(name,username,password_hash,role)
+       VALUES($1,$2,'synthetic','COLLECTOR') RETURNING id`,
+      [`${authorizationPrefix} collector`, `${authorizationPrefix}-collector`],
+    ),
+    pool.query(
+      `INSERT INTO fund_users(name,username,password_hash,role)
+       VALUES($1,$2,'synthetic','CASH_RECEIVER') RETURNING id`,
+      [`${authorizationPrefix} receiver`, `${authorizationPrefix}-receiver`],
+    ),
+  ]);
+  const ownerToken = `${authorizationPrefix}-owner-token`;
+  const collectorToken = `${authorizationPrefix}-collector-token`;
+  const receiverToken = `${authorizationPrefix}-receiver-token`;
+  await pool.query(
+    `INSERT INTO fund_sessions(token_hash,user_id,expires_at)
+     VALUES($1,$2,now()+interval '10 minutes'),
+           ($3,$4,now()+interval '10 minutes'),
+           ($5,$6,now()+interval '10 minutes')`,
+    [
+      hashToken(ownerToken), users[0].rows[0].id,
+      hashToken(collectorToken), users[1].rows[0].id,
+      hashToken(receiverToken), users[2].rows[0].id,
+    ],
+  );
+  return {
+    ownerId: Number(users[0].rows[0].id),
+    collectorId: Number(users[1].rows[0].id),
+    receiverId: Number(users[2].rows[0].id),
+    ownerToken,
+    collectorToken,
+    receiverToken,
+  };
+}
+
+async function cleanupDrawExportAuthorizationFixture(fixture: DrawExportAuthorizationFixture) {
+  const userIds = [fixture.ownerId, fixture.collectorId, fixture.receiverId];
+  await pool.query("DELETE FROM fund_sessions WHERE user_id=ANY($1::int[])", [userIds]);
+  await pool.query("DELETE FROM fund_users WHERE id=ANY($1::int[])", [userIds]);
+}
+
+const unauthenticatedRequest = (baseUrl: string, path: string) => fetch(`${baseUrl}${path}`);
+
+test("draw payout export is restricted to Owners", async () => {
+  const fixture = await createDrawExportAuthorizationFixture();
+  let server: ReturnType<typeof app.listen> | undefined;
+  try {
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server?.once("listening", () => resolve()));
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const scopedExportPath = "/api/reports/export?type=draws&cycleId=999999";
+
+    for (const token of [fixture.collectorToken, fixture.receiverToken]) {
+      const response = await request(baseUrl, scopedExportPath, token);
+      assert.equal(response.status, 403);
+      assert.deepEqual(await response.json(), { error: "Owner access required" });
+    }
+
+    const unauthenticated = await unauthenticatedRequest(baseUrl, scopedExportPath);
+    assert.equal(unauthenticated.status, 401);
+    assert.deepEqual(await unauthenticated.json(), { error: "Sign in required" });
+  } finally {
+    if (server) await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
+    await cleanupDrawExportAuthorizationFixture(fixture);
+  }
+});
+
 test("draw payout export keeps cycle scope, inclusive date bounds, and ledger rows", async () => {
   const fixture = await createDrawExportFixture();
   let server: ReturnType<typeof app.listen> | undefined;
