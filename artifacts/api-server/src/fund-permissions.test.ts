@@ -226,9 +226,27 @@ test("Owner can renew and replace delegated permission without duplicate active 
     assert.equal(replacement.cycleId, cycleIds[1]);
     assert.equal(replacement.status, "ACTIVE");
 
+    const secondReplacementResponse = await request(`/api/permissions/${replacement.id}/renew`, {
+      method: "POST",
+      body: JSON.stringify({
+        cycleId: cycleIds[0],
+        expiresAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+        note: "Returned for the original cycle",
+        reason: "Coverage moved back after the intermediate cycle",
+      }),
+    });
+    assert.equal(secondReplacementResponse.status, 200);
+    const secondReplacement = await secondReplacementResponse.json() as { id: number; cycleId: number; status: string };
+    assert.notEqual(secondReplacement.id, replacement.id);
+    assert.notEqual(secondReplacement.id, grant.id);
+    assert.equal(secondReplacement.cycleId, cycleIds[0]);
+    assert.equal(secondReplacement.status, "ACTIVE");
+
     const history = await (await request("/api/permissions")).json() as Array<{ id: number; status: string; cycleId: number | null }>;
     assert.equal(history.find((permission) => permission.id === grant.id)?.status, "REVOKED");
     assert.equal(history.find((permission) => permission.id === replacement.id)?.status, "ACTIVE");
+    assert.equal(history.find((permission) => permission.id === secondReplacement.id)?.status, "ACTIVE");
+    assert.equal(history.filter((permission) => [grant.id, replacement.id, secondReplacement.id].includes(permission.id)).length, 3);
     const activeCount = await pool.query(
       `SELECT COUNT(*)::int AS count
          FROM fund_user_permissions
@@ -238,14 +256,18 @@ test("Owner can renew and replace delegated permission without duplicate active 
       [`${prefix}-renew-collector`],
     );
     assert.equal(activeCount.rows[0].count, 1);
-    const audit = await pool.query(
-      `SELECT action FROM fund_audit
-        WHERE entity_type='user_permission'
-          AND entity_id=$1
-        ORDER BY created_at`,
-      [String(replacement.id)],
+    const auditResponse = await request(`/api/permissions/${secondReplacement.id}/audit`);
+    assert.equal(auditResponse.status, 200);
+    const auditTrail = await auditResponse.json() as Array<{ action: string; entityId: string }>;
+    assert.equal(auditTrail.length, 4);
+    assert.deepEqual(
+      auditTrail.map((entry) => entry.action).sort(),
+      ["PERMISSION_GRANTED", "PERMISSION_RENEWED", "PERMISSION_REPLACED", "PERMISSION_REPLACED"].sort(),
     );
-    assert.ok(audit.rows.some((row) => row.action === "PERMISSION_REPLACED"));
+    assert.deepEqual(
+      [...new Set(auditTrail.map((entry) => entry.entityId))].sort(),
+      [String(grant.id), String(replacement.id), String(secondReplacement.id)].sort(),
+    );
   } finally {
     if (server) {
       await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
