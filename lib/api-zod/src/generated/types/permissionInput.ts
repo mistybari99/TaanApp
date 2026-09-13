@@ -15,4 +15,9 @@ export interface PermissionInput {
   cycleId?: number | null;
   expiresAt?: string | null;
   note?: string;
+  /**
+     * Specific reason recorded in the delegated-access audit trail
+     * @minLength 1
+     */
+  reason: string;
 }

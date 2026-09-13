@@ -57,6 +57,7 @@ export default function CollectorsPage() {
     permission: "PAYOUT_APPROVAL",
     cycleId: "",
     expiresAt: "",
+    reason: "",
     note: "",
   })
   const [renewalTargetId, setRenewalTargetId] = useState<number | null>(null)
@@ -128,7 +129,8 @@ export default function CollectorsPage() {
   }
 
   const handleGrantPermission = () => {
-    if (!permissionForm.userId) return
+    const reason = permissionForm.reason.trim()
+    if (!permissionForm.userId || !reason) return
     grantPermission.mutate(
       {
         data: {
@@ -136,13 +138,14 @@ export default function CollectorsPage() {
           permission: permissionForm.permission as any,
           cycleId: permissionForm.cycleId ? Number(permissionForm.cycleId) : undefined,
           expiresAt: permissionForm.expiresAt ? new Date(permissionForm.expiresAt).toISOString() : undefined,
+          reason,
           note: permissionForm.note.trim() || undefined,
         },
       },
       {
         onSuccess: () => {
           toast.success("Delegated permission দেওয়া হয়েছে")
-          setPermissionForm({ userId: "", permission: "PAYOUT_APPROVAL", cycleId: "", expiresAt: "", note: "" })
+          setPermissionForm({ userId: "", permission: "PAYOUT_APPROVAL", cycleId: "", expiresAt: "", reason: "", note: "" })
           queryClient.invalidateQueries({ queryKey: getListPermissionsQueryKey() })
         },
         onError: (err: any) => toast.error(err.message || "Permission দেওয়া যায়নি"),
@@ -161,12 +164,14 @@ export default function CollectorsPage() {
       permission: permission.permission,
       cycleId: permission.cycleId ? String(permission.cycleId) : "",
       expiresAt: localExpiry,
+      reason: "",
       note: permission.note ?? "",
     })
   }
 
   const handleRenewPermission = () => {
-    if (!renewalTargetId) return
+    const reason = permissionForm.reason.trim()
+    if (!renewalTargetId || !reason) return
     renewPermission.mutate(
       {
         id: renewalTargetId,
@@ -174,14 +179,14 @@ export default function CollectorsPage() {
           cycleId: permissionForm.cycleId ? Number(permissionForm.cycleId) : null,
           expiresAt: permissionForm.expiresAt ? new Date(permissionForm.expiresAt).toISOString() : null,
           note: permissionForm.note.trim(),
-          reason: permissionForm.note.trim() || "Owner renewed delegated access",
+          reason,
         },
       },
       {
         onSuccess: () => {
           toast.success("Delegated permission renew / replace হয়েছে")
           setRenewalTargetId(null)
-          setPermissionForm({ userId: "", permission: "PAYOUT_APPROVAL", cycleId: "", expiresAt: "", note: "" })
+          setPermissionForm({ userId: "", permission: "PAYOUT_APPROVAL", cycleId: "", expiresAt: "", reason: "", note: "" })
           queryClient.invalidateQueries({ queryKey: getListPermissionsQueryKey() })
         },
         onError: (err: any) => toast.error(err.message || "Permission renew করা যায়নি"),
@@ -191,11 +196,11 @@ export default function CollectorsPage() {
 
   const cancelRenewal = () => {
     setRenewalTargetId(null)
-    setPermissionForm({ userId: "", permission: "PAYOUT_APPROVAL", cycleId: "", expiresAt: "", note: "" })
+    setPermissionForm({ userId: "", permission: "PAYOUT_APPROVAL", cycleId: "", expiresAt: "", reason: "", note: "" })
   }
 
   const handleRevokePermission = (permissionId: number) => {
-    const reason = window.prompt("Permission revoke করার কারণ", "Owner revoked delegated access")
+    const reason = window.prompt("Permission revoke করার নির্দিষ্ট কারণ লিখুন")
     if (!reason?.trim()) return
     revokePermission.mutate(
       { id: permissionId, data: { reason: reason.trim() } },
@@ -342,7 +347,7 @@ export default function CollectorsPage() {
         <div className="rounded-xl border bg-card p-5 space-y-4">
           <div>
             <h2 className="font-semibold">{renewalTargetId ? "Renew or replace delegated access" : "Delegated permissions"}</h2>
-            <p className="text-sm text-muted-foreground">{renewalTargetId ? "Extend the expiry or change the cycle scope in one audited action." : "Owner-only controls আলাদা রেখে নির্দিষ্ট operational access দিন।"}</p>
+            <p className="text-sm text-muted-foreground">{renewalTargetId ? "Extend the expiry or change the cycle scope in one audited action." : "Owner-only controls আলাদা রেখে নির্দিষ্ট operational access দিন।"} Every grant, renewal, replacement, and revoke needs a specific reason saved in the audit history.</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="permission-user">কর্মী</Label>
@@ -375,17 +380,22 @@ export default function CollectorsPage() {
             <Input id="permission-expiry" type="datetime-local" value={permissionForm.expiresAt} onChange={(event) => setPermissionForm({ ...permissionForm, expiresAt: event.target.value })} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="permission-note">কারণ / নোট</Label>
-            <Input id="permission-note" value={permissionForm.note} onChange={(event) => setPermissionForm({ ...permissionForm, note: event.target.value })} placeholder="Why this access is needed" />
+            <Label htmlFor="permission-reason">কারণ (required)</Label>
+            <Input id="permission-reason" required value={permissionForm.reason} onChange={(event) => setPermissionForm({ ...permissionForm, reason: event.target.value })} placeholder="Why is this access being granted or changed?" />
+            <p className="text-xs text-muted-foreground">Write a specific reason; it will be saved in the delegated-access audit history.</p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="permission-note">নোট (optional)</Label>
+            <Input id="permission-note" value={permissionForm.note} onChange={(event) => setPermissionForm({ ...permissionForm, note: event.target.value })} placeholder="Additional context" />
           </div>
           <div className="flex flex-wrap gap-2">
             {renewalTargetId ? (
               <>
-                <Button onClick={handleRenewPermission} disabled={!permissionForm.userId || renewPermission.isPending}>Renew / replace access</Button>
+                <Button onClick={handleRenewPermission} disabled={!permissionForm.userId || !permissionForm.reason.trim() || renewPermission.isPending}>Renew / replace access</Button>
                 <Button variant="outline" onClick={cancelRenewal} disabled={renewPermission.isPending}>Cancel</Button>
               </>
             ) : (
-              <Button onClick={handleGrantPermission} disabled={!permissionForm.userId || grantPermission.isPending}>Permission দিন</Button>
+              <Button onClick={handleGrantPermission} disabled={!permissionForm.userId || !permissionForm.reason.trim() || grantPermission.isPending}>Permission দিন</Button>
             )}
           </div>
         </div>

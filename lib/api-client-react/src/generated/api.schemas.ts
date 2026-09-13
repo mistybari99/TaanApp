@@ -119,10 +119,19 @@ export interface PermissionInput {
   cycleId?: number | null;
   expiresAt?: string | null;
   note?: string;
+  /**
+     * Specific reason recorded in the delegated-access audit trail
+     * @minLength 1
+     */
+  reason: string;
 }
 
 export interface PermissionRevocationInput {
-  reason?: string;
+  /**
+     * Specific reason recorded in the delegated-access audit trail
+     * @minLength 1
+     */
+  reason: string;
 }
 
 export interface PermissionRenewalInput {
@@ -135,8 +144,11 @@ export interface PermissionRenewalInput {
   expiresAt?: string | null;
   /** Replacement note shown in the grant history */
   note?: string;
-  /** Audit reason for the explicit renewal or replacement */
-  reason?: string;
+  /**
+     * Specific reason recorded in the delegated-access audit trail
+     * @minLength 1
+     */
+  reason: string;
 }
 
 export interface OnboardingStatus {

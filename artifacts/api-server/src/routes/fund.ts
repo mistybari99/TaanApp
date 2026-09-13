@@ -3451,9 +3451,13 @@ router.post("/permissions", requireAuth, ownerOnly, async (req: AuthedRequest, r
   const permission = String(req.body?.permission ?? "");
   const cycleId = req.body?.cycleId == null || req.body.cycleId === "" ? null : Number(req.body.cycleId);
   const expiresAt = req.body?.expiresAt ? new Date(String(req.body.expiresAt)) : null;
+  const reason = String(req.body?.reason ?? "").trim();
   const note = String(req.body?.note ?? "").trim();
   if (!Number.isInteger(userId) || userId <= 0 || !delegatedPermissionNames.includes(permission as typeof delegatedPermissionNames[number])) {
     return res.status(400).json({ error: "A valid delegated user and permission are required" });
+  }
+  if (!reason) {
+    return res.status(400).json({ error: "A specific reason is required for delegated access" });
   }
   if (cycleId !== null && (!Number.isInteger(cycleId) || cycleId <= 0)) {
     return res.status(400).json({ error: "Cycle scope must be a valid cycle" });
@@ -3487,7 +3491,7 @@ router.post("/permissions", requireAuth, ownerOnly, async (req: AuthedRequest, r
       [userId, permission, cycleId, expiresAt?.toISOString() ?? null, req.user!.id, note],
     );
     await auditOn(client, req.user!.id, "PERMISSION_GRANTED", `Granted ${permission} to ${target.rows[0].name}`, "user_permission", String(inserted.rows[0].id), {
-      reason: note || "Owner delegated permission",
+      reason,
       afterValue: { ...inserted.rows[0], userName: target.rows[0].name, role: target.rows[0].role },
     });
     await client.query("COMMIT");
@@ -3506,9 +3510,12 @@ router.post("/permissions/:id/renew", requireAuth, ownerOnly, async (req: Authed
   const hasCycleScope = Object.prototype.hasOwnProperty.call(body, "cycleId");
   const hasExpiry = Object.prototype.hasOwnProperty.call(body, "expiresAt");
   const hasNote = Object.prototype.hasOwnProperty.call(body, "note");
-  const reason = String(body.reason ?? "").trim() || "Owner renewed delegated permission";
+  const reason = String(body.reason ?? "").trim();
   if (!Number.isInteger(permissionId) || permissionId <= 0) {
     return res.status(400).json({ error: "A valid permission is required" });
+  }
+  if (!reason) {
+    return res.status(400).json({ error: "A specific reason is required for delegated access changes" });
   }
 
   const client = await pool.connect();
@@ -3688,8 +3695,9 @@ router.get("/permissions/:id/audit", requireAuth, ownerOnly, async (req: AuthedR
 });
 router.post("/permissions/:id/revoke", requireAuth, ownerOnly, async (req: AuthedRequest, res: Response) => {
   const permissionId = Number(req.params.id);
-  const reason = String(req.body?.reason ?? "").trim() || "Owner revoked delegated permission";
+  const reason = String(req.body?.reason ?? "").trim();
   if (!Number.isInteger(permissionId) || permissionId <= 0) return res.status(400).json({ error: "A valid permission is required" });
+  if (!reason) return res.status(400).json({ error: "A specific reason is required to revoke delegated access" });
   const client = await pool.connect();
   try {
     await client.query("BEGIN");

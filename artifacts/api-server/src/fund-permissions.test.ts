@@ -60,6 +60,7 @@ test("Owner may reach Due Entry validation while Collector cannot create entries
       body: JSON.stringify({
         userId: collectorId,
         permission: "ADVANCE_ALLOCATION",
+        reason: "Temporary due-entry coverage",
         note: "Temporary due-entry coverage",
       }),
     });
@@ -191,6 +192,7 @@ test("Owner can renew and replace delegated permission without duplicate active 
         permission: "PAYOUT_APPROVAL",
         cycleId: cycleIds[0],
         expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        reason: "Initial collector coverage",
         note: "Initial coverage",
       }),
     });

@@ -96,7 +96,10 @@ describe("Staff delegated-access renewal", () => {
     await user.selectOptions(screen.getByLabelText("Cycle scope"), "11")
     await user.clear(expiry)
     await user.type(expiry, "2026-10-05T17:45")
-    const note = screen.getByLabelText("কারণ / নোট")
+    const reason = screen.getByLabelText("কারণ (required)")
+    await user.clear(reason)
+    await user.type(reason, "Renewed for next cycle")
+    const note = screen.getByLabelText("নোট (optional)")
     await user.clear(note)
     await user.type(note, "Renewed for next cycle")
     await user.click(screen.getByRole("button", { name: "Renew / replace access" }))
@@ -144,6 +147,7 @@ describe("Staff delegated-access renewal", () => {
 
     await user.click(screen.getByRole("button", { name: "Renew / replace" }))
     await user.selectOptions(screen.getByLabelText("Cycle scope"), "11")
+    await user.type(screen.getByLabelText("কারণ (required)"), "Scope change requested")
     await user.click(screen.getByRole("button", { name: "Renew / replace access" }))
 
     expect(mocks.toastError).toHaveBeenCalledWith("Revoked permissions cannot be renewed")

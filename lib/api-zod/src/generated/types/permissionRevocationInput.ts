@@ -7,5 +7,9 @@
  */
 
 export interface PermissionRevocationInput {
-  reason?: string;
+  /**
+     * Specific reason recorded in the delegated-access audit trail
+     * @minLength 1
+     */
+  reason: string;
 }

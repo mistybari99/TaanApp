@@ -97,6 +97,7 @@ test("cycle-scoped delegated access cannot be used on another cycle", async () =
       userId: collectorId,
       permission: "PAYOUT_APPROVAL",
       cycleId: firstCycleId,
+      reason: "Synthetic approval coverage",
       note: "Synthetic cycle-only payout approval",
     });
     assert.equal(approvalGrant.status, 201);
@@ -166,6 +167,7 @@ test("cycle-scoped delegated access cannot be used on another cycle", async () =
       userId: collectorId,
       permission: "PAYOUT_REVERSAL",
       cycleId: firstCycleId,
+      reason: "Synthetic payout reversal coverage",
       note: "Synthetic cycle-only payout reversal",
     });
     assert.equal(payoutReversalGrant.status, 201);
@@ -214,6 +216,7 @@ test("cycle-scoped delegated access cannot be used on another cycle", async () =
       userId: collectorId,
       permission: "PAYMENT_REVERSAL",
       cycleId: firstCycleId,
+      reason: "Synthetic payment reversal coverage",
       note: "Synthetic cycle-only payment reversal",
     });
     assert.equal(paymentReversalGrant.status, 201);
@@ -372,6 +375,7 @@ test("advance allocation and financial correction remain cycle-scoped after expi
         userId: collectorId,
         permission,
         cycleId: firstCycleId,
+        reason: `Synthetic cycle-only ${permission} coverage`,
         note: `Synthetic cycle-only ${permission}`,
       });
       assert.equal(response.status, 201);

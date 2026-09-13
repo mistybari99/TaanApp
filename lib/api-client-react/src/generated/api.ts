@@ -3878,7 +3878,7 @@ export const getRevokePermissionUrl = (id: number,) => {
 }
 
 export const revokePermission = async (id: number,
-    permissionRevocationInput?: PermissionRevocationInput, options?: Parameters<typeof customFetch>[1]): Promise<PermissionRecord> => {
+    permissionRevocationInput: PermissionRevocationInput, options?: Parameters<typeof customFetch>[1]): Promise<PermissionRecord> => {
 
   return customFetch<PermissionRecord>(getRevokePermissionUrl(id),
   {
@@ -3894,8 +3894,8 @@ export const revokePermission = async (id: number,
 
 
 export const getRevokePermissionMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokePermission>>, TError,{id: number;data?: BodyType<PermissionRevocationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof revokePermission>>, TError,{id: number;data?: BodyType<PermissionRevocationInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokePermission>>, TError,{id: number;data: BodyType<PermissionRevocationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokePermission>>, TError,{id: number;data: BodyType<PermissionRevocationInput>}, TContext> => {
 
 const mutationKey = ['revokePermission'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -3907,7 +3907,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokePermission>>, {id: number;data?: BodyType<PermissionRevocationInput>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokePermission>>, {id: number;data: BodyType<PermissionRevocationInput>}> = (props) => {
           const {id,data} = props ?? {};
 
           return  revokePermission(id,data,requestOptions)
@@ -3921,15 +3921,15 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type RevokePermissionMutationResult = NonNullable<Awaited<ReturnType<typeof revokePermission>>>
-    export type RevokePermissionMutationBody = BodyType<PermissionRevocationInput> | undefined
+    export type RevokePermissionMutationBody = BodyType<PermissionRevocationInput>
     export type RevokePermissionMutationError = ErrorType<unknown>
 
     export const useRevokePermission = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokePermission>>, TError,{id: number;data?: BodyType<PermissionRevocationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokePermission>>, TError,{id: number;data: BodyType<PermissionRevocationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof revokePermission>>,
         TError,
-        {id: number;data?: BodyType<PermissionRevocationInput>},
+        {id: number;data: BodyType<PermissionRevocationInput>},
         TContext
       > => {
       return useMutation(getRevokePermissionMutationOptions(options));
@@ -3944,7 +3944,7 @@ export const getRenewPermissionUrl = (id: number,) => {
 }
 
 export const renewPermission = async (id: number,
-    permissionRenewalInput?: PermissionRenewalInput, options?: Parameters<typeof customFetch>[1]): Promise<PermissionRecord> => {
+    permissionRenewalInput: PermissionRenewalInput, options?: Parameters<typeof customFetch>[1]): Promise<PermissionRecord> => {
 
   return customFetch<PermissionRecord>(getRenewPermissionUrl(id),
   {
@@ -3960,8 +3960,8 @@ export const renewPermission = async (id: number,
 
 
 export const getRenewPermissionMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof renewPermission>>, TError,{id: number;data?: BodyType<PermissionRenewalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof renewPermission>>, TError,{id: number;data?: BodyType<PermissionRenewalInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof renewPermission>>, TError,{id: number;data: BodyType<PermissionRenewalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof renewPermission>>, TError,{id: number;data: BodyType<PermissionRenewalInput>}, TContext> => {
 
 const mutationKey = ['renewPermission'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -3973,7 +3973,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof renewPermission>>, {id: number;data?: BodyType<PermissionRenewalInput>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof renewPermission>>, {id: number;data: BodyType<PermissionRenewalInput>}> = (props) => {
           const {id,data} = props ?? {};
 
           return  renewPermission(id,data,requestOptions)
@@ -3987,15 +3987,15 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type RenewPermissionMutationResult = NonNullable<Awaited<ReturnType<typeof renewPermission>>>
-    export type RenewPermissionMutationBody = BodyType<PermissionRenewalInput> | undefined
+    export type RenewPermissionMutationBody = BodyType<PermissionRenewalInput>
     export type RenewPermissionMutationError = ErrorType<unknown>
 
     export const useRenewPermission = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof renewPermission>>, TError,{id: number;data?: BodyType<PermissionRenewalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof renewPermission>>, TError,{id: number;data: BodyType<PermissionRenewalInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof renewPermission>>,
         TError,
-        {id: number;data?: BodyType<PermissionRenewalInput>},
+        {id: number;data: BodyType<PermissionRenewalInput>},
         TContext
       > => {
       return useMutation(getRenewPermissionMutationOptions(options));

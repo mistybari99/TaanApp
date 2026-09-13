@@ -423,7 +423,7 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       requestBody:
-        required: false
+        required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/PermissionRevocationInput" } } }
       responses:
         "200": { description: Permission revoked, content: { application/json: { schema: { $ref: "#/components/schemas/PermissionRecord" } } } }
@@ -433,7 +433,7 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       requestBody:
-        required: false
+        required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/PermissionRenewalInput" } } }
       responses:
         "200": { description: Permission renewed or replaced, content: { application/json: { schema: { $ref: "#/components/schemas/PermissionRecord" } } } }
@@ -527,24 +527,27 @@ components:
         grantedByName: { type: string, nullable: true }
     PermissionInput:
       type: object
-      required: [userId, permission]
+      required: [userId, permission, reason]
       properties:
         userId: { type: integer, minimum: 1 }
         permission: { type: string, enum: [FULL_ACCESS, PAYMENT_REVERSAL, PAYOUT_APPROVAL, PAYOUT_REVERSAL, ADVANCE_ALLOCATION, FINANCIAL_CORRECTION, DRAW_DATE_CORRECTION] }
         cycleId: { type: integer, minimum: 1, nullable: true }
         expiresAt: { type: string, nullable: true }
         note: { type: string }
+        reason: { type: string, minLength: 1, description: Specific reason recorded in the delegated-access audit trail }
     PermissionRevocationInput:
       type: object
+      required: [reason]
       properties:
-        reason: { type: string }
+        reason: { type: string, minLength: 1, description: Specific reason recorded in the delegated-access audit trail }
     PermissionRenewalInput:
       type: object
+      required: [reason]
       properties:
         cycleId: { type: integer, minimum: 1, nullable: true, description: Omit to keep the current scope; null replaces it with all cycles }
         expiresAt: { type: string, nullable: true, description: Omit to keep the current expiry; null makes the grant permanent }
         note: { type: string, description: Replacement note shown in the grant history }
-        reason: { type: string, description: Audit reason for the explicit renewal or replacement }
+        reason: { type: string, minLength: 1, description: Specific reason recorded in the delegated-access audit trail }
     OnboardingStatus:
       type: object
       required: [initialized, demoMode]

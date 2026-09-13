@@ -151,20 +151,36 @@ test("permission audit history follows repeated scope replacements without inclu
     const get = (path: string) => fetch(`${baseUrl}${path}`, {
       headers: { cookie: `irf_session=${ownerToken}` },
     });
+    const missingGrantReason = await post("/api/permissions", {
+      userId: collectorId,
+      permission: "PAYOUT_APPROVAL",
+      cycleId: cycleIds[0],
+      reason: "   ",
+      note: "Missing reason regression",
+    });
+    assert.equal(missingGrantReason.status, 400);
     const grant = await post("/api/permissions", {
       userId: collectorId,
       permission: "PAYOUT_APPROVAL",
       cycleId: cycleIds[0],
+      reason: "Initial payout coverage",
       note: "Initial payout approval",
     });
     assert.equal(grant.status, 201);
     const initialId = Number((await grant.json() as { id: number }).id);
     permissionIds.push(initialId);
 
+    const missingRenewalReason = await post(`/api/permissions/${initialId}/renew`, {
+      expiresAt: "2030-01-01T00:00:00.000Z",
+      note: "Missing reason regression",
+      reason: "   ",
+    });
+    assert.equal(missingRenewalReason.status, 400);
     const unrelated = await post("/api/permissions", {
       userId: collectorId,
       permission: "FINANCIAL_CORRECTION",
       cycleId: cycleIds[0],
+      reason: "Correction coverage needed",
       note: "Unrelated correction grant",
     });
     assert.equal(unrelated.status, 201);
@@ -198,6 +214,8 @@ test("permission audit history follows repeated scope replacements without inclu
     const finalId = Number((await replacementTwo.json() as { id: number }).id);
     permissionIds.push(finalId);
 
+    const missingRevokeReason = await post(`/api/permissions/${finalId}/revoke`, { reason: "   " });
+    assert.equal(missingRevokeReason.status, 400);
     const revoke = await post(`/api/permissions/${finalId}/revoke`, {
       reason: "Coverage ended",
     });

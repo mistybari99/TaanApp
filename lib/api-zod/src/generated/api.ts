@@ -1766,12 +1766,14 @@ export const ListPermissionsResponse = zod.array(ListPermissionsResponseItem)
 
 
 
+
 export const GrantPermissionBody = zod.object({
   "userId": zod.number().int().min(1),
   "permission": zod.enum(['FULL_ACCESS', 'PAYMENT_REVERSAL', 'PAYOUT_APPROVAL', 'PAYOUT_REVERSAL', 'ADVANCE_ALLOCATION', 'FINANCIAL_CORRECTION', 'DRAW_DATE_CORRECTION']),
   "cycleId": zod.number().int().min(1).nullish(),
   "expiresAt": zod.string().nullish(),
-  "note": zod.string().optional()
+  "note": zod.string().optional(),
+  "reason": zod.string().min(1).describe('Specific reason recorded in the delegated-access audit trail')
 })
 
 export const GrantPermissionResponse = zod.object({
@@ -1839,8 +1841,11 @@ export const RevokePermissionParams = zod.object({
   "id": zod.coerce.number().int()
 })
 
+
+
+
 export const RevokePermissionBody = zod.object({
-  "reason": zod.string().optional()
+  "reason": zod.string().min(1).describe('Specific reason recorded in the delegated-access audit trail')
 })
 
 export const RevokePermissionResponse = zod.object({
@@ -1867,11 +1872,12 @@ export const RenewPermissionParams = zod.object({
 
 
 
+
 export const RenewPermissionBody = zod.object({
   "cycleId": zod.number().int().min(1).nullish().describe('Omit to keep the current scope; null replaces it with all cycles'),
   "expiresAt": zod.string().nullish().describe('Omit to keep the current expiry; null makes the grant permanent'),
   "note": zod.string().optional().describe('Replacement note shown in the grant history'),
-  "reason": zod.string().optional().describe('Audit reason for the explicit renewal or replacement')
+  "reason": zod.string().min(1).describe('Specific reason recorded in the delegated-access audit trail')
 })
 
 export const RenewPermissionResponse = zod.object({
