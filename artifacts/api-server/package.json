@@ -8,7 +8,8 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:fund": "pnpm --filter @workspace/scripts test:fund && pnpm --filter @workspace/scripts test:tan && pnpm --filter @workspace/scripts exec node --test --import tsx ../artifacts/api-server/src/fund-financial-regressions.test.ts && pnpm --filter @workspace/scripts exec node --test --import tsx ../artifacts/api-server/src/fund-csv-import.test.ts && pnpm --filter @workspace/scripts exec node --test --import tsx ../artifacts/api-server/src/fund-audit.test.ts && pnpm --filter @workspace/scripts exec node --test --import tsx ../artifacts/api-server/src/fund-cash-custody.test.ts"
+    "test:fund": "pnpm --filter @workspace/scripts test:fund && pnpm --filter @workspace/scripts test:tan && pnpm --filter @workspace/scripts exec node --test --import tsx ../artifacts/api-server/src/fund-financial-regressions.test.ts && pnpm --filter @workspace/scripts exec node --test --import tsx ../artifacts/api-server/src/fund-csv-import.test.ts && pnpm --filter @workspace/scripts exec node --test --import tsx ../artifacts/api-server/src/fund-audit.test.ts && pnpm --filter @workspace/scripts exec node --test --import tsx ../artifacts/api-server/src/fund-cash-custody.test.ts && pnpm --filter @workspace/scripts exec node --test --import tsx ../artifacts/api-server/src/fund-cycle-permissions.test.ts && pnpm run test:fund-route-policy",
+    "test:fund-route-policy": "pnpm --filter @workspace/scripts exec node --test --import tsx ../artifacts/api-server/src/fund-route-policy.test.ts"
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",

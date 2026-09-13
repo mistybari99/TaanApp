@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import app from "./app";
+import { ADMINISTRATION_ROUTE_INVENTORY } from "./fund-route-policy";
 import { businessDateInDhaka } from "./routes/fund";
 import { pool } from "@workspace/db";
 
@@ -720,9 +721,24 @@ test("delegated staff cannot administer audit records or business settings", asy
         defaultDailyPerShare: 999999,
       }),
     });
+    const deniedAdministrationRoutes = await Promise.all(
+      ADMINISTRATION_ROUTE_INVENTORY.map(({ method, path }) => {
+        const requestPath = path.replaceAll(":id", "1");
+        const init: RequestInit = {
+          method,
+          headers: { "content-type": "application/json" },
+          ...(method === "GET" ? {} : { body: "{}" }),
+        };
+        return request(`/api${requestPath}`, collectorToken, init);
+      }),
+    );
 
     assert.equal(deniedAudit.status, 403);
     assert.equal(deniedSettings.status, 403);
+    assert.deepEqual(
+      deniedAdministrationRoutes.map((response) => response.status),
+      ADMINISTRATION_ROUTE_INVENTORY.map(() => 403),
+    );
     assert.deepEqual((await pool.query("SELECT * FROM fund_settings WHERE id=1")).rows, settingsBefore.rows);
     assert.equal(
       Number((await pool.query("SELECT COUNT(*)::int AS count FROM fund_audit")).rows[0].count),
