@@ -244,7 +244,7 @@ test("Owner can renew and replace delegated permission without duplicate active 
 
     const history = await (await request("/api/permissions")).json() as Array<{ id: number; status: string; cycleId: number | null }>;
     assert.equal(history.find((permission) => permission.id === grant.id)?.status, "REVOKED");
-    assert.equal(history.find((permission) => permission.id === replacement.id)?.status, "ACTIVE");
+    assert.equal(history.find((permission) => permission.id === replacement.id)?.status, "REVOKED");
     assert.equal(history.find((permission) => permission.id === secondReplacement.id)?.status, "ACTIVE");
     assert.equal(history.filter((permission) => [grant.id, replacement.id, secondReplacement.id].includes(permission.id)).length, 3);
     const activeCount = await pool.query(
