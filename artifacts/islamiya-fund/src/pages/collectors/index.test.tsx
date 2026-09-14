@@ -124,6 +124,69 @@ describe("Staff delegated-access renewal", () => {
     expect(screen.getByText(/Cycle 11 .* Renewed for next cycle/)).toBeTruthy()
   })
 
+  it("restores an expired grant and keeps the expired record visible after refresh", async () => {
+    const user = userEvent.setup()
+    const expiredGrant = {
+      ...originalGrant,
+      id: 33,
+      cycleId: 10,
+      expiresAt: "2026-09-01T12:30:00.000Z",
+      createdAt: "2026-08-20T00:00:00.000Z",
+      note: "Expired access",
+      status: "EXPIRED",
+    }
+    mocks.permissions = [expiredGrant]
+    mocks.renewMutate.mockImplementation((request, options) => {
+      mocks.permissions = [
+        expiredGrant,
+        {
+          ...expiredGrant,
+          id: 34,
+          cycleId: 11,
+          expiresAt: request.data.expiresAt,
+          createdAt: "2026-09-10T08:00:00.000Z",
+          note: request.data.note,
+          status: "ACTIVE",
+        },
+      ]
+      options.onSuccess()
+    })
+
+    const view = render(<CollectorsPage />)
+    expect(screen.getByText("EXPIRED")).toBeTruthy()
+    await user.click(screen.getByRole("button", { name: "Renew / replace" }))
+
+    expect(screen.getByRole("heading", { name: "Renew or replace delegated access" })).toBeTruthy()
+    expect((screen.getByLabelText("Expiry (optional; blank means permanent)") as HTMLInputElement).value).toBe("2026-09-01T12:30")
+
+    await user.selectOptions(screen.getByLabelText("Cycle scope"), "11")
+    const expiry = screen.getByLabelText("Expiry (optional; blank means permanent)")
+    await user.clear(expiry)
+    await user.type(expiry, "2026-10-15T17:45")
+    await user.type(screen.getByLabelText("কারণ (required)"), "Restore access for next cycle")
+    await user.click(screen.getByRole("button", { name: "Renew / replace access" }))
+
+    expect(mocks.renewMutate).toHaveBeenCalledWith(
+      {
+        id: 33,
+        data: {
+          cycleId: 11,
+          expiresAt: new Date("2026-10-15T17:45").toISOString(),
+          note: "Expired access",
+          reason: "Restore access for next cycle",
+        },
+      },
+      expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
+    )
+    expect(mocks.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["permissions"] })
+
+    view.rerender(<CollectorsPage />)
+    expect(screen.getAllByText(/Amina · PAYOUT_APPROVAL/)).toHaveLength(2)
+    expect(screen.getByText("EXPIRED")).toBeTruthy()
+    expect(screen.getByText(/Cycle 11 .* Expired access/)).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Revoke" })).toBeTruthy()
+  })
+
   it("cancels renewal without submitting and resets the form", async () => {
     const user = userEvent.setup()
     render(<CollectorsPage />)
