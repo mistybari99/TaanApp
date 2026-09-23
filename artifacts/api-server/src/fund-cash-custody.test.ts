@@ -270,6 +270,7 @@ async function cleanupDrawExportFixture(fixture: DrawExportFixture) {
   await pool.query("DELETE FROM fund_cycle_members WHERE cycle_id=ANY($1::int[]) AND member_id=$2", [cycleIds, fixture.memberId]);
   await pool.query("DELETE FROM fund_cycles WHERE id=$1", [fixture.completedCycleId]);
   if (fixture.ownsActiveCycle) await pool.query("DELETE FROM fund_cycles WHERE id=$1", [fixture.activeCycleId]);
+  await pool.query("DELETE FROM fund_audit WHERE actor_id=$1", [fixture.ownerId]);
   await pool.query("DELETE FROM fund_sessions WHERE user_id=$1", [fixture.ownerId]);
   await pool.query("DELETE FROM fund_members WHERE id=$1", [fixture.memberId]);
   await pool.query("DELETE FROM fund_users WHERE id=$1", [fixture.ownerId]);
@@ -367,6 +368,12 @@ test("draw payout export is restricted to Owners", async () => {
     const unauthenticated = await unauthenticatedRequest(baseUrl, scopedExportPath);
     assert.equal(unauthenticated.status, 401);
     assert.deepEqual(await unauthenticated.json(), { error: "Sign in required" });
+    const unauthorizedAudits = await pool.query(
+      `SELECT id FROM fund_audit
+        WHERE actor_id=ANY($1::int[]) AND action='DRAW_EXPORT_DOWNLOADED'`,
+      [[fixture.ownerId, fixture.collectorId, fixture.receiverId]],
+    );
+    assert.equal(unauthorizedAudits.rows.length, 0);
   } finally {
     if (server) await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
     await cleanupDrawExportAuthorizationFixture(fixture);
@@ -443,6 +450,24 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
       `${prefix}-EXPORT-payout-boundary`,
       `${prefix}-EXPORT-payout-after`,
     ]);
+    const completedExportAudits = await pool.query(
+      `SELECT action,entity_type,entity_id,cycle_id,after_value
+         FROM fund_audit
+        WHERE actor_id=$1 AND action='DRAW_EXPORT_DOWNLOADED'
+        ORDER BY id`,
+      [fixture.ownerId],
+    );
+    assert.equal(completedExportAudits.rows.length, 1);
+    assert.equal(completedExportAudits.rows[0].entity_type, "report_export");
+    assert.equal(completedExportAudits.rows[0].entity_id, "draws");
+    assert.equal(Number(completedExportAudits.rows[0].cycle_id), fixture.completedCycleId);
+    assert.deepEqual(completedExportAudits.rows[0].after_value, {
+      reportType: "draws",
+      cycleId: fixture.completedCycleId,
+      startDate: null,
+      endDate: null,
+      rowCount: 3,
+    });
     const omittedCycleRows = await exportRows("");
     assertScopedRows(omittedCycleRows.filter(isFixtureReference), [
       `${prefix}-EXPORT-active-payout`,
@@ -469,6 +494,23 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
       `${prefix}-EXPORT-active-payout`,
       `${prefix}-EXPORT-payout-boundary`,
     ]);
+    const dateScopedExportAudits = await pool.query(
+      `SELECT after_value
+         FROM fund_audit
+        WHERE actor_id=$1
+          AND action='DRAW_EXPORT_DOWNLOADED'
+          AND after_value->>'startDate'=$2
+          AND after_value->>'endDate'=$2`,
+      [fixture.ownerId, fixture.payoutDates.boundary],
+    );
+    assert.equal(dateScopedExportAudits.rows.length, 1);
+    assert.deepEqual(dateScopedExportAudits.rows[0].after_value, {
+      reportType: "draws",
+      cycleId: null,
+      startDate: fixture.payoutDates.boundary,
+      endDate: fixture.payoutDates.boundary,
+      rowCount: 2,
+    });
     const noMatchingRows = await exportRows(`&startDate=${fixture.payoutDates.noMatch}&endDate=${fixture.payoutDates.noMatch}`);
     assert.deepEqual(noMatchingRows, []);
 
@@ -494,7 +536,6 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
       },
       empty: false,
     });
-
     const boundaryPreviewResponse = await request(
       baseUrl,
       `/api/reports/export/preview?type=draws&startDate=${fixture.payoutDates.boundary}&endDate=${fixture.payoutDates.boundary}`,
@@ -544,6 +585,12 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
     );
     assert.equal(reversedDates.status, 400);
     assert.deepEqual(await reversedDates.json(), { error: "Start date cannot be after end date" });
+    const auditCountBeforeInvalidRequests = Number((await pool.query(
+      `SELECT COUNT(*)::int AS count
+         FROM fund_audit
+        WHERE actor_id=$1 AND action='DRAW_EXPORT_DOWNLOADED'`,
+      [fixture.ownerId],
+    )).rows[0].count);
     for (const invalidQuery of [
       "&startDate=not-a-date",
       "&endDate=not-a-date",
@@ -554,6 +601,12 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
       assert.equal(invalidDate.status, 400);
       assert.deepEqual(await invalidDate.json(), { error: "Date filters must use YYYY-MM-DD" });
     }
+    const invalidRequestAudits = await pool.query(
+      `SELECT id FROM fund_audit
+        WHERE actor_id=$1 AND action='DRAW_EXPORT_DOWNLOADED'`,
+      [fixture.ownerId],
+    );
+    assert.equal(invalidRequestAudits.rows.length, auditCountBeforeInvalidRequests);
   } finally {
     if (server) await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
     await cleanupDrawExportFixture(fixture);

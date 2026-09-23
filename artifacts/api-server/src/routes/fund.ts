@@ -3976,7 +3976,7 @@ router.get("/reports/export/preview", requireAuth, ownerOnly, async (req, res) =
   });
 });
 
-router.get("/reports/export", requireAuth, ownerOnly, async (req, res) => {
+router.get("/reports/export", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
   const type = String(req.query.type ?? "payments").toLowerCase().replace(/[^a-z-]/g, "");
   const filters = readDrawExportFilters(req);
   if (filters.error) {
@@ -4033,6 +4033,21 @@ router.get("/reports/export", requireAuth, ownerOnly, async (req, res) => {
           AND ${drawExportSelectionFilter}
        ORDER BY d.draw_date DESC,d.draw_number DESC,pd.created_at ASC,pd.id ASC`,
       [requestedCycleId, requestedStartDate, requestedEndDate],
+    );
+    const exportScope = {
+      reportType: "draws",
+      cycleId: requestedCycleId,
+      startDate: requestedStartDate,
+      endDate: requestedEndDate,
+      rowCount: r.rows.length,
+    };
+    await audit(
+      req.user!.id,
+      "DRAW_EXPORT_DOWNLOADED",
+      `Downloaded draw payout export (${r.rows.length} rows)`,
+      "report_export",
+      "draws",
+      { cycleId: requestedCycleId, afterValue: exportScope },
     );
     return sendCsv(res, "draw-payouts-backup",
       ["Draw ID", "Cycle ID", "Cycle Number", "Cycle Name", "Draw Date", "Draw Number", "Winner Member ID", "Winner", "Winning Amount", "Draw Status", "Payout Ledger ID", "Payout Status", "Payout Date", "Payer ID", "Payer", "Payout Amount", "Reference", "Payout Note", "Payout Created At", "Payout Reversed At", "Reversal Reason"],
