@@ -128,6 +128,7 @@ type DrawExportFixture = {
   activeCycleName: string;
   activeDrawId: number;
   activeDrawDate: string;
+  ownsActiveCycle: boolean;
   payoutDates: {
     before: string;
     boundary: string;
@@ -159,13 +160,21 @@ async function createDrawExportFixture(): Promise<DrawExportFixture> {
      RETURNING id,cycle_number`,
     [completedCycleName, exportPrefix],
   );
-  const activeCycleName = `${exportPrefix} active`;
-  const activeCycle = await pool.query(
-    `INSERT INTO fund_cycles(cycle_number,name,start_date,tracking_start_date,daily_per_share,draw_frequency,draw_day,status,notes)
-     VALUES((SELECT COALESCE(MAX(cycle_number),0)+1 FROM fund_cycles),$1,CURRENT_DATE-interval '10 days',CURRENT_DATE-interval '10 days',100,'WEEKLY','FRIDAY','ACTIVE',$2)
-     RETURNING id,cycle_number`,
-    [activeCycleName, exportPrefix],
+  const existingActiveCycle = await pool.query(
+    "SELECT id,cycle_number,name FROM fund_cycles WHERE status='ACTIVE' ORDER BY id LIMIT 1",
   );
+  let activeCycle = existingActiveCycle;
+  let ownsActiveCycle = false;
+  if (!activeCycle.rows[0]) {
+    const activeCycleName = `${exportPrefix} active`;
+    activeCycle = await pool.query(
+      `INSERT INTO fund_cycles(cycle_number,name,start_date,tracking_start_date,daily_per_share,draw_frequency,draw_day,status,notes)
+       VALUES((SELECT COALESCE(MAX(cycle_number),0)+1 FROM fund_cycles),$1,CURRENT_DATE-interval '10 days',CURRENT_DATE-interval '10 days',100,'WEEKLY','FRIDAY','ACTIVE',$2)
+       RETURNING id,cycle_number,name`,
+      [activeCycleName, exportPrefix],
+    );
+    ownsActiveCycle = true;
+  }
   const completedCycleId = Number(completedCycle.rows[0].id);
   const activeCycleId = Number(activeCycle.rows[0].id);
   await pool.query(
@@ -175,18 +184,22 @@ async function createDrawExportFixture(): Promise<DrawExportFixture> {
   );
   const dates = await pool.query(
     `SELECT
-       (CURRENT_DATE-interval '3 days')::date::text AS before,
-       (CURRENT_DATE-interval '2 days')::date::text AS boundary,
-       (CURRENT_DATE-interval '1 day')::date::text AS after,
-       CURRENT_DATE::text AS "noMatch"`,
+       (CURRENT_DATE-interval '1003 days')::date::text AS before,
+       (CURRENT_DATE-interval '1002 days')::date::text AS boundary,
+       (CURRENT_DATE-interval '1001 days')::date::text AS after,
+       (CURRENT_DATE-interval '1000 days')::date::text AS "noMatch"`,
   );
   const payoutDates = dates.rows[0] as { before: string; boundary: string; after: string; noMatch: string };
+  const nextActiveDrawNumber = Number((await pool.query(
+    "SELECT COALESCE(MAX(draw_number),0)+1 AS next_draw_number FROM fund_draws WHERE cycle_id=$1",
+    [activeCycle.rows[0].id],
+  )).rows[0].next_draw_number);
   const draws = await pool.query(
     `INSERT INTO fund_draws(cycle_id,draw_number,draw_date,winner_member_id,winning_amount,status,notes)
-     VALUES($1,1,CURRENT_DATE-interval '5 days',$3,100,'RECORDED',$4),
-           ($2,1,CURRENT_DATE-interval '1 day',$3,200,'RECORDED',$4)
+     VALUES($1,1,CURRENT_DATE-interval '5 days',$3,100,'RECORDED',$5),
+           ($2,$4,CURRENT_DATE-interval '1 day',$3,200,'RECORDED',$5)
      RETURNING id,cycle_id,draw_date::date::text AS draw_date`,
-    [completedCycleId, activeCycleId, member.rows[0].id, exportPrefix],
+    [completedCycleId, activeCycleId, member.rows[0].id, nextActiveDrawNumber, exportPrefix],
   );
   const completedDraw = draws.rows.find((row) => Number(row.cycle_id) === completedCycleId)!;
   const activeDraw = draws.rows.find((row) => Number(row.cycle_id) === activeCycleId)!;
@@ -201,9 +214,9 @@ async function createDrawExportFixture(): Promise<DrawExportFixture> {
   const payouts = await pool.query(
     `INSERT INTO fund_draw_disbursements(draw_id,cycle_id,payer_user_id,winner_member_id,amount,payout_date,reference,status,created_by)
      VALUES
-       ($1,$3,$5,$6,100,$7,$9,'REVERSED',$5),
-       ($1,$3,$5,$6,100,$8,$10,'REVERSED',$5),
-       ($1,$3,$5,$6,100,$11,$12,'PAID',$5),
+        ($1,$3,$5,$6,100.25,$7,$9,'REVERSED',$5),
+        ($1,$3,$5,$6,100.25,$8,$10,'REVERSED',$5),
+        ($1,$3,$5,$6,100.50,$11,$12,'PAID',$5),
        ($2,$4,$5,$6,200,$8,$13,'PAID',$5)
      RETURNING id,reference`,
     [
@@ -240,9 +253,10 @@ async function createDrawExportFixture(): Promise<DrawExportFixture> {
     completedDrawDate: completedDraw.draw_date,
     activeCycleId,
     activeCycleNumber: Number(activeCycle.rows[0].cycle_number),
-    activeCycleName,
+    activeCycleName: activeCycle.rows[0].name,
     activeDrawId,
     activeDrawDate: activeDraw.draw_date,
+    ownsActiveCycle,
     payoutDates,
     payoutIds: Object.fromEntries(payouts.rows.map((row) => [row.reference, Number(row.id)])),
   };
@@ -250,10 +264,12 @@ async function createDrawExportFixture(): Promise<DrawExportFixture> {
 
 async function cleanupDrawExportFixture(fixture: DrawExportFixture) {
   const cycleIds = [fixture.completedCycleId, fixture.activeCycleId];
-  await pool.query("DELETE FROM fund_draw_disbursements WHERE cycle_id=ANY($1::int[])", [cycleIds]);
-  await pool.query("DELETE FROM fund_draws WHERE cycle_id=ANY($1::int[])", [cycleIds]);
-  await pool.query("DELETE FROM fund_cycle_members WHERE cycle_id=ANY($1::int[])", [cycleIds]);
-  await pool.query("DELETE FROM fund_cycles WHERE id=ANY($1::int[])", [cycleIds]);
+  const drawIds = [fixture.completedDrawId, fixture.activeDrawId];
+  await pool.query("DELETE FROM fund_draw_disbursements WHERE draw_id=ANY($1::int[])", [drawIds]);
+  await pool.query("DELETE FROM fund_draws WHERE id=ANY($1::int[])", [drawIds]);
+  await pool.query("DELETE FROM fund_cycle_members WHERE cycle_id=ANY($1::int[]) AND member_id=$2", [cycleIds, fixture.memberId]);
+  await pool.query("DELETE FROM fund_cycles WHERE id=$1", [fixture.completedCycleId]);
+  if (fixture.ownsActiveCycle) await pool.query("DELETE FROM fund_cycles WHERE id=$1", [fixture.activeCycleId]);
   await pool.query("DELETE FROM fund_sessions WHERE user_id=$1", [fixture.ownerId]);
   await pool.query("DELETE FROM fund_members WHERE id=$1", [fixture.memberId]);
   await pool.query("DELETE FROM fund_users WHERE id=$1", [fixture.ownerId]);
@@ -366,6 +382,7 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
     const address = server.address();
     assert.ok(address && typeof address !== "string");
     const baseUrl = `http://127.0.0.1:${address.port}`;
+    const isFixtureReference = (row: DrawExportRow) => row.Reference.startsWith(`${prefix}-EXPORT-`);
     const exportRows = async (query: string) => {
       const response = await request(baseUrl, `/api/reports/export?type=draws${query}`, fixture.ownerToken);
       assert.equal(response.status, 200);
@@ -407,9 +424,9 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
       }
     };
     const expectedRows = [
-      { reference: `${prefix}-EXPORT-payout-before`, payoutDate: fixture.payoutDates.before, payoutAmount: 100, payoutStatus: "REVERSED", payoutId: fixture.payoutIds[`${prefix}-EXPORT-payout-before`], drawId: fixture.completedDrawId, drawDate: fixture.completedDrawDate, cycleId: fixture.completedCycleId, cycleNumber: fixture.completedCycleNumber, cycleName: fixture.completedCycleName, winningAmount: 100 },
-      { reference: `${prefix}-EXPORT-payout-boundary`, payoutDate: fixture.payoutDates.boundary, payoutAmount: 100, payoutStatus: "REVERSED", payoutId: fixture.payoutIds[`${prefix}-EXPORT-payout-boundary`], drawId: fixture.completedDrawId, drawDate: fixture.completedDrawDate, cycleId: fixture.completedCycleId, cycleNumber: fixture.completedCycleNumber, cycleName: fixture.completedCycleName, winningAmount: 100 },
-      { reference: `${prefix}-EXPORT-payout-after`, payoutDate: fixture.payoutDates.after, payoutAmount: 100, payoutStatus: "PAID", payoutId: fixture.payoutIds[`${prefix}-EXPORT-payout-after`], drawId: fixture.completedDrawId, drawDate: fixture.completedDrawDate, cycleId: fixture.completedCycleId, cycleNumber: fixture.completedCycleNumber, cycleName: fixture.completedCycleName, winningAmount: 100 },
+      { reference: `${prefix}-EXPORT-payout-before`, payoutDate: fixture.payoutDates.before, payoutAmount: 100.25, payoutStatus: "REVERSED", payoutId: fixture.payoutIds[`${prefix}-EXPORT-payout-before`], drawId: fixture.completedDrawId, drawDate: fixture.completedDrawDate, cycleId: fixture.completedCycleId, cycleNumber: fixture.completedCycleNumber, cycleName: fixture.completedCycleName, winningAmount: 100 },
+      { reference: `${prefix}-EXPORT-payout-boundary`, payoutDate: fixture.payoutDates.boundary, payoutAmount: 100.25, payoutStatus: "REVERSED", payoutId: fixture.payoutIds[`${prefix}-EXPORT-payout-boundary`], drawId: fixture.completedDrawId, drawDate: fixture.completedDrawDate, cycleId: fixture.completedCycleId, cycleNumber: fixture.completedCycleNumber, cycleName: fixture.completedCycleName, winningAmount: 100 },
+      { reference: `${prefix}-EXPORT-payout-after`, payoutDate: fixture.payoutDates.after, payoutAmount: 100.5, payoutStatus: "PAID", payoutId: fixture.payoutIds[`${prefix}-EXPORT-payout-after`], drawId: fixture.completedDrawId, drawDate: fixture.completedDrawDate, cycleId: fixture.completedCycleId, cycleNumber: fixture.completedCycleNumber, cycleName: fixture.completedCycleName, winningAmount: 100 },
       { reference: `${prefix}-EXPORT-active-payout`, payoutDate: fixture.payoutDates.boundary, payoutAmount: 200, payoutStatus: "PAID", payoutId: fixture.payoutIds[`${prefix}-EXPORT-active-payout`], drawId: fixture.activeDrawId, drawDate: fixture.activeDrawDate, cycleId: fixture.activeCycleId, cycleNumber: fixture.activeCycleNumber, cycleName: fixture.activeCycleName, winningAmount: 200 },
     ];
     const expectedByReference = new Map(expectedRows.map((entry) => [entry.reference, entry]));
@@ -427,7 +444,7 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
       `${prefix}-EXPORT-payout-after`,
     ]);
     const omittedCycleRows = await exportRows("");
-    assertScopedRows(omittedCycleRows, [
+    assertScopedRows(omittedCycleRows.filter(isFixtureReference), [
       `${prefix}-EXPORT-active-payout`,
       `${prefix}-EXPORT-payout-before`,
       `${prefix}-EXPORT-payout-boundary`,
@@ -436,19 +453,19 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
     assert.equal(omittedCycleRows.filter((row) => row["Draw ID"] === String(fixture.completedDrawId)).length, 3);
     assert.equal(omittedCycleRows.filter((row) => row["Draw ID"] === String(fixture.activeDrawId)).length, 1);
     const startBoundRows = await exportRows(`&startDate=${fixture.payoutDates.boundary}`);
-    assertScopedRows(startBoundRows, [
+    assertScopedRows(startBoundRows.filter(isFixtureReference), [
       `${prefix}-EXPORT-active-payout`,
       `${prefix}-EXPORT-payout-boundary`,
       `${prefix}-EXPORT-payout-after`,
     ]);
     const endBoundRows = await exportRows(`&endDate=${fixture.payoutDates.boundary}`);
-    assertScopedRows(endBoundRows, [
+    assertScopedRows(endBoundRows.filter(isFixtureReference), [
       `${prefix}-EXPORT-active-payout`,
       `${prefix}-EXPORT-payout-before`,
       `${prefix}-EXPORT-payout-boundary`,
     ]);
     const twoSidedRows = await exportRows(`&startDate=${fixture.payoutDates.boundary}&endDate=${fixture.payoutDates.boundary}`);
-    assertScopedRows(twoSidedRows, [
+    assertScopedRows(twoSidedRows.filter(isFixtureReference), [
       `${prefix}-EXPORT-active-payout`,
       `${prefix}-EXPORT-payout-boundary`,
     ]);
@@ -461,13 +478,15 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
       fixture.ownerToken,
     );
     assert.equal(completedPreviewResponse.status, 200);
-    assert.deepEqual(await completedPreviewResponse.json(), {
+    const completedPreview = await completedPreviewResponse.json() as { payoutTotal: number };
+    assert.equal(completedPreview.payoutTotal, completedRows.reduce((total, row) => total + Number(row["Payout Amount"]), 0));
+    assert.deepEqual(completedPreview, {
       cycleId: fixture.completedCycleId,
       startDate: null,
       endDate: null,
       drawCount: 1,
       payoutRowCount: 3,
-      payoutTotal: 300,
+      payoutTotal: 301,
       empty: false,
     });
 
@@ -483,7 +502,7 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
       endDate: fixture.payoutDates.boundary,
       drawCount: 2,
       payoutRowCount: 2,
-      payoutTotal: 300,
+      payoutTotal: 300.25,
       empty: false,
     });
 
