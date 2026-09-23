@@ -873,7 +873,12 @@ router.get("/members/:id/history", requireAuth, async (req: AuthedRequest, res) 
     if (!access.rowCount) return res.status(403).json({ error: "Collector is not assigned to this member" });
   }
    const member = await pool.query(`SELECT id,COALESCE(public_member_id,member_id) AS "memberId",name,mobile,business_name AS "businessName",address,nid,shares,daily_amount::float AS "dailyAmount",
-    joining_date::text AS "joiningDate",created_at AS "createdAt",notes,status FROM fund_members WHERE id=$1`, [id]);
+    joining_date::text AS "joiningDate",created_at AS "createdAt",notes,status,
+    COALESCE((SELECT SUM(p.current_period_applied) FROM fund_payments p
+      WHERE p.member_id=fund_members.id AND p.collection_date=$2::date AND p.status='POSTED'),0)::float AS "todayPaid",
+    GREATEST(daily_amount-COALESCE((SELECT SUM(p.current_period_applied) FROM fund_payments p
+      WHERE p.member_id=fund_members.id AND p.collection_date=$2::date AND p.status='POSTED'),0),0)::float AS "todayDue"
+    FROM fund_members WHERE id=$1`, [id, todayIso()]);
   if (!member.rows[0]) return res.status(404).json({ error: "Member not found" });
   const [cycles, payments, draws, transfers] = await Promise.all([
     pool.query(`SELECT c.id AS "cycleId",c.cycle_number AS "cycleNumber",c.name,c.start_date::text AS "startDate",c.end_date::text AS "endDate",
@@ -901,11 +906,14 @@ router.get("/members/:id/history", requireAuth, async (req: AuthedRequest, res) 
       FROM fund_cycle_members cm JOIN fund_cycles c ON c.id=cm.cycle_id
       LEFT JOIN fund_payments p ON p.cycle_id=c.id AND p.member_id=cm.member_id
       WHERE cm.member_id=$1 GROUP BY c.id,cm.id ORDER BY c.start_date DESC`, [id]),
-     pool.query(`SELECT p.id,p.receipt_id AS "receiptId",p.cycle_id AS "cycleId",p.amount::float,p.collection_date::text AS "collectionDate",
+     pool.query(`SELECT p.id,p.receipt_id AS "receiptId",p.cycle_id AS "cycleId",
+       COALESCE(m.public_member_id,m.member_id) AS "memberId",m.name AS "memberName",
+       p.amount::float,p.collection_date::text AS "collectionDate",
        p.shares,p.previous_due_applied::float AS "previousDueApplied",p.current_period_applied::float AS "currentPeriodApplied",p.advance_credit::float AS "advanceCredit",
        p.verification_status AS "verificationStatus",p.status,p.created_at AS "createdAt",u.name AS "collectorName",ru.name AS "receiverName",
        p.receipt_source AS "receiptSource"
-       FROM fund_payments p LEFT JOIN fund_users u ON u.id=p.collector_id
+       FROM fund_payments p JOIN fund_members m ON m.id=p.member_id
+       LEFT JOIN fund_users u ON u.id=p.collector_id
        LEFT JOIN fund_users ru ON ru.id=COALESCE(p.receiver_id,p.collector_id)
        WHERE p.member_id=$1 ORDER BY p.created_at DESC LIMIT 500`, [id]),
      pool.query(`SELECT d.id,d.cycle_id AS "cycleId",c.cycle_number AS "cycleNumber",d.draw_number AS "drawNumber",
