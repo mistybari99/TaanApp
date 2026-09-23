@@ -123,4 +123,51 @@ describe("reports draw export scope", () => {
       "/api/reports/export?type=draws&cycleId=41&startDate=2026-09-01&endDate=2026-09-08",
     )
   })
+
+  it("keeps draw download disabled after a failed preview until retry succeeds", async () => {
+    const user = userEvent.setup()
+    let previewAttempts = 0
+    mocks.fetch.mockImplementation(async (request: RequestInfo | URL) => {
+      const url = String(request)
+      if (url.includes("/preview")) {
+        previewAttempts += 1
+        if (previewAttempts === 1) return { ok: false }
+        return {
+          ok: true,
+          json: async () => ({
+            cycleId: null,
+            startDate: null,
+            endDate: null,
+            drawCount: 1,
+            payoutRowCount: 1,
+            payoutTotal: 100,
+            empty: false,
+          }),
+        }
+      }
+      return {
+        ok: true,
+        blob: async () => new Blob(["draw export"]),
+      }
+    })
+
+    render(<ReportsPage />)
+
+    const downloadButton = screen.getByRole("button", { name: /ড্র ও payout ledger/ }) as HTMLButtonElement
+    const previewButton = screen.getByRole("button", { name: "Preview scope" })
+    expect(downloadButton.disabled).toBe(true)
+
+    await user.click(previewButton)
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith("Preview ব্যর্থ হয়েছে"))
+    expect(downloadButton.disabled).toBe(true)
+    expect(screen.queryByText("Previewed download scope")).toBeNull()
+
+    await user.click(previewButton)
+    await waitFor(() => expect(screen.getByText("Previewed download scope")).toBeTruthy())
+    expect(downloadButton.disabled).toBe(false)
+
+    await user.click(downloadButton)
+    await waitFor(() => expect(mocks.fetch).toHaveBeenCalledTimes(3))
+    expect(mocks.fetch).toHaveBeenLastCalledWith("/api/reports/export?type=draws")
+  })
 })
