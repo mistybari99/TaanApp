@@ -3934,7 +3934,21 @@ router.get("/reports/export/preview", requireAuth, ownerOnly, async (req, res) =
   }
   const preview = await pool.query(
     `SELECT COUNT(DISTINCT d.id)::int AS "drawCount", COUNT(pd.id)::int AS "payoutRowCount",
-            COALESCE(SUM(pd.amount), 0)::float AS "payoutTotal"
+            COALESCE(SUM(pd.amount), 0)::float AS "payoutTotal",
+            jsonb_build_object(
+              'PAID', jsonb_build_object(
+                'count', (COUNT(pd.id) FILTER (WHERE pd.status='PAID'))::int,
+                'amount', COALESCE(SUM(pd.amount) FILTER (WHERE pd.status='PAID'), 0)::float
+              ),
+              'REVERSED', jsonb_build_object(
+                'count', (COUNT(pd.id) FILTER (WHERE pd.status='REVERSED'))::int,
+                'amount', COALESCE(SUM(pd.amount) FILTER (WHERE pd.status='REVERSED'), 0)::float
+              ),
+              'PENDING', jsonb_build_object(
+                'count', (COUNT(*) FILTER (WHERE pd.id IS NULL OR pd.status='PENDING'))::int,
+                'amount', COALESCE(SUM(pd.amount) FILTER (WHERE pd.status='PENDING'), 0)::float
+              )
+            ) AS "payoutStatusBreakdown"
        FROM fund_draws d
        LEFT JOIN fund_draw_disbursements pd ON pd.draw_id=d.id
          AND ${drawExportPayoutJoinFilter}
@@ -3945,6 +3959,11 @@ router.get("/reports/export/preview", requireAuth, ownerOnly, async (req, res) =
   const drawCount = Number(preview.rows[0]?.drawCount ?? 0);
   const payoutRowCount = Number(preview.rows[0]?.payoutRowCount ?? 0);
   const payoutTotal = Number(preview.rows[0]?.payoutTotal ?? 0);
+  const payoutStatusBreakdown = preview.rows[0]?.payoutStatusBreakdown ?? {
+    PAID: { count: 0, amount: 0 },
+    REVERSED: { count: 0, amount: 0 },
+    PENDING: { count: 0, amount: 0 },
+  };
   res.json({
     cycleId: filters.cycleId,
     startDate: filters.startDate,
@@ -3952,6 +3971,7 @@ router.get("/reports/export/preview", requireAuth, ownerOnly, async (req, res) =
     drawCount,
     payoutRowCount,
     payoutTotal,
+    payoutStatusBreakdown,
     empty: drawCount === 0 && payoutRowCount === 0,
   });
 });

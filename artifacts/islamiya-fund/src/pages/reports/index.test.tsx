@@ -75,6 +75,11 @@ describe("reports draw export scope", () => {
             drawCount: 2,
             payoutRowCount: 2,
             payoutTotal: 200,
+            payoutStatusBreakdown: {
+              PAID: { count: 1, amount: 100 },
+              REVERSED: { count: 1, amount: 100 },
+              PENDING: { count: 0, amount: 0 },
+            },
             empty: false,
           }),
         }
@@ -97,6 +102,10 @@ describe("reports draw export scope", () => {
 
     await user.click(screen.getByRole("button", { name: "Preview scope" }))
     await waitFor(() => expect(screen.getByText("Previewed download scope")).toBeTruthy())
+    expect(screen.getByText("Payout status breakdown")).toBeTruthy()
+    expect(screen.getByText("Paid")).toBeTruthy()
+    expect(screen.getByText("Reversed")).toBeTruthy()
+    expect(screen.getByText("Pending")).toBeTruthy()
 
     expect(mocks.fetch).toHaveBeenCalledWith(
       "/api/reports/export/preview?type=draws&cycleId=41&startDate=2026-09-01&endDate=2026-09-07",
@@ -141,6 +150,11 @@ describe("reports draw export scope", () => {
             drawCount: 1,
             payoutRowCount: 1,
             payoutTotal: 100,
+            payoutStatusBreakdown: {
+              PAID: { count: 1, amount: 100 },
+              REVERSED: { count: 0, amount: 0 },
+              PENDING: { count: 0, amount: 0 },
+            },
             empty: false,
           }),
         }

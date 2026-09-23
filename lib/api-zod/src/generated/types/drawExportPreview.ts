@@ -5,6 +5,7 @@
  * ISLAMIYA Revolving Fund API
  * OpenAPI spec version: 1.0.0
  */
+import type { PayoutStatusBreakdown } from './payoutStatusBreakdown';
 
 export interface DrawExportPreview {
   /** @nullable */
@@ -22,5 +23,6 @@ export interface DrawExportPreview {
      * @minimum 0
      */
   payoutTotal: number;
+  payoutStatusBreakdown: PayoutStatusBreakdown;
   empty: boolean;
 }

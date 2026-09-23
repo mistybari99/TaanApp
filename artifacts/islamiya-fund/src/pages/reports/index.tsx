@@ -16,15 +16,28 @@ type DrawExportScope = {
   endDate: string
 }
 
+type PayoutStatus = "PAID" | "REVERSED" | "PENDING"
+
+type PayoutStatusSummary = {
+  count: number
+  amount: number
+}
+
 type DrawExportPreview = {
   scope: DrawExportScope
   drawCount: number
   payoutRowCount: number
   payoutTotal: number
+  payoutStatusBreakdown: Record<PayoutStatus, PayoutStatusSummary>
   empty: boolean
 }
 
 const scopeKey = (scope: DrawExportScope) => `${scope.cycleId}|${scope.startDate}|${scope.endDate}`
+const payoutStatusLabels: Array<{ status: PayoutStatus; label: string }> = [
+  { status: "PAID", label: "Paid" },
+  { status: "REVERSED", label: "Reversed" },
+  { status: "PENDING", label: "Pending" },
+]
 
 export default function ReportsPage() {
   const { data: dashboard } = useGetDashboard()
@@ -70,6 +83,7 @@ export default function ReportsPage() {
         drawCount: number
         payoutRowCount: number
         payoutTotal: number
+        payoutStatusBreakdown: Record<PayoutStatus, PayoutStatusSummary>
         empty: boolean
       }
       setDrawPreview({
@@ -81,6 +95,7 @@ export default function ReportsPage() {
         drawCount: body.drawCount,
         payoutRowCount: body.payoutRowCount,
         payoutTotal: body.payoutTotal,
+        payoutStatusBreakdown: body.payoutStatusBreakdown,
         empty: body.empty,
       })
       toast.success("ডাউনলোডের scope preview করা হয়েছে")
@@ -242,6 +257,20 @@ export default function ReportsPage() {
                   <div>
                     <p className="text-xs text-muted-foreground">Total payout amount</p>
                     <p className="font-semibold">{formatCurrency(drawPreview.payoutTotal)}</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">Payout status breakdown</p>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {payoutStatusLabels.map(({ status, label }) => {
+                      const summary = drawPreview.payoutStatusBreakdown[status]
+                      return (
+                        <div key={status} className="rounded-md border bg-muted/20 p-2">
+                          <p className="text-xs font-medium">{label}</p>
+                          <p className="text-sm font-semibold">{summary.count} rows · {formatCurrency(summary.amount)}</p>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
                 {drawPreview.empty ? (

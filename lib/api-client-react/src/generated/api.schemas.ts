@@ -11,6 +11,19 @@ export interface HealthStatus {
   serverTime: string;
 }
 
+export interface PayoutStatusSummary {
+  /** @minimum 0 */
+  count: number;
+  /** @minimum 0 */
+  amount: number;
+}
+
+export interface PayoutStatusBreakdown {
+  PAID: PayoutStatusSummary;
+  REVERSED: PayoutStatusSummary;
+  PENDING: PayoutStatusSummary;
+}
+
 export interface DrawExportPreview {
   /** @nullable */
   cycleId: number | null;
@@ -27,6 +40,7 @@ export interface DrawExportPreview {
      * @minimum 0
      */
   payoutTotal: number;
+  payoutStatusBreakdown: PayoutStatusBreakdown;
   empty: boolean;
 }
 

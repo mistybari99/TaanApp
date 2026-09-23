@@ -487,6 +487,11 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
       drawCount: 1,
       payoutRowCount: 3,
       payoutTotal: 301,
+      payoutStatusBreakdown: {
+        PAID: { count: 1, amount: 100.5 },
+        REVERSED: { count: 2, amount: 200.5 },
+        PENDING: { count: 0, amount: 0 },
+      },
       empty: false,
     });
 
@@ -503,6 +508,11 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
       drawCount: 2,
       payoutRowCount: 2,
       payoutTotal: 300.25,
+      payoutStatusBreakdown: {
+        PAID: { count: 1, amount: 200 },
+        REVERSED: { count: 1, amount: 100.25 },
+        PENDING: { count: 0, amount: 0 },
+      },
       empty: false,
     });
 
@@ -519,6 +529,11 @@ test("draw payout export keeps cycle scope, inclusive date bounds, and ledger ro
       drawCount: 0,
       payoutRowCount: 0,
       payoutTotal: 0,
+      payoutStatusBreakdown: {
+        PAID: { count: 0, amount: 0 },
+        REVERSED: { count: 0, amount: 0 },
+        PENDING: { count: 0, amount: 0 },
+      },
       empty: true,
     });
 

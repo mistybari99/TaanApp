@@ -82,6 +82,8 @@ export * from './paymentDuplicateReviewCode';
 export * from './paymentInput';
 export * from './paymentInputVerificationMethod';
 export * from './paymentReceiptSource';
+export * from './payoutStatusBreakdown';
+export * from './payoutStatusSummary';
 export * from './permissionInput';
 export * from './permissionInputPermission';
 export * from './permissionRecord';

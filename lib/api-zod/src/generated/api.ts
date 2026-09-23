@@ -1974,6 +1974,18 @@ export const previewExportResponsePayoutRowCountMin = 0;
 
 export const previewExportResponsePayoutTotalMin = 0;
 
+export const previewExportResponsePayoutStatusBreakdownPAIDCountMin = 0;
+
+export const previewExportResponsePayoutStatusBreakdownPAIDAmountMin = 0;
+
+export const previewExportResponsePayoutStatusBreakdownREVERSEDCountMin = 0;
+
+export const previewExportResponsePayoutStatusBreakdownREVERSEDAmountMin = 0;
+
+export const previewExportResponsePayoutStatusBreakdownPENDINGCountMin = 0;
+
+export const previewExportResponsePayoutStatusBreakdownPENDINGAmountMin = 0;
+
 
 
 export const PreviewExportResponse = zod.object({
@@ -1983,6 +1995,20 @@ export const PreviewExportResponse = zod.object({
   "drawCount": zod.number().int().min(previewExportResponseDrawCountMin),
   "payoutRowCount": zod.number().int().min(previewExportResponsePayoutRowCountMin),
   "payoutTotal": zod.number().min(previewExportResponsePayoutTotalMin).describe('Total amount of all scoped payout ledger rows'),
+  "payoutStatusBreakdown": zod.object({
+  "PAID": zod.object({
+  "count": zod.number().int().min(previewExportResponsePayoutStatusBreakdownPAIDCountMin),
+  "amount": zod.number().min(previewExportResponsePayoutStatusBreakdownPAIDAmountMin)
+}),
+  "REVERSED": zod.object({
+  "count": zod.number().int().min(previewExportResponsePayoutStatusBreakdownREVERSEDCountMin),
+  "amount": zod.number().min(previewExportResponsePayoutStatusBreakdownREVERSEDAmountMin)
+}),
+  "PENDING": zod.object({
+  "count": zod.number().int().min(previewExportResponsePayoutStatusBreakdownPENDINGCountMin),
+  "amount": zod.number().min(previewExportResponsePayoutStatusBreakdownPENDINGAmountMin)
+})
+}),
   "empty": zod.boolean()
 })
 

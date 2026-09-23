@@ -486,7 +486,7 @@ components:
         serverTime: { type: string }
     DrawExportPreview:
       type: object
-      required: [cycleId, startDate, endDate, drawCount, payoutRowCount, payoutTotal, empty]
+      required: [cycleId, startDate, endDate, drawCount, payoutRowCount, payoutTotal, payoutStatusBreakdown, empty]
       properties:
         cycleId: { type: ["integer", "null"] }
         startDate: { type: ["string", "null"], format: date }
@@ -494,7 +494,21 @@ components:
         drawCount: { type: integer, minimum: 0 }
         payoutRowCount: { type: integer, minimum: 0 }
         payoutTotal: { type: number, minimum: 0, description: Total amount of all scoped payout ledger rows, including reversed rows }
+        payoutStatusBreakdown: { $ref: "#/components/schemas/PayoutStatusBreakdown" }
         empty: { type: boolean }
+    PayoutStatusBreakdown:
+      type: object
+      required: [PAID, REVERSED, PENDING]
+      properties:
+        PAID: { $ref: "#/components/schemas/PayoutStatusSummary" }
+        REVERSED: { $ref: "#/components/schemas/PayoutStatusSummary" }
+        PENDING: { $ref: "#/components/schemas/PayoutStatusSummary" }
+    PayoutStatusSummary:
+      type: object
+      required: [count, amount]
+      properties:
+        count: { type: integer, minimum: 0 }
+        amount: { type: number, minimum: 0 }
     LoginInput:
       type: object
       required: [username, password]
