@@ -5,7 +5,9 @@ import userEvent from "@testing-library/user-event"
 
 const mocks = vi.hoisted(() => ({
   permissions: [] as any[],
+  grantMutate: vi.fn(),
   renewMutate: vi.fn(),
+  revokeMutate: vi.fn(),
   invalidateQueries: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
@@ -25,9 +27,9 @@ vi.mock("@workspace/api-client-react", () => ({
   useListCollectorTargets: () => ({ data: [] }),
   useUpsertCollectorTarget: () => ({ mutate: vi.fn(), isPending: false }),
   useListPermissions: () => ({ data: mocks.permissions }),
-  useGrantPermission: () => ({ mutate: vi.fn(), isPending: false }),
+  useGrantPermission: () => ({ mutate: mocks.grantMutate, isPending: false }),
   useRenewPermission: () => ({ mutate: mocks.renewMutate, isPending: false }),
-  useRevokePermission: () => ({ mutate: vi.fn(), isPending: false }),
+  useRevokePermission: () => ({ mutate: mocks.revokeMutate, isPending: false }),
   useListPermissionAudit: () => ({ data: [], isLoading: false }),
   getListCollectorTargetsQueryKey: () => ["collector-targets"],
   getListPermissionsQueryKey: () => ["permissions"],
@@ -61,13 +63,77 @@ const originalGrant = {
 describe("Staff delegated-access renewal", () => {
   beforeEach(() => {
     mocks.permissions = [{ ...originalGrant }]
+    mocks.grantMutate.mockReset()
     mocks.renewMutate.mockReset()
+    mocks.revokeMutate.mockReset()
     mocks.invalidateQueries.mockReset()
     mocks.toastSuccess.mockReset()
     mocks.toastError.mockReset()
   })
 
   afterEach(cleanup)
+
+  it("keeps grant unavailable until a non-blank reason is entered and trims the valid reason", async () => {
+    const user = userEvent.setup()
+    render(<CollectorsPage />)
+
+    const grantButton = screen.getByRole("button", { name: "Permission দিন" }) as HTMLButtonElement
+    expect(grantButton.disabled).toBe(true)
+
+    await user.selectOptions(screen.getByLabelText("কর্মী"), "7")
+    const reason = screen.getByLabelText("কারণ (required)")
+    await user.type(reason, "   ")
+    expect(grantButton.disabled).toBe(true)
+
+    await user.clear(reason)
+    await user.type(reason, "  Grant for payout coverage  ")
+    expect(grantButton.disabled).toBe(false)
+    await user.click(grantButton)
+
+    expect(mocks.grantMutate).toHaveBeenCalledWith(
+      {
+        data: {
+          userId: 7,
+          permission: "PAYOUT_APPROVAL",
+          cycleId: undefined,
+          expiresAt: undefined,
+          reason: "Grant for payout coverage",
+          note: undefined,
+        },
+      },
+      expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
+    )
+  })
+
+  it("does not revoke when the prompt is cancelled or contains only whitespace", async () => {
+    const user = userEvent.setup()
+    const prompt = vi.spyOn(window, "prompt")
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce("   ")
+    render(<CollectorsPage />)
+
+    const revokeButton = screen.getByRole("button", { name: "Revoke" })
+    await user.click(revokeButton)
+    await user.click(revokeButton)
+
+    expect(prompt).toHaveBeenCalledTimes(2)
+    expect(mocks.revokeMutate).not.toHaveBeenCalled()
+    prompt.mockRestore()
+  })
+
+  it("passes a valid revoke reason after trimming surrounding whitespace", async () => {
+    const user = userEvent.setup()
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue("  Staff role changed  ")
+    render(<CollectorsPage />)
+
+    await user.click(screen.getByRole("button", { name: "Revoke" }))
+
+    expect(mocks.revokeMutate).toHaveBeenCalledWith(
+      { id: 31, data: { reason: "Staff role changed" } },
+      expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
+    )
+    prompt.mockRestore()
+  })
 
   it("replaces an active grant and keeps the prior grant visible after refresh", async () => {
     const user = userEvent.setup()
