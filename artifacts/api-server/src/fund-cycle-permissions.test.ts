@@ -281,6 +281,120 @@ test("cycle-scoped delegated access cannot be used on another cycle", async () =
   }
 });
 
+test("cycle create and edit reject impossible calendar dates", async () => {
+  const ownerToken = `${prefix}-calendar-owner-token`;
+  let server: ReturnType<typeof app.listen> | undefined;
+  let ownerId = 0;
+  let cycleId = 0;
+  let createdCycleId = 0;
+  let previousActiveCycleIds: number[] = [];
+
+  try {
+    const previousActive = await pool.query("UPDATE fund_cycles SET status='COMPLETED' WHERE status='ACTIVE' RETURNING id");
+    previousActiveCycleIds = previousActive.rows.map((row) => Number(row.id));
+    const owner = await pool.query(
+      `INSERT INTO fund_users(name,username,password_hash,role)
+       VALUES($1,$2,'synthetic','OWNER') RETURNING id`,
+      [`${prefix} calendar owner`, `${prefix}-calendar-owner`],
+    );
+    ownerId = Number(owner.rows[0].id);
+    const cycle = await pool.query(
+      `INSERT INTO fund_cycles(cycle_number,name,start_date,tracking_start_date,daily_per_share,status,notes)
+       VALUES((SELECT COALESCE(MAX(cycle_number),0)+1 FROM fund_cycles),$1,'2026-01-01','2026-01-01',100,'ACTIVE',$2)
+       RETURNING id`,
+      [`${prefix} calendar cycle`, prefix],
+    );
+    cycleId = Number(cycle.rows[0].id);
+    await pool.query(
+      `INSERT INTO fund_sessions(token_hash,user_id,expires_at)
+       VALUES($1,$2,now()+interval '10 minutes')`,
+      [hashToken(ownerToken), ownerId],
+    );
+
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server?.once("listening", resolve));
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const send = (method: "POST" | "PATCH", path: string, body: unknown) => fetch(`${baseUrl}${path}`, {
+      method,
+      headers: { "content-type": "application/json", cookie: `irf_session=${ownerToken}` },
+      body: JSON.stringify(body),
+    });
+
+    const invalidCreates = [
+      {
+        body: { name: `${prefix} invalid start`, status: "COMPLETED", startDate: "2026-02-30", endDate: "2026-03-01" },
+        error: "Cycle name and valid calendar start date are required",
+      },
+      {
+        body: { name: `${prefix} invalid tracking`, status: "ACTIVE", startDate: "2026-01-01", trackingStartDate: "2026-02-30" },
+        error: "Tracking start date must be a valid calendar date",
+      },
+      {
+        body: { name: `${prefix} invalid end`, status: "COMPLETED", startDate: "2026-01-01", endDate: "2026-02-30" },
+        error: "End date must be a valid calendar date",
+      },
+    ];
+    for (const invalidCreate of invalidCreates) {
+      const response = await send("POST", "/api/cycles", invalidCreate.body);
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), { error: invalidCreate.error });
+    }
+
+    const invalidEdits = [
+      {
+        body: { startDate: "2026-02-30" },
+        error: "Start date must be a valid calendar date",
+      },
+      {
+        body: { trackingStartDate: "2026-02-30" },
+        error: "Tracking start date must be a valid calendar date",
+      },
+      {
+        body: { endDate: "2026-02-30" },
+        error: "End date must be a valid calendar date",
+      },
+    ];
+    for (const invalidEdit of invalidEdits) {
+      const response = await send("PATCH", `/api/cycles/${cycleId}`, invalidEdit.body);
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), { error: invalidEdit.error });
+    }
+
+    const validCreate = await send("POST", "/api/cycles", {
+      name: `${prefix} valid completed`,
+      status: "COMPLETED",
+      startDate: "2026-03-01",
+      trackingStartDate: "2026-03-01",
+      endDate: "2026-03-02",
+    });
+    assert.equal(validCreate.status, 201);
+    createdCycleId = Number((await validCreate.json() as { id: number }).id);
+
+    const validEdit = await send("PATCH", `/api/cycles/${cycleId}`, { endDate: "2026-01-02" });
+    assert.equal(validEdit.status, 200);
+    assert.equal((await validEdit.json() as { endDate: string }).endDate, "2026-01-02");
+  } finally {
+    if (server) {
+      await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
+    }
+    const cycleIds = [createdCycleId, cycleId].filter(Boolean);
+    if (cycleIds.length) {
+      await pool.query("DELETE FROM fund_audit WHERE cycle_id=ANY($1::int[])", [cycleIds]);
+      await pool.query("DELETE FROM fund_cycles WHERE id=ANY($1::int[])", [cycleIds]);
+    }
+    if (ownerId) {
+      await pool.query("DELETE FROM fund_audit WHERE actor_id=$1", [ownerId]);
+      await pool.query("DELETE FROM fund_sessions WHERE user_id=$1", [ownerId]);
+      await pool.query("DELETE FROM fund_users WHERE id=$1", [ownerId]);
+    }
+    if (previousActiveCycleIds.length) {
+      await pool.query("UPDATE fund_cycles SET status='ACTIVE' WHERE id=ANY($1::int[])", [previousActiveCycleIds]);
+    }
+  }
+});
+
 test("advance allocation and financial correction remain cycle-scoped after expiry or revocation", async () => {
   const ownerToken = `${prefix}-actions-owner-token`;
   const collectorToken = `${prefix}-actions-collector-token`;

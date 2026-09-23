@@ -968,15 +968,18 @@ router.get("/cycles", requireAuth, async (_req, res) => {
 });
 router.post("/cycles", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
   const b = req.body;
-  if (!String(b.name ?? "").trim() || !isIsoDate(b.startDate)) {
-    return res.status(400).json({ error: "Cycle name and valid start date are required" });
+  if (!String(b.name ?? "").trim() || !isCalendarDate(b.startDate)) {
+    return res.status(400).json({ error: "Cycle name and valid calendar start date are required" });
   }
   const status = b.status === "COMPLETED" ? "COMPLETED" : "ACTIVE";
-  if (status === "ACTIVE" && !isIsoDate(b.trackingStartDate)) {
+  if (b.trackingStartDate !== undefined && b.trackingStartDate !== null && b.trackingStartDate !== "" && !isCalendarDate(b.trackingStartDate)) {
+    return res.status(400).json({ error: "Tracking start date must be a valid calendar date" });
+  }
+  if (status === "ACTIVE" && !isCalendarDate(b.trackingStartDate)) {
     return res.status(400).json({ error: "An active cycle needs an explicit digital tracking start date" });
   }
-  if (b.endDate !== undefined && b.endDate !== null && b.endDate !== "" && !isIsoDate(b.endDate)) {
-    return res.status(400).json({ error: "End date must be YYYY-MM-DD" });
+  if (b.endDate !== undefined && b.endDate !== null && b.endDate !== "" && !isCalendarDate(b.endDate)) {
+    return res.status(400).json({ error: "End date must be a valid calendar date" });
   }
   if (b.endDate && String(b.endDate) < String(b.startDate)) {
     return res.status(400).json({ error: "Cycle end date cannot be before its start date" });
@@ -1032,14 +1035,18 @@ router.patch("/cycles/:id", requireAuth, ownerOnly, async (req: AuthedRequest, r
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "Invalid cycle status" });
     }
-    if (b.trackingStartDate !== undefined && !isIsoDate(b.trackingStartDate)) {
+    if (b.startDate !== undefined && !isCalendarDate(b.startDate)) {
       await client.query("ROLLBACK");
-      return res.status(400).json({ error: "Tracking start date must be YYYY-MM-DD" });
+      return res.status(400).json({ error: "Start date must be a valid calendar date" });
+    }
+    if (b.trackingStartDate !== undefined && !isCalendarDate(b.trackingStartDate)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Tracking start date must be a valid calendar date" });
     }
     const requestedEndDate = b.endDate === undefined ? current.rows[0].end_date : (b.endDate ? String(b.endDate) : null);
-    if (b.endDate !== undefined && b.endDate !== null && b.endDate !== "" && !isIsoDate(b.endDate)) {
+    if (b.endDate !== undefined && b.endDate !== null && b.endDate !== "" && !isCalendarDate(b.endDate)) {
       await client.query("ROLLBACK");
-      return res.status(400).json({ error: "End date must be YYYY-MM-DD" });
+      return res.status(400).json({ error: "End date must be a valid calendar date" });
     }
     const cycleStart = String(current.rows[0].start_date ?? "");
     if (requestedEndDate && requestedEndDate < cycleStart) {
