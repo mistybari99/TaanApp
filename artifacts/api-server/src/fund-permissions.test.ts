@@ -157,7 +157,7 @@ test("Owner can renew and replace delegated permission without duplicate active 
     );
     const firstCycle = await client.query(
       `INSERT INTO fund_cycles(cycle_number,name,start_date,status)
-       VALUES($1,$2,CURRENT_DATE,'ACTIVE')
+       VALUES($1,$2,CURRENT_DATE,'COMPLETED')
        RETURNING id`,
       [cycleNumber, `${prefix} renew cycle one`],
     );
@@ -244,11 +244,14 @@ test("Owner can renew and replace delegated permission without duplicate active 
     assert.equal(secondReplacement.cycleId, cycleIds[0]);
     assert.equal(secondReplacement.status, "ACTIVE");
 
-    const history = await (await request("/api/permissions")).json() as Array<{ id: number; status: string; cycleId: number | null }>;
+    const history = await (await request("/api/permissions")).json() as Array<{ id: number; status: string; cycleId: number | null; latestReason: string | null }>;
     assert.equal(history.find((permission) => permission.id === grant.id)?.status, "REVOKED");
     assert.equal(history.find((permission) => permission.id === replacement.id)?.status, "REVOKED");
     assert.equal(history.find((permission) => permission.id === secondReplacement.id)?.status, "ACTIVE");
     assert.equal(history.filter((permission) => [grant.id, replacement.id, secondReplacement.id].includes(permission.id)).length, 3);
+    assert.equal(history.find((permission) => permission.id === grant.id)?.latestReason, "Collector coverage continues");
+    assert.equal(history.find((permission) => permission.id === replacement.id)?.latestReason, "New cycle coverage");
+    assert.equal(history.find((permission) => permission.id === secondReplacement.id)?.latestReason, "Coverage moved back after the intermediate cycle");
     const activeCount = await pool.query(
       `SELECT COUNT(*)::int AS count
          FROM fund_user_permissions

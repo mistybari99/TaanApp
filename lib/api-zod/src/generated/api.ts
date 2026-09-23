@@ -1757,7 +1757,8 @@ export const ListPermissionsResponseItem = zod.object({
   "revokedAt": zod.string().nullish(),
   "note": zod.string().optional(),
   "createdAt": zod.string(),
-  "grantedByName": zod.string().nullish()
+  "grantedByName": zod.string().nullish(),
+  "latestReason": zod.string().nullish().describe('Most recent non-blank reason recorded for this permission row; older records may not have one')
 })
 export const ListPermissionsResponse = zod.array(ListPermissionsResponseItem)
 
@@ -1789,7 +1790,8 @@ export const GrantPermissionResponse = zod.object({
   "revokedAt": zod.string().nullish(),
   "note": zod.string().optional(),
   "createdAt": zod.string(),
-  "grantedByName": zod.string().nullish()
+  "grantedByName": zod.string().nullish(),
+  "latestReason": zod.string().nullish().describe('Most recent non-blank reason recorded for this permission row; older records may not have one')
 })
 
 
@@ -1806,7 +1808,8 @@ export const ListMyPermissionsResponseItem = zod.object({
   "revokedAt": zod.string().nullish(),
   "note": zod.string().optional(),
   "createdAt": zod.string(),
-  "grantedByName": zod.string().nullish()
+  "grantedByName": zod.string().nullish(),
+  "latestReason": zod.string().nullish().describe('Most recent non-blank reason recorded for this permission row; older records may not have one')
 })
 export const ListMyPermissionsResponse = zod.array(ListMyPermissionsResponseItem)
 
@@ -1861,7 +1864,8 @@ export const RevokePermissionResponse = zod.object({
   "revokedAt": zod.string().nullish(),
   "note": zod.string().optional(),
   "createdAt": zod.string(),
-  "grantedByName": zod.string().nullish()
+  "grantedByName": zod.string().nullish(),
+  "latestReason": zod.string().nullish().describe('Most recent non-blank reason recorded for this permission row; older records may not have one')
 })
 
 
@@ -1893,7 +1897,8 @@ export const RenewPermissionResponse = zod.object({
   "revokedAt": zod.string().nullish(),
   "note": zod.string().optional(),
   "createdAt": zod.string(),
-  "grantedByName": zod.string().nullish()
+  "grantedByName": zod.string().nullish(),
+  "latestReason": zod.string().nullish().describe('Most recent non-blank reason recorded for this permission row; older records may not have one')
 })
 
 

@@ -3426,6 +3426,14 @@ router.get("/permissions", requireAuth, ownerOnly, async (_req, res) => {
             p.permission,p.cycle_id AS "cycleId",p.expires_at AS "expiresAt",
             p.revoked_at AS "revokedAt",p.note,p.created_at AS "createdAt",
             g.name AS "grantedByName",
+             (SELECT a.reason
+                FROM fund_audit a
+               WHERE a.entity_type='user_permission'
+                 AND a.entity_id=p.id::text
+                 AND a.reason IS NOT NULL
+                 AND BTRIM(a.reason) <> ''
+               ORDER BY a.created_at DESC,a.id DESC
+               LIMIT 1) AS "latestReason",
             CASE WHEN p.revoked_at IS NOT NULL THEN 'REVOKED'
                  WHEN p.expires_at IS NOT NULL AND p.expires_at <= now() THEN 'EXPIRED'
                  ELSE 'ACTIVE' END AS status
@@ -3442,6 +3450,14 @@ router.get("/permissions/mine", requireAuth, async (req: AuthedRequest, res) => 
             p.permission,p.cycle_id AS "cycleId",p.expires_at AS "expiresAt",
             p.revoked_at AS "revokedAt",p.note,p.created_at AS "createdAt",
             g.name AS "grantedByName",
+             (SELECT a.reason
+                FROM fund_audit a
+               WHERE a.entity_type='user_permission'
+                 AND a.entity_id=p.id::text
+                 AND a.reason IS NOT NULL
+                 AND BTRIM(a.reason) <> ''
+               ORDER BY a.created_at DESC,a.id DESC
+               LIMIT 1) AS "latestReason",
             CASE WHEN p.revoked_at IS NOT NULL THEN 'REVOKED'
                  WHEN p.expires_at IS NOT NULL AND p.expires_at <= now() THEN 'EXPIRED'
                  ELSE 'ACTIVE' END AS status

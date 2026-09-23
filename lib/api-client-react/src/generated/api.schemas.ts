@@ -96,6 +96,8 @@ export interface PermissionRecord {
   note?: string;
   createdAt: string;
   grantedByName?: string | null;
+  /** Most recent non-blank reason recorded for this permission row; older records may not have one */
+  latestReason?: string | null;
 }
 
 export type PermissionInputPermission = typeof PermissionInputPermission[keyof typeof PermissionInputPermission];

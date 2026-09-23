@@ -408,6 +408,7 @@ export default function CollectorsPage() {
                   <div>
                     <p className="font-medium">{permission.userName} · {permission.permission}</p>
                     <p className="text-xs text-muted-foreground">{permission.role} · {permission.cycleId ? `Cycle ${permission.cycleId}` : "all cycles"} · {permission.expiresAt ? `expires ${new Date(permission.expiresAt).toLocaleString()}` : "permanent"} · granted {new Date(permission.createdAt).toLocaleString()}{permission.revokedAt ? ` · ended ${new Date(permission.revokedAt).toLocaleString()}` : ""}{permission.note ? ` · ${permission.note}` : ""}</p>
+                    {permission.latestReason && <p className="mt-1 text-xs"><span className="font-medium text-muted-foreground">Latest reason:</span> {permission.latestReason}</p>}
                   </div>
                   <div className="flex items-center gap-2">
                     <Button size="sm" variant="ghost" onClick={() => setAuditPermissionId(permission.id)}>

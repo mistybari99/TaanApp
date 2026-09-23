@@ -525,6 +525,7 @@ components:
         note: { type: string }
         createdAt: { type: string }
         grantedByName: { type: string, nullable: true }
+        latestReason: { type: string, nullable: true, description: Most recent non-blank reason recorded for this permission row; older records may not have one }
     PermissionInput:
       type: object
       required: [userId, permission, reason]

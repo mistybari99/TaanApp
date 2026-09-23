@@ -57,6 +57,7 @@ const originalGrant = {
   createdAt: "2026-09-01T00:00:00.000Z",
   revokedAt: null,
   note: "Initial access",
+  latestReason: "Initial access granted for payout coverage",
   status: "ACTIVE",
 }
 
@@ -188,6 +189,18 @@ describe("Staff delegated-access renewal", () => {
     expect(screen.getAllByText(/Amina · PAYOUT_APPROVAL/)).toHaveLength(2)
     expect(screen.getByText("REVOKED")).toBeTruthy()
     expect(screen.getByText(/Cycle 11 .* Renewed for next cycle/)).toBeTruthy()
+  })
+
+  it("shows the latest reason when present and omits the reason line for older records without one", () => {
+    mocks.permissions = [
+      { ...originalGrant },
+      { ...originalGrant, id: 32, latestReason: null, status: "REVOKED", revokedAt: "2026-09-10T08:00:00.000Z" },
+    ]
+    render(<CollectorsPage />)
+
+    expect(screen.getByText("Latest reason:")).toBeTruthy()
+    expect(screen.getByText("Initial access granted for payout coverage")).toBeTruthy()
+    expect(screen.getAllByText(/Latest reason:/)).toHaveLength(1)
   })
 
   it("restores an expired grant and keeps the expired record visible after refresh", async () => {
