@@ -170,4 +170,20 @@ describe("reports draw export scope", () => {
     await waitFor(() => expect(mocks.fetch).toHaveBeenCalledTimes(3))
     expect(mocks.fetch).toHaveBeenLastCalledWith("/api/reports/export?type=draws")
   })
+
+  it("shows non-draw export failure without creating a download", async () => {
+    const user = userEvent.setup()
+    mocks.fetch.mockResolvedValue({ ok: false })
+
+    render(<ReportsPage />)
+
+    await user.click(screen.getByRole("button", { name: "সদস্য (Members)" }))
+
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith("ডাউনলোড ব্যর্থ হয়েছে"))
+    expect(mocks.toastSuccess).not.toHaveBeenCalled()
+    expect(mocks.createObjectURL).not.toHaveBeenCalled()
+    expect(mocks.revokeObjectURL).not.toHaveBeenCalled()
+    expect(mocks.anchorClick).not.toHaveBeenCalled()
+    expect(mocks.fetch).toHaveBeenCalledWith("/api/reports/export?type=members")
+  })
 })
