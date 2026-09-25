@@ -44,6 +44,7 @@ export const navItems: NavItem[] = [
   { href: "/share-transfers", icon: Repeat2, labelBn: "শেয়ার transfer", labelEn: "Share Transfers", roles: ["OWNER"], group: "finance" },
   { href: "/member-history", icon: History, labelBn: "সদস্য ইতিহাস", labelEn: "Member History", roles: ["OWNER", "COLLECTOR", "CASH_RECEIVER"], group: "records" },
   { href: "/reports", icon: FileText, labelBn: "রিপোর্ট", labelEn: "Reports", roles: ["OWNER"], group: "records" },
+  { href: "/audit", icon: History, labelBn: "অডিট ইতিহাস", labelEn: "Audit History", roles: ["OWNER"], group: "records" },
   { href: "/settings", icon: Settings, labelBn: "সেটিংস", labelEn: "Settings", roles: ["OWNER"], group: "admin" },
   { href: "/status", icon: Activity, labelBn: "স্ট্যাটাস", labelEn: "Status", roles: ["OWNER"], group: "admin" },
 ]

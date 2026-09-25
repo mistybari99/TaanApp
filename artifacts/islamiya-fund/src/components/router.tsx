@@ -20,6 +20,7 @@ import CyclesPage from "@/pages/cycles"
 import DrawsPage, { DrawHistoryPage } from "@/pages/draws"
 import MemberHistoryPage from "@/pages/member-history"
 import ShareTransfersPage from "@/pages/share-transfers"
+import AuditPage from "@/pages/audit"
 import NotFound from "@/pages/not-found"
 
 export function Router() {
@@ -64,6 +65,7 @@ export function Router() {
                 <Route path="/draws" component={DrawsPage} />
                 <Route path="/draw-history" component={DrawHistoryPage} />
                 <Route path="/reports" component={ReportsPage} />
+                <Route path="/audit" component={AuditPage} />
                 <Route path="/settings" component={SettingsPage} />
                 <Route path="/status" component={StatusPage} />
                 <Route component={NotFound} />

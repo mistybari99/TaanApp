@@ -10,6 +10,7 @@ const ownerMoreHrefs = [
   "/share-transfers",
   "/member-history",
   "/reports",
+  "/audit",
   "/settings",
   "/status",
 ]
