@@ -2227,9 +2227,10 @@ router.get("/draws", requireAuth, async (req, res) => {
 });
 router.post("/draws/:id/move-date", requireAuth, delegatedPermission("DRAW_DATE_CORRECTION"), async (req: AuthedRequest, res) => {
   const drawId = Number(req.params.id);
-  const drawDate = isIsoDate(req.body.drawDate) ? String(req.body.drawDate) : "";
+  const drawDate = String(req.body.drawDate ?? "");
   const reason = String(req.body.reason ?? "").trim();
-  if (!drawId || !drawDate) return res.status(400).json({ error: "A valid draw date is required" });
+  if (!drawId || !isIsoDate(drawDate)) return res.status(400).json({ error: "A valid draw date is required" });
+  if (!isCalendarDate(drawDate)) return res.status(400).json({ error: "Draw date must be a valid calendar date" });
   if (drawDate > todayIso()) return res.status(400).json({ error: "Manual draw date cannot be in the future" });
   const client = await pool.connect();
   try {
@@ -2276,8 +2277,11 @@ router.post("/draws/:id/disbursement", requireAuth, delegatedPermission("PAYOUT_
   const payoutDate = String(req.body?.payoutDate ?? todayIso());
   const reference = String(req.body?.reference ?? "").trim();
   const idempotencyKey = idempotency(req.body?.idempotencyKey);
+  if (!isCalendarDate(payoutDate)) {
+    return res.status(400).json({ error: "Payout date must be a valid calendar date" });
+  }
   if (!Number.isInteger(drawId) || drawId <= 0 || !Number.isInteger(payerUserId) || payerUserId <= 0
-    || !Number.isFinite(amount) || amount <= 0 || !isIsoDate(payoutDate) || !reference) {
+    || !Number.isFinite(amount) || amount <= 0 || !reference) {
     return res.status(400).json({ error: "A valid draw, payer, positive amount, payout date, and reference are required" });
   }
   const client = await pool.connect();
@@ -2466,7 +2470,10 @@ router.post("/draws", requireAuth, ownerOnly, async (req: AuthedRequest, res) =>
   const requestedDrawSlot = b.drawSlot === undefined || b.drawSlot === null || b.drawSlot === "" ? null : Number(b.drawSlot);
   const idempotencyKey = idempotency(b.idempotencyKey);
   const status = String(b.status ?? "RECORDED");
-  if (!cycleId || !winnerMemberId || !isIsoDate(drawDate) || Number(b.winningAmount) <= 0) {
+  if (!isCalendarDate(drawDate)) {
+    return res.status(400).json({ error: "Draw date must be a valid calendar date" });
+  }
+  if (!cycleId || !winnerMemberId || Number(b.winningAmount) <= 0) {
     return res.status(400).json({ error: "Cycle, winner, draw date and positive winning amount are required" });
   }
   if (!isFriday(drawDate)) return res.status(400).json({ error: "Draw date must be a Friday" });

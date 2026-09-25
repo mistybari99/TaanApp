@@ -764,6 +764,21 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     const drawDate = new Date();
     drawDate.setUTCDate(drawDate.getUTCDate() - ((drawDate.getUTCDay() + 2) % 7));
     const drawDateIso = drawDate.toISOString().slice(0, 10);
+    const invalidDrawDate = await request(baseUrl, "/api/draws", fixture.ownerToken, {
+      cycleId: fixture.cycleId,
+      drawDate: "2026-02-30",
+      winnerMemberId: fixture.memberId,
+      winningAmount: 50,
+      idempotencyKey: `${prefix}-draw-invalid-calendar-date`,
+    });
+    assert.equal(invalidDrawDate.status, 400);
+    assert.deepEqual(await invalidDrawDate.json(), { error: "Draw date must be a valid calendar date" });
+    const invalidDrawRows = await pool.query(
+      "SELECT id FROM fund_draws WHERE cycle_id=$1 AND idempotency_key=$2",
+      [fixture.cycleId, `${prefix}-draw-invalid-calendar-date`],
+    );
+    assert.equal(invalidDrawRows.rows.length, 0);
+
     const draw = await request(baseUrl, "/api/draws", fixture.ownerToken, {
       cycleId: fixture.cycleId,
       drawDate: drawDateIso,
@@ -777,6 +792,18 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     const movedDrawDate = new Date(`${drawDateIso}T00:00:00Z`);
     movedDrawDate.setUTCDate(movedDrawDate.getUTCDate() - 1);
     const movedDrawDateIso = movedDrawDate.toISOString().slice(0, 10);
+    const invalidMove = await request(baseUrl, `/api/draws/${drawBody.id}/move-date`, fixture.ownerToken, {
+      drawDate: "2026-02-30",
+      reason: "Synthetic impossible draw date",
+    });
+    assert.equal(invalidMove.status, 400);
+    assert.deepEqual(await invalidMove.json(), { error: "Draw date must be a valid calendar date" });
+    const drawAfterInvalidMove = await pool.query(
+      "SELECT draw_date::text AS draw_date FROM fund_draws WHERE id=$1",
+      [drawBody.id],
+    );
+    assert.equal(drawAfterInvalidMove.rows[0]?.draw_date, drawDateIso);
+
     const moved = await request(baseUrl, `/api/draws/${drawBody.id}/move-date`, fixture.ownerToken, {
       drawDate: movedDrawDateIso,
       reason: "Synthetic manual draw-date correction",
@@ -786,6 +813,28 @@ test("cash custody records direct Owner receipt and a two-step handover atomical
     assert.equal(movedBody.id, drawBody.id);
     assert.equal(movedBody.drawDate, movedDrawDateIso);
     assert.ok(movedBody.drawNumber > 0);
+
+    const invalidPayout = await request(baseUrl, `/api/draws/${drawBody.id}/disbursement`, fixture.ownerToken, {
+      payerUserId: fixture.ownerId,
+      amount: 50,
+      payoutDate: "2026-02-30",
+      reference: `${prefix}-invalid-payout-calendar-date`,
+      idempotencyKey: `${prefix}-invalid-payout-calendar-date`,
+    });
+    assert.equal(invalidPayout.status, 400);
+    assert.deepEqual(await invalidPayout.json(), { error: "Payout date must be a valid calendar date" });
+    const invalidPayoutRows = await pool.query(
+      "SELECT id FROM fund_draw_disbursements WHERE draw_id=$1 AND reference=$2",
+      [drawBody.id, `${prefix}-invalid-payout-calendar-date`],
+    );
+    assert.equal(invalidPayoutRows.rows.length, 0);
+    const invalidPayoutFailureAudits = await pool.query(
+      `SELECT id FROM fund_audit
+        WHERE actor_id=$1 AND action='DRAW_PAYOUT_SAVE_FAILED' AND entity_id=$2
+          AND related_transaction_id=$3`,
+      [fixture.ownerId, String(drawBody.id), `${prefix}-invalid-payout-calendar-date`],
+    );
+    assert.equal(invalidPayoutFailureAudits.rows.length, 0);
 
     const insufficient = await request(baseUrl, `/api/draws/${drawBody.id}/disbursement`, fixture.ownerToken, {
       payerUserId: fixture.collectorId,
