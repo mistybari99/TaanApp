@@ -4002,10 +4002,37 @@ router.get("/reports/export", requireAuth, ownerOnly, async (req: AuthedRequest,
   const requestedEndDate = filters.endDate;
   const activeCycle = await pool.query("SELECT id FROM fund_cycles WHERE status='ACTIVE' LIMIT 1");
   const activeCycleId = Number(activeCycle.rows[0]?.id ?? 0);
+  const auditFinancialExport = async (
+    reportType: string,
+    rowCount: number,
+    effectiveScope: Record<string, unknown> & { cycleId: number | null },
+  ) => {
+    await audit(
+      req.user!.id,
+      "FINANCIAL_EXPORT_DOWNLOADED",
+      `Downloaded ${reportType} financial export (${rowCount} rows)`,
+      "report_export",
+      reportType,
+      {
+        cycleId: effectiveScope.cycleId,
+        afterValue: {
+          reportType,
+          requestedScope: {
+            cycleId: requestedCycleId,
+            startDate: requestedStartDate,
+            endDate: requestedEndDate,
+          },
+          effectiveScope,
+          rowCount,
+        },
+      },
+    );
+  };
 
   if (type === "members") {
     const r = await pool.query(`SELECT COALESCE(public_member_id,member_id) AS member_id,name,mobile,business_name,address,nid,shares,daily_amount,joining_date,status,notes
       FROM fund_members ORDER BY member_id`);
+    await auditFinancialExport(type, r.rows.length, { cycleId: null, scope: "all_members" });
     return sendCsv(res, "members-backup", ["Member ID", "Name", "Mobile", "Business Name", "Address", "NID", "Shares", "Daily Amount", "Joining Date", "Status", "Notes"],
       r.rows.map((x) => [x.member_id, x.name, x.mobile, x.business_name, x.address, x.nid, x.shares, x.daily_amount, x.joining_date, x.status, x.notes]));
   }
@@ -4022,6 +4049,7 @@ router.get("/reports/export", requireAuth, ownerOnly, async (req: AuthedRequest,
       (s.created_at AT TIME ZONE 'Asia/Dhaka')::date AS settlement_date,s.amount,s.reference,s.note
       FROM fund_settlements s JOIN fund_users u ON u.id=s.collector_id
       WHERE s.cycle_id=${activeCycleId} ORDER BY s.created_at DESC`);
+    await auditFinancialExport(type, r.rows.length, { cycleId: activeCycleId || null });
     return sendCsv(res, "settlements-backup", ["Settlement ID", "Collector ID", "Collector", "Date", "Deposited Amount", "Reference", "Notes"],
       r.rows.map((x) => [x.id, x.collector_id, x.collector_name, x.settlement_date, x.amount, x.reference, x.note]));
   }
@@ -4079,14 +4107,16 @@ router.get("/reports/export", requireAuth, ownerOnly, async (req: AuthedRequest,
   }
 
   if (type === "due") {
+    const dueReportDate = todayIso();
     const r = await pool.query(`SELECT COALESCE(m.public_member_id,m.member_id) AS member_id,m.name,m.mobile,cm.shares,cm.daily_contribution AS daily_amount,
-       COALESCE(SUM(p.current_period_applied) FILTER (WHERE p.collection_date='${todayIso()}'::date AND p.status='POSTED'),0)::float AS today_paid,
-       GREATEST(cm.daily_contribution-COALESCE(SUM(p.current_period_applied) FILTER (WHERE p.collection_date='${todayIso()}'::date AND p.status='POSTED'),0),0)::float AS today_due
+       COALESCE(SUM(p.current_period_applied) FILTER (WHERE p.collection_date='${dueReportDate}'::date AND p.status='POSTED'),0)::float AS today_paid,
+       GREATEST(cm.daily_contribution-COALESCE(SUM(p.current_period_applied) FILTER (WHERE p.collection_date='${dueReportDate}'::date AND p.status='POSTED'),0),0)::float AS today_due
       FROM fund_members m JOIN fund_cycle_members cm ON cm.member_id=m.id AND cm.cycle_id=${activeCycleId}
       JOIN fund_cycles c ON c.id=cm.cycle_id LEFT JOIN fund_payments p ON p.member_id=m.id AND p.cycle_id=${activeCycleId}
-       WHERE m.status='active' AND c.tracking_start_date IS NOT NULL AND '${todayIso()}'::date >= c.tracking_start_date GROUP BY m.id,cm.id
-       HAVING COALESCE(SUM(p.current_period_applied) FILTER (WHERE p.collection_date='${todayIso()}'::date AND p.status='POSTED'),0) < cm.daily_contribution
+       WHERE m.status='active' AND c.tracking_start_date IS NOT NULL AND '${dueReportDate}'::date >= c.tracking_start_date GROUP BY m.id,cm.id
+      HAVING COALESCE(SUM(p.current_period_applied) FILTER (WHERE p.collection_date='${dueReportDate}'::date AND p.status='POSTED'),0) < cm.daily_contribution
       ORDER BY m.member_id`);
+    await auditFinancialExport(type, r.rows.length, { cycleId: activeCycleId || null, asOfDate: dueReportDate });
     return sendCsv(res, "due-members", ["Member ID", "Name", "Mobile", "Shares", "Daily Amount", "Today Paid", "Today Due"],
       r.rows.map((x) => [x.member_id, x.name, x.mobile, x.shares, x.daily_amount, x.today_paid, x.today_due]));
   }
@@ -4096,6 +4126,7 @@ router.get("/reports/export", requireAuth, ownerOnly, async (req: AuthedRequest,
       COALESCE(SUM(p.amount),0)::float AS collected
       FROM fund_users u LEFT JOIN fund_payments p ON p.collector_id=u.id AND p.cycle_id=${activeCycleId} AND p.status='POSTED'
       WHERE u.role='COLLECTOR' GROUP BY u.id ORDER BY u.name`);
+    await auditFinancialExport(type, r.rows.length, { cycleId: activeCycleId || null });
     return sendCsv(res, "collector-collection", ["Collector ID", "Collector", "Payment Count", "Collected Amount"],
       r.rows.map((x) => [x.id, x.name, x.payment_count, x.collected]));
   }
@@ -4111,6 +4142,18 @@ router.get("/reports/export", requireAuth, ownerOnly, async (req: AuthedRequest,
       FROM fund_payments p JOIN fund_members m ON m.id=p.member_id LEFT JOIN fund_users u ON u.id=p.collector_id
       LEFT JOIN fund_users ru ON ru.id=COALESCE(p.receiver_id,p.collector_id)
        WHERE p.cycle_id=${activeCycleId} AND ${period} ORDER BY p.created_at DESC`);
+  const effectivePeriodScope = type === "weekly"
+    ? { startDate: addDays(reportDate, -6), endDate: reportDate }
+    : type === "monthly"
+      ? { startDate: `${reportDate.slice(0, 7)}-01`, endDate: reportDate }
+      : type === "daily"
+        ? { startDate: reportDate, endDate: reportDate }
+        : {};
+  await auditFinancialExport(type, r.rows.length, {
+    cycleId: activeCycleId || null,
+    period: type,
+    ...effectivePeriodScope,
+  });
   return sendCsv(res, `payments-${type || "all"}`, ["Payment ID", "Receipt ID", "Member ID", "Member", "Payment Date", "Payment Time", "Amount", "Verification", "Collector ID", "Collector", "Receiver", "Receipt Source", "Status", "Idempotency Key", "Created At"],
     r.rows.map((x) => [x.payment_id, x.receipt_id, x.member_id, x.member_name, x.payment_date, x.payment_time, x.amount, x.verification_status, x.collector_id, x.collector_name, x.receiver_name, x.receipt_source, x.status, x.idempotency_key, x.created_at]));
 });

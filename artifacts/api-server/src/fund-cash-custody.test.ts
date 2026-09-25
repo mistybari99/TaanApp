@@ -343,6 +343,7 @@ async function createDrawExportAuthorizationFixture(): Promise<DrawExportAuthori
 async function cleanupDrawExportAuthorizationFixture(fixture: DrawExportAuthorizationFixture) {
   const userIds = [fixture.ownerId, fixture.collectorId, fixture.receiverId];
   await pool.query("DELETE FROM fund_sessions WHERE user_id=ANY($1::int[])", [userIds]);
+  await pool.query("DELETE FROM fund_audit WHERE actor_id=ANY($1::int[])", [userIds]);
   await pool.query("DELETE FROM fund_users WHERE id=ANY($1::int[])", [userIds]);
 }
 
@@ -374,6 +375,91 @@ test("draw payout export is restricted to Owners", async () => {
       [[fixture.ownerId, fixture.collectorId, fixture.receiverId]],
     );
     assert.equal(unauthorizedAudits.rows.length, 0);
+  } finally {
+    if (server) await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
+    await cleanupDrawExportAuthorizationFixture(fixture);
+  }
+});
+
+test("successful non-draw financial exports are audited only after authorization and validation", async () => {
+  const fixture = await createDrawExportAuthorizationFixture();
+  let server: ReturnType<typeof app.listen> | undefined;
+  try {
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server?.once("listening", () => resolve()));
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const reportTypes = ["members", "payments", "daily", "weekly", "monthly", "settlements", "due", "collector"];
+
+    for (const reportType of reportTypes) {
+      const requestedScope = reportType === "payments"
+        ? "&cycleId=999999&startDate=2026-03-01&endDate=2026-03-02"
+        : "";
+      const response = await request(baseUrl, `/api/reports/export?type=${reportType}${requestedScope}`, fixture.ownerToken);
+      assert.equal(response.status, 200, `${reportType} export should succeed`);
+      assert.match(response.headers.get("content-type") ?? "", /text\/csv/);
+      await response.text();
+    }
+
+    const successfulAudits = await pool.query(
+      `SELECT action,entity_type,entity_id,cycle_id,after_value
+         FROM fund_audit
+        WHERE actor_id=$1 AND action='FINANCIAL_EXPORT_DOWNLOADED'
+        ORDER BY id`,
+      [fixture.ownerId],
+    );
+    assert.equal(successfulAudits.rows.length, reportTypes.length);
+    for (const [index, reportType] of reportTypes.entries()) {
+      const auditRow = successfulAudits.rows[index];
+      assert.equal(auditRow.action, "FINANCIAL_EXPORT_DOWNLOADED");
+      assert.equal(auditRow.entity_type, "report_export");
+      assert.equal(auditRow.entity_id, reportType);
+      assert.equal(auditRow.after_value.reportType, reportType);
+      assert.deepEqual(auditRow.after_value.requestedScope, {
+        cycleId: reportType === "payments" ? 999999 : null,
+        startDate: reportType === "payments" ? "2026-03-01" : null,
+        endDate: reportType === "payments" ? "2026-03-02" : null,
+      });
+      assert.equal(
+        auditRow.after_value.effectiveScope.cycleId,
+        auditRow.cycle_id == null ? null : Number(auditRow.cycle_id),
+      );
+      assert.ok(Number.isInteger(auditRow.after_value.rowCount));
+      if (reportType === "daily") {
+        assert.match(auditRow.after_value.effectiveScope.startDate, /^\d{4}-\d{2}-\d{2}$/);
+        assert.equal(auditRow.after_value.effectiveScope.endDate, auditRow.after_value.effectiveScope.startDate);
+      }
+      if (reportType === "weekly" || reportType === "monthly") {
+        assert.match(auditRow.after_value.effectiveScope.startDate, /^\d{4}-\d{2}-\d{2}$/);
+        assert.match(auditRow.after_value.effectiveScope.endDate, /^\d{4}-\d{2}-\d{2}$/);
+        assert.ok(auditRow.after_value.effectiveScope.startDate <= auditRow.after_value.effectiveScope.endDate);
+      }
+    }
+
+    for (const [token, reportType] of [
+      [fixture.collectorToken, "payments"],
+      [fixture.receiverToken, "settlements"],
+    ]) {
+      const response = await request(baseUrl, `/api/reports/export?type=${reportType}`, token);
+      assert.equal(response.status, 403);
+    }
+    const unauthenticated = await unauthenticatedRequest(baseUrl, "/api/reports/export?type=due");
+    assert.equal(unauthenticated.status, 401);
+
+    const invalidScope = await request(
+      baseUrl,
+      "/api/reports/export?type=payments&startDate=not-a-date",
+      fixture.ownerToken,
+    );
+    assert.equal(invalidScope.status, 400);
+    const auditsAfterRejectedRequests = await pool.query(
+      `SELECT id
+         FROM fund_audit
+        WHERE actor_id=ANY($1::int[]) AND action='FINANCIAL_EXPORT_DOWNLOADED'`,
+      [[fixture.ownerId, fixture.collectorId, fixture.receiverId]],
+    );
+    assert.equal(auditsAfterRejectedRequests.rows.length, reportTypes.length);
   } finally {
     if (server) await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
     await cleanupDrawExportAuthorizationFixture(fixture);
