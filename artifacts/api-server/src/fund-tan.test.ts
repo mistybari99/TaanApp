@@ -561,6 +561,130 @@ test("share transfer math supports partial, full, repeated and multi-receiver tr
   assert.throws(() => calculateShareTransfer(0, 1, 1, 100), /positive shares/);
 });
 
+test("TAN lock rejects impossible dates without creating a schedule and accepts valid leap and regular Saturdays", async () => {
+  const token = `${prefix}-lock-date-owner-token`;
+  const client = await pool.connect();
+  let server: ReturnType<typeof app.listen> | undefined;
+  let ownerId = 0;
+  let memberId = 0;
+  let cycleId = 0;
+  let previousActiveCycleId = 0;
+
+  try {
+    await client.query("BEGIN");
+    const previousActiveCycle = await client.query(
+      "UPDATE fund_cycles SET status='COMPLETED' WHERE status='ACTIVE' RETURNING id",
+    );
+    previousActiveCycleId = previousActiveCycle.rows[0]?.id ?? 0;
+
+    const owner = await client.query(
+      `INSERT INTO fund_users(name,username,password_hash,role)
+       VALUES($1,$2,'synthetic','OWNER') RETURNING id`,
+      [`${prefix} date owner`, `${prefix}-date-owner`],
+    );
+    ownerId = owner.rows[0].id;
+    await client.query(
+      `INSERT INTO fund_sessions(token_hash,user_id,expires_at)
+       VALUES($1,$2,now()+interval '10 minutes')`,
+      [hashToken(token), ownerId],
+    );
+    const member = await client.query(
+      `INSERT INTO fund_members(member_id,name,mobile,address,shares,daily_amount,joining_date,status)
+       VALUES($1,$2,$3,'test',1,100,'2020-02-29','active') RETURNING id`,
+      [`${prefix}-LOCK-DATE-M1`, `${prefix} date member`, "01800000001"],
+    );
+    memberId = member.rows[0].id;
+    const cycle = await client.query(
+      `INSERT INTO fund_cycles(cycle_number,name,start_date,daily_per_share,status,notes)
+       VALUES((SELECT COALESCE(MAX(cycle_number),0)+1 FROM fund_cycles),$1,'2020-02-29',100,'ACTIVE',$2)
+       RETURNING id`,
+      [`${prefix} date cycle`, prefix],
+    );
+    cycleId = cycle.rows[0].id;
+    await client.query(
+      `INSERT INTO fund_cycle_members(cycle_id,member_id,shares,daily_contribution)
+       VALUES($1,$2,1,100)`,
+      [cycleId, memberId],
+    );
+    await client.query("COMMIT");
+
+    server = app.listen(0);
+    await new Promise<void>((resolve) => server?.once("listening", () => resolve()));
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const requestLock = (tanStartDate: string) => fetch(`${baseUrl}/api/cycles/${cycleId}/tan/lock`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `irf_session=${token}` },
+      body: JSON.stringify({ tanStartDate, drawsPerWeek: 1 }),
+    });
+
+    const impossibleDate = await requestLock("2021-04-31");
+    assert.equal(impossibleDate.status, 400);
+    assert.deepEqual(await impossibleDate.json(), { error: "TAN start date must be a valid calendar date" });
+    const afterRejectedDate = await client.query(
+      `SELECT
+         (SELECT COUNT(*)::int FROM fund_tan_configs WHERE cycle_id=$1) AS configs,
+         (SELECT COUNT(*)::int FROM fund_tan_periods WHERE cycle_id=$1) AS periods`,
+      [cycleId],
+    );
+    assert.deepEqual(afterRejectedDate.rows[0], { configs: 0, periods: 0 });
+
+    const leapDayStart = await requestLock("2020-02-29");
+    assert.equal(leapDayStart.status, 201);
+    const leapDayBody = await leapDayStart.json() as { id: number; tanStartDate: string };
+    assert.equal(leapDayBody.tanStartDate, "2020-02-29");
+
+    await client.query(
+      "UPDATE fund_tan_periods SET status='COMPLETED',completed_at=now() WHERE tan_config_id=$1",
+      [leapDayBody.id],
+    );
+    await client.query(
+      "UPDATE fund_tan_configs SET status='COMPLETED',completed_at=now() WHERE id=$1",
+      [leapDayBody.id],
+    );
+    const regularStart = await requestLock("2020-03-07");
+    assert.equal(regularStart.status, 201);
+    const regularBody = await regularStart.json() as { tanStartDate: string };
+    assert.equal(regularBody.tanStartDate, "2020-03-07");
+
+    const schedules = await client.query(
+      `SELECT tan_start_date::text AS start_date
+         FROM fund_tan_configs WHERE cycle_id=$1 ORDER BY id`,
+      [cycleId],
+    );
+    assert.deepEqual(schedules.rows, [
+      { start_date: "2020-02-29" },
+      { start_date: "2020-03-07" },
+    ]);
+  } finally {
+    if (server) await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
+    await client.query("ROLLBACK").catch(() => undefined);
+    client.release();
+    if (ownerId) await pool.query("DELETE FROM fund_audit WHERE actor_id=$1", [ownerId]);
+    if (cycleId) {
+      await pool.query(
+        "DELETE FROM fund_tan_schedule_events WHERE tan_config_id IN (SELECT id FROM fund_tan_configs WHERE cycle_id=$1)",
+        [cycleId],
+      );
+      await pool.query("DELETE FROM fund_tan_period_member_obligations WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_tan_periods WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_tan_member_draw_entitlements WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_tan_configs WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_cycle_members WHERE cycle_id=$1", [cycleId]);
+      await pool.query("DELETE FROM fund_cycles WHERE id=$1", [cycleId]);
+    }
+    if (previousActiveCycleId) {
+      await pool.query("UPDATE fund_cycles SET status='ACTIVE' WHERE id=$1", [previousActiveCycleId]);
+    }
+    if (ownerId) {
+      await pool.query("DELETE FROM fund_sessions WHERE user_id=$1", [ownerId]);
+      await pool.query("DELETE FROM fund_users WHERE id=$1", [ownerId]);
+    }
+    if (memberId) await pool.query("DELETE FROM fund_members WHERE id=$1", [memberId]);
+  }
+});
+
 test("TAN schedule preserves 108-share math and protects legacy financial writes", async () => {
   const token = `${prefix}-owner-token`;
   const client = await pool.connect();

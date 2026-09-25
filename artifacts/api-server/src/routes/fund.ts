@@ -1348,10 +1348,12 @@ router.post("/cycles/:id/tan/resume", requireAuth, ownerOnly, async (req: Authed
 
 router.post("/cycles/:id/tan/lock", requireAuth, ownerOnly, async (req: AuthedRequest, res) => {
   const cycleId = Number(req.params.id);
-  const tanStartDate = isIsoDate(req.body.tanStartDate ?? req.body.startDate)
-    ? String(req.body.tanStartDate ?? req.body.startDate)
-    : "";
+  const requestedTanStartDate = req.body.tanStartDate ?? req.body.startDate;
+  const tanStartDate = isCalendarDate(requestedTanStartDate) ? requestedTanStartDate : "";
   const drawsPerWeek = Number(req.body.drawsPerWeek);
+  if (!tanStartDate) {
+    return res.status(400).json({ error: "TAN start date must be a valid calendar date" });
+  }
   if (!cycleId || !isSaturday(tanStartDate) || !Number.isInteger(drawsPerWeek) || drawsPerWeek < 1) {
     return res.status(400).json({ error: "TAN start date must be a Saturday and draws per week must be a positive whole number" });
   }
