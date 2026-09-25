@@ -38,6 +38,17 @@ const payoutStatusLabels: Array<{ status: PayoutStatus; label: string }> = [
   { status: "REVERSED", label: "Reversed" },
   { status: "PENDING", label: "Pending" },
 ]
+const reportDownloadLabels: Record<string, string> = {
+  daily: "দৈনিক রিপোর্ট",
+  due: "সদস্য বকেয়া",
+  audit: "অডিট লগ",
+  members: "সদস্য",
+  payments: "পেমেন্ট",
+  collectors: "কালেক্টর",
+  settlements: "জমা",
+  draws: "ড্র ও payout ledger",
+  monthly: "মাসিক রিপোর্ট",
+}
 
 export default function ReportsPage() {
   const { data: dashboard } = useGetDashboard()
@@ -134,7 +145,8 @@ export default function ReportsPage() {
       window.URL.revokeObjectURL(url)
       toast.success("ডাউনলোড সম্পন্ন হয়েছে")
     } catch (e) {
-      toast.error("ডাউনলোড ব্যর্থ হয়েছে")
+      const reportLabel = reportDownloadLabels[type] ?? type
+      toast.error(`${reportLabel} ডাউনলোড ব্যর্থ হয়েছে`)
     }
   }
 

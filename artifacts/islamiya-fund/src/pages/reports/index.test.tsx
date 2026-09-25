@@ -185,20 +185,68 @@ describe("reports draw export scope", () => {
     expect(mocks.fetch).toHaveBeenLastCalledWith("/api/reports/export?type=draws")
   })
 
-  it("shows non-draw export failure without creating a download", async () => {
+  it("names failed non-draw exports and keeps their request types", async () => {
     const user = userEvent.setup()
     mocks.fetch.mockResolvedValue({ ok: false })
 
     render(<ReportsPage />)
 
     await user.click(screen.getByRole("button", { name: "সদস্য (Members)" }))
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith("সদস্য ডাউনলোড ব্যর্থ হয়েছে"))
 
-    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith("ডাউনলোড ব্যর্থ হয়েছে"))
+    await user.click(screen.getByRole("button", { name: "পেমেন্ট (Payments)" }))
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith("পেমেন্ট ডাউনলোড ব্যর্থ হয়েছে"))
+
+    await user.click(screen.getByRole("button", { name: "অডিট লগ (Audit Log)" }))
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith("অডিট লগ ডাউনলোড ব্যর্থ হয়েছে"))
+
     expect(mocks.toastSuccess).not.toHaveBeenCalled()
     expect(mocks.createObjectURL).not.toHaveBeenCalled()
     expect(mocks.revokeObjectURL).not.toHaveBeenCalled()
     expect(mocks.anchorClick).not.toHaveBeenCalled()
-    expect(mocks.fetch).toHaveBeenCalledWith("/api/reports/export?type=members")
+    expect(mocks.fetch).toHaveBeenNthCalledWith(1, "/api/reports/export?type=members")
+    expect(mocks.fetch).toHaveBeenNthCalledWith(2, "/api/reports/export?type=payments")
+    expect(mocks.fetch).toHaveBeenNthCalledWith(3, "/api/reports/export?type=audit")
+  })
+
+  it("names draw export failure and preserves its previewed request", async () => {
+    const user = userEvent.setup()
+    mocks.fetch.mockImplementation(async (request: RequestInfo | URL) => {
+      if (String(request).includes("/preview")) {
+        return {
+          ok: true,
+          json: async () => ({
+            cycleId: null,
+            startDate: null,
+            endDate: null,
+            drawCount: 1,
+            payoutRowCount: 0,
+            payoutTotal: 0,
+            payoutStatusBreakdown: {
+              PAID: { count: 0, amount: 0 },
+              REVERSED: { count: 0, amount: 0 },
+              PENDING: { count: 0, amount: 0 },
+            },
+            empty: false,
+          }),
+        }
+      }
+      return { ok: false }
+    })
+
+    render(<ReportsPage />)
+
+    await user.click(screen.getByRole("button", { name: "Preview scope" }))
+    await waitFor(() => expect(screen.getByText("Previewed download scope")).toBeTruthy())
+    await user.click(screen.getByRole("button", { name: /ড্র ও payout ledger/ }))
+
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith("ড্র ও payout ledger ডাউনলোড ব্যর্থ হয়েছে"))
+    expect(mocks.fetch).toHaveBeenNthCalledWith(1, "/api/reports/export/preview?type=draws")
+    expect(mocks.fetch).toHaveBeenNthCalledWith(2, "/api/reports/export?type=draws")
+    expect(mocks.toastSuccess).toHaveBeenCalledWith("ডাউনলোডের scope preview করা হয়েছে")
+    expect(mocks.toastSuccess).not.toHaveBeenCalledWith("ডাউনলোড সম্পন্ন হয়েছে")
+    expect(mocks.createObjectURL).not.toHaveBeenCalled()
+    expect(mocks.anchorClick).not.toHaveBeenCalled()
   })
 
   it("shows failure when a successful export response cannot be converted to a Blob", async () => {
@@ -211,7 +259,7 @@ describe("reports draw export scope", () => {
 
     await user.click(screen.getByRole("button", { name: "সদস্য (Members)" }))
 
-    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith("ডাউনলোড ব্যর্থ হয়েছে"))
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith("সদস্য ডাউনলোড ব্যর্থ হয়েছে"))
     expect(blob).toHaveBeenCalledOnce()
     expect(mocks.toastSuccess).not.toHaveBeenCalled()
     expect(mocks.createObjectURL).not.toHaveBeenCalled()
