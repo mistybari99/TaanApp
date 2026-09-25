@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 const mocks = vi.hoisted(() => ({
@@ -21,6 +21,7 @@ vi.mock("@workspace/api-client-react", () => ({
   useListCycles: () => ({ data: [
     { id: 10, name: "Current", cycleNumber: 1 },
     { id: 11, name: "Next", cycleNumber: 2 },
+    { id: 12, name: "Final", cycleNumber: 3 },
   ] }),
   useCreateCollector: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateCollector: () => ({ mutate: vi.fn(), isPending: false }),
