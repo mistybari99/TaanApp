@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import type { Dispatch, SetStateAction } from "react"
 import {
   getListCycleMembersQueryKey,
   getListCyclesQueryKey,
@@ -26,6 +27,45 @@ import { CheckCircle2, LockKeyhole, Users } from "lucide-react"
 
 const today = businessDate
 
+type CycleDateField = "startDate" | "trackingStartDate" | "endDate"
+type CycleDateErrors = Partial<Record<CycleDateField, string>>
+type CycleDateErrorSetter = Dispatch<SetStateAction<CycleDateErrors>>
+
+function getCycleApiErrorMessage(error: unknown) {
+  if (!error || typeof error !== "object") return error instanceof Error ? error.message : ""
+
+  const apiError = error as { data?: unknown; message?: unknown }
+  if (apiError.data && typeof apiError.data === "object") {
+    const message = (apiError.data as Record<string, unknown>).error
+    if (typeof message === "string") return message
+  }
+  return typeof apiError.message === "string" ? apiError.message : ""
+}
+
+function getCycleDateFieldError(error: unknown) {
+  const message = getCycleApiErrorMessage(error)
+  if (/end date/i.test(message)) return { field: "endDate" as const, message }
+  if (/tracking/i.test(message)) return { field: "trackingStartDate" as const, message }
+  if (/start date/i.test(message)) return { field: "startDate" as const, message }
+  return null
+}
+
+function setInlineCycleDateError(error: unknown, setErrors: CycleDateErrorSetter) {
+  const fieldError = getCycleDateFieldError(error)
+  if (!fieldError) return false
+  setErrors((current) => ({ ...current, [fieldError.field]: fieldError.message }))
+  return true
+}
+
+function clearInlineCycleDateError(setErrors: CycleDateErrorSetter, field: CycleDateField) {
+  setErrors((current) => {
+    if (!current[field]) return current
+    const next = { ...current }
+    delete next[field]
+    return next
+  })
+}
+
 export default function CyclesPage() {
   const queryClient = useQueryClient()
   const { data: user } = useGetCurrentUser()
@@ -39,6 +79,8 @@ export default function CyclesPage() {
   const [tanActionReason, setTanActionReason] = useState("")
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [newCycle, setNewCycle] = useState({ name: "", startDate: today(), trackingStartDate: "", dailyPerShare: 100 })
+  const [createDateErrors, setCreateDateErrors] = useState<CycleDateErrors>({})
+  const [cycleDateErrors, setCycleDateErrors] = useState<CycleDateErrors>({})
   const [shareDrafts, setShareDrafts] = useState<Record<number, number>>({})
   const updateCycle = useUpdateCycle()
   const createCycle = useCreateCycle()
@@ -61,6 +103,7 @@ export default function CyclesPage() {
 
   useEffect(() => {
     setTrackingStartDate(selectedCycle?.trackingStartDate ?? "")
+    setCycleDateErrors({})
   }, [selectedCycle?.id, selectedCycle?.trackingStartDate])
 
   useEffect(() => {
@@ -134,31 +177,50 @@ export default function CyclesPage() {
 
   const completeCycle = () => {
     if (!selectedCycle) return
+    clearInlineCycleDateError(setCycleDateErrors, "endDate")
     updateCycle.mutate({ id: selectedCycle.id, data: { status: "COMPLETED", endDate: today() } }, {
       onSuccess: () => {
         toast.success("চক্রটি সম্পন্ন হিসেবে সংরক্ষিত হয়েছে")
         queryClient.invalidateQueries({ queryKey: getListCyclesQueryKey() })
       },
-      onError: (error: any) => toast.error(error?.message || "চক্র আপডেট করা যায়নি"),
+      onError: (error: unknown) => {
+        if (setInlineCycleDateError(error, setCycleDateErrors)) return
+        toast.error(error instanceof Error ? error.message : "চক্র আপডেট করা যায়নি")
+      },
     })
   }
 
   const saveTrackingStart = () => {
-    if (!selectedCycle || !trackingStartDate) return toast.error("ডিজিটাল tracking শুরুর তারিখ দিন")
+    if (!selectedCycle) return
+    if (!trackingStartDate) {
+      setCycleDateErrors((current) => ({ ...current, trackingStartDate: "Tracking start date is required" }))
+      return
+    }
+    clearInlineCycleDateError(setCycleDateErrors, "trackingStartDate")
     return updateCycle.mutate({ id: selectedCycle.id, data: { trackingStartDate } }, {
       onSuccess: () => {
         toast.success("ডিজিটাল tracking শুরুর তারিখ সংরক্ষণ হয়েছে")
         queryClient.invalidateQueries({ queryKey: getListCyclesQueryKey() })
       },
-      onError: (error: any) => toast.error(error?.message || "তারিখ সংরক্ষণ করা যায়নি"),
+      onError: (error: unknown) => {
+        if (setInlineCycleDateError(error, setCycleDateErrors)) return
+        toast.error(error instanceof Error ? error.message : "তারিখ সংরক্ষণ করা যায়নি")
+      },
     })
   }
 
   const handleCreateCycle = () => {
     if (!newCycle.name.trim() || !newCycle.startDate || !newCycle.trackingStartDate || Number(newCycle.dailyPerShare) <= 0) {
-      toast.error("চক্রের নাম, শুরু, tracking date এবং positive daily amount দিন")
+      const missingDateErrors: CycleDateErrors = {}
+      if (!newCycle.startDate) missingDateErrors.startDate = "Start date is required"
+      if (!newCycle.trackingStartDate) missingDateErrors.trackingStartDate = "Tracking start date is required"
+      setCreateDateErrors(missingDateErrors)
+      if (!newCycle.name.trim() || Number(newCycle.dailyPerShare) <= 0) {
+        toast.error("চক্রের নাম, শুরু, tracking date এবং positive daily amount দিন")
+      }
       return
     }
+    setCreateDateErrors({})
     createCycle.mutate({
       data: {
         name: newCycle.name.trim(),
@@ -171,10 +233,14 @@ export default function CyclesPage() {
       onSuccess: () => {
         toast.success("নতুন cycle তৈরি হয়েছে")
         setNewCycle({ name: "", startDate: today(), trackingStartDate: "", dailyPerShare: 100 })
+        setCreateDateErrors({})
         setIsCreateOpen(false)
         queryClient.invalidateQueries({ queryKey: getListCyclesQueryKey() })
       },
-      onError: (error: any) => toast.error(error?.message || "Cycle তৈরি করা যায়নি"),
+      onError: (error: unknown) => {
+        if (setInlineCycleDateError(error, setCreateDateErrors)) return
+        toast.error(error instanceof Error ? error.message : "Cycle তৈরি করা যায়নি")
+      },
     })
   }
 
@@ -204,8 +270,36 @@ export default function CyclesPage() {
           <CardHeader><CardTitle>নতুন Cycle তৈরি করুন</CardTitle><CardDescription>এখানে কোনো member বা TAN auto-create হবে না।</CardDescription></CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2"><Label>Cycle name</Label><Input value={newCycle.name} onChange={(event) => setNewCycle({ ...newCycle, name: event.target.value })} placeholder="Cycle #01" /></div>
-            <div className="space-y-2"><Label>Start date</Label><Input type="date" value={newCycle.startDate} onChange={(event) => setNewCycle({ ...newCycle, startDate: event.target.value })} /></div>
-            <div className="space-y-2"><Label>Digital tracking start</Label><Input type="date" value={newCycle.trackingStartDate} onChange={(event) => setNewCycle({ ...newCycle, trackingStartDate: event.target.value })} /></div>
+            <div className="space-y-2">
+              <Label htmlFor="new-cycle-start-date">Start date</Label>
+              <Input
+                id="new-cycle-start-date"
+                type="date"
+                value={newCycle.startDate}
+                aria-invalid={Boolean(createDateErrors.startDate)}
+                aria-describedby={createDateErrors.startDate ? "new-cycle-start-date-error" : undefined}
+                onChange={(event) => {
+                  setNewCycle((current) => ({ ...current, startDate: event.target.value }))
+                  clearInlineCycleDateError(setCreateDateErrors, "startDate")
+                }}
+              />
+              {createDateErrors.startDate && <p id="new-cycle-start-date-error" className="text-sm text-destructive" role="alert">{createDateErrors.startDate}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-cycle-tracking-start-date">Digital tracking start</Label>
+              <Input
+                id="new-cycle-tracking-start-date"
+                type="date"
+                value={newCycle.trackingStartDate}
+                aria-invalid={Boolean(createDateErrors.trackingStartDate)}
+                aria-describedby={createDateErrors.trackingStartDate ? "new-cycle-tracking-start-date-error" : undefined}
+                onChange={(event) => {
+                  setNewCycle((current) => ({ ...current, trackingStartDate: event.target.value }))
+                  clearInlineCycleDateError(setCreateDateErrors, "trackingStartDate")
+                }}
+              />
+              {createDateErrors.trackingStartDate && <p id="new-cycle-tracking-start-date-error" className="text-sm text-destructive" role="alert">{createDateErrors.trackingStartDate}</p>}
+            </div>
             <div className="space-y-2"><Label>Daily per share</Label><Input type="number" min={0.01} step="0.01" value={newCycle.dailyPerShare} onChange={(event) => setNewCycle({ ...newCycle, dailyPerShare: Number(event.target.value) })} /></div>
             <div className="flex gap-2 sm:col-span-2"><Button onClick={handleCreateCycle} disabled={createCycle.isPending}>Cycle সংরক্ষণ</Button><Button variant="outline" onClick={() => setIsCreateOpen(false)}>বাতিল</Button></div>
           </CardContent>
@@ -236,7 +330,19 @@ export default function CyclesPage() {
                   <CardTitle>{selectedCycle.name}</CardTitle>
                     <CardDescription>চক্র #{selectedCycle.cycleNumber} · শুরু {formatDate(selectedCycle.startDate)} · ডিজিটাল tracking {selectedCycle.trackingStartDate ? formatDate(selectedCycle.trackingStartDate) : "এখনো খোলা হয়নি"} · শুক্রবার ড্র</CardDescription>
                 </div>
-                {user?.role === "OWNER" && selectedCycle.status === "ACTIVE" && <Button variant="outline" onClick={completeCycle} disabled={updateCycle.isPending}>চক্র সম্পন্ন করুন</Button>}
+                {user?.role === "OWNER" && selectedCycle.status === "ACTIVE" && (
+                  <div className="flex flex-col items-start gap-1">
+                    <Button
+                      variant="outline"
+                      onClick={completeCycle}
+                      disabled={updateCycle.isPending}
+                      aria-describedby={cycleDateErrors.endDate ? "cycle-end-date-error" : undefined}
+                    >
+                      চক্র সম্পন্ন করুন
+                    </Button>
+                    {cycleDateErrors.endDate && <p id="cycle-end-date-error" className="text-sm text-destructive" role="alert">{cycleDateErrors.endDate}</p>}
+                  </div>
+                )}
               </div>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -294,9 +400,20 @@ export default function CyclesPage() {
                 <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                     <div className="space-y-2 flex-1">
-                       <Label>ডিজিটাল collection শুরুর তারিখ</Label>
-                      <Input type="date" value={trackingStartDate} onChange={(event) => setTrackingStartDate(event.target.value)} />
+                        <Label htmlFor="cycle-tracking-start-date">ডিজিটাল collection শুরুর তারিখ</Label>
+                       <Input
+                         id="cycle-tracking-start-date"
+                         type="date"
+                         value={trackingStartDate}
+                         aria-invalid={Boolean(cycleDateErrors.trackingStartDate)}
+                         aria-describedby={cycleDateErrors.trackingStartDate ? "cycle-tracking-start-date-error" : undefined}
+                         onChange={(event) => {
+                           setTrackingStartDate(event.target.value)
+                           clearInlineCycleDateError(setCycleDateErrors, "trackingStartDate")
+                         }}
+                       />
                       <p className="text-xs text-muted-foreground">এই তারিখের আগে কোনো due বা collection হিসাব হবে না।</p>
+                       {cycleDateErrors.trackingStartDate && <p id="cycle-tracking-start-date-error" className="text-sm text-destructive" role="alert">{cycleDateErrors.trackingStartDate}</p>}
                     </div>
                     <Button variant="outline" onClick={saveTrackingStart} disabled={updateCycle.isPending || !trackingStartDate}>তারিখ সংরক্ষণ</Button>
                   </div>
