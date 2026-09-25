@@ -211,7 +211,7 @@ describe("Staff delegated-access renewal", () => {
     expect(screen.getAllByText(/Latest reason:/)).toHaveLength(1)
   })
 
-  it("restores an expired grant and keeps the expired record visible after refresh", async () => {
+  it("shows the full history from the final active grant after multiple replacements", async () => {
     const user = userEvent.setup()
     const expiredGrant = {
       ...originalGrant,
@@ -223,37 +223,75 @@ describe("Staff delegated-access renewal", () => {
       status: "EXPIRED",
     }
     mocks.permissions = [expiredGrant]
-    mocks.permissionAuditById[34] = [{
-      id: 550,
-      actor: "Owner",
-      action: "PERMISSION_REPLACED",
-      detail: "Replaced PAYOUT_APPROVAL for Amina",
-      reason: "Restore access for next cycle",
-      createdAt: "2026-09-10T08:00:00.000Z",
-      beforeValue: {
-        id: 33,
-        cycleId: 10,
-        expiresAt: expiredGrant.expiresAt,
-      },
-      afterValue: {
-        replacedPermissionId: 33,
-        cycleId: 11,
-        expiresAt: "2026-10-15T17:45:00.000Z",
-      },
-    }]
-    mocks.renewMutate.mockImplementation((request, options) => {
-      mocks.permissions = [
-        expiredGrant,
-        {
-          ...expiredGrant,
+    mocks.permissionAuditById[35] = [
+      {
+        id: 551,
+        actor: "Owner",
+        action: "PERMISSION_REPLACED",
+        detail: "Replaced PAYOUT_APPROVAL for Amina",
+        reason: "Move access to final cycle",
+        createdAt: "2026-09-12T08:00:00.000Z",
+        beforeValue: {
           id: 34,
           cycleId: 11,
-          expiresAt: request.data.expiresAt,
-          createdAt: "2026-09-10T08:00:00.000Z",
-          note: request.data.note,
-          status: "ACTIVE",
+          expiresAt: "2026-10-15T17:45:00.000Z",
         },
-      ]
+        afterValue: {
+          replacedPermissionId: 34,
+          cycleId: 12,
+          expiresAt: "2026-11-15T17:45:00.000Z",
+        },
+      },
+      {
+        id: 550,
+        actor: "Owner",
+        action: "PERMISSION_REPLACED",
+        detail: "Replaced PAYOUT_APPROVAL for Amina",
+        reason: "Restore access for next cycle",
+        createdAt: "2026-09-10T08:00:00.000Z",
+        beforeValue: {
+          id: 33,
+          cycleId: 10,
+          expiresAt: expiredGrant.expiresAt,
+        },
+        afterValue: {
+          replacedPermissionId: 33,
+          cycleId: 11,
+          expiresAt: "2026-10-15T17:45:00.000Z",
+        },
+      },
+    ]
+    mocks.renewMutate.mockImplementation((request, options) => {
+      if (request.id === 33) {
+        mocks.permissions = [
+          expiredGrant,
+          {
+            ...expiredGrant,
+            id: 34,
+            cycleId: 11,
+            expiresAt: request.data.expiresAt,
+            createdAt: "2026-09-10T08:00:00.000Z",
+            note: request.data.note,
+            status: "ACTIVE",
+          },
+        ]
+      } else {
+        const firstReplacement = mocks.permissions.find((permission) => permission.id === 34)
+        mocks.permissions = [
+          expiredGrant,
+          { ...firstReplacement, status: "REVOKED", revokedAt: "2026-09-12T08:00:00.000Z" },
+          {
+            ...expiredGrant,
+            id: 35,
+            cycleId: 12,
+            expiresAt: request.data.expiresAt,
+            createdAt: "2026-09-12T08:00:00.000Z",
+            note: request.data.note,
+            latestReason: request.data.reason,
+            status: "ACTIVE",
+          },
+        ]
+      }
       options.onSuccess()
     })
 
@@ -289,20 +327,57 @@ describe("Staff delegated-access renewal", () => {
     expect(screen.getAllByText(/Amina · PAYOUT_APPROVAL/)).toHaveLength(2)
     expect(screen.getByText("EXPIRED")).toBeTruthy()
     expect(screen.getByText(/Cycle 11 .* Expired access/)).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Revoke" })).toBeTruthy()
+    const renewalButtons = screen.getAllByRole("button", { name: "Renew / replace" })
+    expect(renewalButtons).toHaveLength(2)
+    await user.click(renewalButtons[1])
+
+    const secondExpiry = screen.getByLabelText("Expiry (optional; blank means permanent)")
+    await user.selectOptions(screen.getByLabelText("Cycle scope"), "12")
+    await user.clear(secondExpiry)
+    await user.type(secondExpiry, "2026-11-15T17:45")
+    await user.type(screen.getByLabelText("কারণ (required)"), "Move access to final cycle")
+    await user.click(screen.getByRole("button", { name: "Renew / replace access" }))
+
+    expect(mocks.renewMutate).toHaveBeenLastCalledWith(
+      {
+        id: 34,
+        data: {
+          cycleId: 12,
+          expiresAt: new Date("2026-11-15T17:45").toISOString(),
+          note: "Expired access",
+          reason: "Move access to final cycle",
+        },
+      },
+      expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
+    )
+
+    view.rerender(<CollectorsPage />)
+    expect(screen.getAllByText(/Amina · PAYOUT_APPROVAL/)).toHaveLength(3)
+    expect(screen.getByText("EXPIRED")).toBeTruthy()
+    expect(screen.getByText("REVOKED")).toBeTruthy()
+    expect(screen.getByText(/Cycle 12 .* Expired access/)).toBeTruthy()
 
     const historyButtons = screen.getAllByRole("button", { name: "History" })
-    expect(historyButtons).toHaveLength(2)
-    await user.click(historyButtons[1])
+    expect(historyButtons).toHaveLength(3)
+    await user.click(historyButtons[2])
 
-    expect(mocks.permissionAuditIds).toContain(34)
+    expect(mocks.permissionAuditIds).toContain(35)
     expect(mocks.permissionAuditIds).not.toContain(33)
+    expect(mocks.permissionAuditIds).not.toContain(34)
     expect(screen.getByRole("heading", { name: "Delegated-access audit trail" })).toBeTruthy()
-    expect(screen.getByText("PERMISSION REPLACED")).toBeTruthy()
-    expect(screen.getByText("Replaced PAYOUT_APPROVAL for Amina")).toBeTruthy()
-    expect(screen.getByText("Restore access for next cycle")).toBeTruthy()
-    expect(screen.getByText("Scope: Cycle 10")).toBeTruthy()
-    expect(screen.getByText("Scope: Cycle 11")).toBeTruthy()
+    const auditDialog = within(screen.getByRole("dialog"))
+    expect(auditDialog.getAllByText("PERMISSION REPLACED")).toHaveLength(2)
+    const displayedReasons = auditDialog
+      .getAllByText(/^(Move access to final cycle|Restore access for next cycle)$/)
+      .map((element) => element.textContent)
+    expect(displayedReasons).toEqual([
+      "Move access to final cycle",
+      "Restore access for next cycle",
+    ])
+    expect(auditDialog.getByText("Scope: Cycle 10")).toBeTruthy()
+    expect(auditDialog.getAllByText("Scope: Cycle 11")).toHaveLength(2)
+    expect(auditDialog.getByText("Scope: Cycle 12")).toBeTruthy()
+    expect(auditDialog.queryByText("Unrelated correction coverage")).toBeNull()
   })
 
   it("cancels renewal without submitting and resets the form", async () => {

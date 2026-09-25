@@ -228,6 +228,13 @@ test("permission audit history follows repeated scope replacements without inclu
       "PERMISSION_RENEWED",
       "PERMISSION_GRANTED",
     ];
+    const expectedReasons = [
+      "Coverage ended",
+      "Cycle scope changed again",
+      "Cycle scope changed",
+      "Coverage extended",
+      "Initial payout coverage",
+    ];
     for (const permissionId of [initialId, replacementOneId, finalId]) {
       const historyResponse = await get(`/api/permissions/${permissionId}/audit`);
       assert.equal(historyResponse.status, 200);
@@ -240,6 +247,7 @@ test("permission audit history follows repeated scope replacements without inclu
         afterValue: Record<string, unknown> | null;
       }>;
       assert.deepEqual(history.map((row) => row.action), expectedActions);
+      assert.deepEqual(history.map((row) => row.reason), expectedReasons);
       assert.deepEqual(new Set(history.map((row) => Number(row.entityId))), new Set(permissionIds));
       assert.ok(history.every((row, index) => index === 0 || new Date(history[index - 1].createdAt) >= new Date(row.createdAt)));
       assert.ok(history.some((row) => row.reason === "Coverage extended" && row.beforeValue?.id === initialId));
