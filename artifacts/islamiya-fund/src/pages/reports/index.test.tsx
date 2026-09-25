@@ -200,4 +200,23 @@ describe("reports draw export scope", () => {
     expect(mocks.anchorClick).not.toHaveBeenCalled()
     expect(mocks.fetch).toHaveBeenCalledWith("/api/reports/export?type=members")
   })
+
+  it("shows failure when a successful export response cannot be converted to a Blob", async () => {
+    const user = userEvent.setup()
+    const blob = vi.fn().mockRejectedValue(new Error("Response body incomplete"))
+    mocks.fetch.mockResolvedValue({ ok: true, blob })
+    const downloadLinkCountBefore = document.querySelectorAll("a[download]").length
+
+    render(<ReportsPage />)
+
+    await user.click(screen.getByRole("button", { name: "সদস্য (Members)" }))
+
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith("ডাউনলোড ব্যর্থ হয়েছে"))
+    expect(blob).toHaveBeenCalledOnce()
+    expect(mocks.toastSuccess).not.toHaveBeenCalled()
+    expect(mocks.createObjectURL).not.toHaveBeenCalled()
+    expect(mocks.revokeObjectURL).not.toHaveBeenCalled()
+    expect(mocks.anchorClick).not.toHaveBeenCalled()
+    expect(document.querySelectorAll("a[download]")).toHaveLength(downloadLinkCountBefore)
+  })
 })
