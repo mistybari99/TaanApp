@@ -5,6 +5,8 @@ import userEvent from "@testing-library/user-event"
 
 const mocks = vi.hoisted(() => ({
   permissions: [] as any[],
+  permissionAuditById: {} as Record<number, any[]>,
+  permissionAuditIds: [] as number[],
   grantMutate: vi.fn(),
   renewMutate: vi.fn(),
   revokeMutate: vi.fn(),
@@ -30,7 +32,10 @@ vi.mock("@workspace/api-client-react", () => ({
   useGrantPermission: () => ({ mutate: mocks.grantMutate, isPending: false }),
   useRenewPermission: () => ({ mutate: mocks.renewMutate, isPending: false }),
   useRevokePermission: () => ({ mutate: mocks.revokeMutate, isPending: false }),
-  useListPermissionAudit: () => ({ data: [], isLoading: false }),
+  useListPermissionAudit: (id: number) => {
+    if (id > 0) mocks.permissionAuditIds.push(id)
+    return { data: mocks.permissionAuditById[id] ?? [], isLoading: false }
+  },
   getListCollectorTargetsQueryKey: () => ["collector-targets"],
   getListPermissionsQueryKey: () => ["permissions"],
   getListPermissionAuditQueryKey: (id: number) => ["permission-audit", id],
@@ -64,6 +69,8 @@ const originalGrant = {
 describe("Staff delegated-access renewal", () => {
   beforeEach(() => {
     mocks.permissions = [{ ...originalGrant }]
+    mocks.permissionAuditById = {}
+    mocks.permissionAuditIds = []
     mocks.grantMutate.mockReset()
     mocks.renewMutate.mockReset()
     mocks.revokeMutate.mockReset()
@@ -215,6 +222,24 @@ describe("Staff delegated-access renewal", () => {
       status: "EXPIRED",
     }
     mocks.permissions = [expiredGrant]
+    mocks.permissionAuditById[34] = [{
+      id: 550,
+      actor: "Owner",
+      action: "PERMISSION_REPLACED",
+      detail: "Replaced PAYOUT_APPROVAL for Amina",
+      reason: "Restore access for next cycle",
+      createdAt: "2026-09-10T08:00:00.000Z",
+      beforeValue: {
+        id: 33,
+        cycleId: 10,
+        expiresAt: expiredGrant.expiresAt,
+      },
+      afterValue: {
+        replacedPermissionId: 33,
+        cycleId: 11,
+        expiresAt: "2026-10-15T17:45:00.000Z",
+      },
+    }]
     mocks.renewMutate.mockImplementation((request, options) => {
       mocks.permissions = [
         expiredGrant,
@@ -264,6 +289,19 @@ describe("Staff delegated-access renewal", () => {
     expect(screen.getByText("EXPIRED")).toBeTruthy()
     expect(screen.getByText(/Cycle 11 .* Expired access/)).toBeTruthy()
     expect(screen.getByRole("button", { name: "Revoke" })).toBeTruthy()
+
+    const historyButtons = screen.getAllByRole("button", { name: "History" })
+    expect(historyButtons).toHaveLength(2)
+    await user.click(historyButtons[1])
+
+    expect(mocks.permissionAuditIds).toContain(34)
+    expect(mocks.permissionAuditIds).not.toContain(33)
+    expect(screen.getByRole("heading", { name: "Delegated-access audit trail" })).toBeTruthy()
+    expect(screen.getByText("PERMISSION REPLACED")).toBeTruthy()
+    expect(screen.getByText("Replaced PAYOUT_APPROVAL for Amina")).toBeTruthy()
+    expect(screen.getByText("Restore access for next cycle")).toBeTruthy()
+    expect(screen.getByText("Scope: Cycle 10")).toBeTruthy()
+    expect(screen.getByText("Scope: Cycle 11")).toBeTruthy()
   })
 
   it("cancels renewal without submitting and resets the form", async () => {
